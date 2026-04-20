@@ -23,38 +23,38 @@ Clusters represent subgroups within the data that share similar patterns. Such p
 
 ## Data
 
-To illustrate clustering, we will use the `human_cat` dataset, which contains 10,796 coded human interactions from 429 human-AI pair from programming sessions across 34 projects classified into 9 behavioral categories. Each row represents a single interaction event with a timestamp, session identifier, and category label.
+To illustrate clustering, we will use the `human_long` dataset, which contains 10,796 coded human interactions from 429 human-AI pair programming sessions across 34 projects. Each row represents a single interaction event with a timestamp, session identifier, and action label.
 
 ```{r data}
 library(Nestimate)
-data("human_cat")
+data("human_long")
 
 # Subsample for vignette speed (CRAN build-time limit)
 set.seed(1)
-keep <- sample(unique(human_cat$session_id), 80)
-human_sub <- human_cat[human_cat$session_id %in% keep, ]
+keep <- sample(unique(human_long$session_id), 80)
+human_sub <- human_long[human_long$session_id %in% keep, ]
 
 head(human_sub)
 ```
 
-We can build a transition network using this dataset using `build_network`. We need to determine the `actor` (`session_id`), the `action`  (`session_id`), and the `time` (`timestamp`). We will use the overall network object as the starting point to find subgroups since it structures the raw data into the appropriate units of analysis to perform clustering.
+We can build a transition network using this dataset using `build_network`. We need to determine the `actor` (`session_id`), the `action` (`cluster`), and the `time` (`timestamp`). We will use the overall network object as the starting point to find subgroups since it structures the raw data into the appropriate units of analysis to perform clustering.
 
 ```{r}
-net <- build_network(human_sub, 
+net <- build_network(human_sub,
                      method = "tna",
-                     action = "category", 
-                     actor = "session_id",
-                     time = "timestamp")
+                     action = "cluster",
+                     actor  = "session_id",
+                     time   = "timestamp")
 ```
 
 ## Dissimilarity-based Clustering
 
 Dissimilarity-based clustering groups units of analysis (in our case, sessions, since that is what we provided as `actor`) by directly comparing their observed sequences. In our case, each session is represented by its sequence of actions, and similarity between sessions is defined using a distance metric that quantifies how different two sequences are.
 
-To implement this method using `Nestimate`, we can use the `cluster_data()` function, which takes either  raw sequence data or a network object such as the `net` object that we estimated (which also contains the original sequences in `$data`):
+To implement this method using `Nestimate`, we can use the `build_clusters()` function, which takes either  raw sequence data or a network object such as the `net` object that we estimated (which also contains the original sequences in `$data`):
 
 ```{r cluster-basic}
-clust <- cluster_data(net, k = 3)
+clust <- build_clusters(net, k = 3)
 
 clust
 ```
@@ -112,11 +112,11 @@ We can specify which distance metric we want to use through the `dissimilarity` 
 
 ```{r cluster-metrics}
 # Levenshtein distance (allows insertions/deletions)
-clust_lv <- cluster_data(net, k = 3, dissimilarity = "lv")
+clust_lv <- build_clusters(net, k = 3, dissimilarity = "lv")
 clust_lv$silhouette
 
 # Longest common subsequence
-clust_lcs <- cluster_data(net, k = 3, dissimilarity = "lcs")
+clust_lcs <- build_clusters(net, k = 3, dissimilarity = "lcs")
 clust_lcs$silhouette
 ```
 
@@ -124,7 +124,7 @@ Some distance metrics may take additional arguments. For example, the Hamming di
 
 ```{r cluster-weighted}
 # Emphasize earlier positions (higher lambda = faster decay)
-clust_weighted <- cluster_data(net, 
+clust_weighted <- build_clusters(net, 
                                k = 3,
                                dissimilarity = "hamming",
                                weighted = TRUE,
@@ -144,14 +144,14 @@ By default, Nestimate uses PAM (Partitioning Around Medoids) to form clusters, w
 - `mcquitty` (“McQuitty’s Method” / “WPGMA”): A weighted version of average linkage that gives equal weight to clusters regardless of size.
 - `centroid` (“Centroid Linkage”): Defines cluster distance based on the distance between cluster centroids (means). Can produce intuitive groupings but may introduce inconsistencies in the hierarchy.
 
-To use any of these methods instead of PAM, we need to provide the `method` argument to `cluster_data`.
+To use any of these methods instead of PAM, we need to provide the `method` argument to `build_clusters`.
 ```{r cluster-methods}
 # Ward's method (minimizes within-cluster variance)
-clust_ward <- cluster_data(net, k = 3, method = "ward.D2")
+clust_ward <- build_clusters(net, k = 3, method = "ward.D2")
 clust_ward$silhouette
 
 # Complete linkage
-clust_complete <- cluster_data(net, k = 3, method = "complete")
+clust_complete <- build_clusters(net, k = 3, method = "complete")
 clust_complete$silhouette
 ```
 
@@ -165,7 +165,7 @@ methods <- c("pam", "ward.D2", "complete", "average")
 
 silhouettes <- lapply(methods, function(m) {
   sapply(2:4, function(k) {
-    cluster_data(net, k = k, method = m, seed = 42)$silhouette
+    build_clusters(net, k = k, method = m, seed = 42)$silhouette
   })
 })
 
@@ -193,7 +193,7 @@ legend("topright", legend = methods, col = colors, lty = 1, pch = 19)
 
 Higher silhouette scores indicate better-defined clusters. Look for an "elbow" or maximum. Here we select `ward.D2` with 2 clusters, which yields a reasonable silhouette width.
 ```{r}
-clust <- cluster_data(net, k = 2, method = "ward.D2", seed = 42)
+clust <- build_clusters(net, k = 2, method = "ward.D2", seed = 42)
 
 summary(clust)
 ```
@@ -225,5 +225,5 @@ cluster_net <- build_network(clust)
 
 We may also compare which transition probabilities differ significantly among clusters using permutation testing:
 ```{r}
-comparison <- permutation_test(cluster_net, iter = 100)
+comparison <- permutation(cluster_net, iter = 100)
 ```

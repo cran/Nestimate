@@ -54,7 +54,7 @@ pathways <- function(x, ...) {
 #' @export
 pathways.net_hon <- function(x, min_count = 1L, min_prob = 0,
                              top = NULL, order = NULL, ...) {
-  edges <- x$edges
+  edges <- x$ho_edges
   if (is.null(edges) || nrow(edges) == 0L) return(character(0)) # nocov
 
   # Higher-order edges: from_order > 1
@@ -100,9 +100,11 @@ pathways.net_hypa <- function(x, type = "all", ...) {
   if (is.null(scores) || nrow(scores) == 0L) return(character(0)) # nocov
 
   if (type == "all") {
-    anom <- scores[scores$anomaly != "normal", , drop = FALSE]
+    anom <- rbind(x$over, x$under)
+  } else if (type == "over") {
+    anom <- x$over
   } else {
-    anom <- scores[scores$anomaly == type, , drop = FALSE]
+    anom <- x$under
   }
   if (nrow(anom) == 0L) return(character(0))
 
@@ -112,6 +114,28 @@ pathways.net_hypa <- function(x, type = "all", ...) {
     sources <- paste(parts[-length(parts)], collapse = " ")
     paste(sources, "->", parts[length(parts)])
   }, character(1), USE.NAMES = FALSE)
+}
+
+
+#' @describeIn pathways Extract pathways from a netobject
+#'
+#' Builds a Higher-Order Network (HON) from the netobject's sequence data
+#' and returns the higher-order pathways. Requires that the netobject was
+#' built from sequence data (has \code{$data}).
+#'
+#' @param ho_method Character. Higher-order method: \code{"hon"} (default) or
+#'   \code{"hypa"}.
+#'
+#' @return A character vector of pathway strings.
+#'
+#' @export
+pathways.netobject <- function(x, ho_method = c("hon", "hypa"), ...) {
+  ho_method <- match.arg(ho_method)
+  if (ho_method == "hon") {
+    pathways(build_hon(x), ...)
+  } else {
+    pathways(build_hypa(x), ...)
+  }
 }
 
 
@@ -152,13 +176,26 @@ pathways.net_association_rules <- function(x, top = NULL, min_lift = NULL,
 
   rules <- rules[order(-rules$lift, -rules$confidence), , drop = FALSE]
 
+  # Deduplicate: each rule's antecedent + consequent is a simplex (unordered).
+  # {A,B} => {C} and {A,C} => {B} are the same simplex {A,B,C}.
+  # Keep the highest-lift version of each unique itemset.
+  itemsets <- vapply(seq_len(nrow(rules)), function(i) {
+    items <- sort(unique(c(
+      strsplit(rules$antecedent[i], ", ", fixed = TRUE)[[1]],
+      strsplit(rules$consequent[i], ", ", fixed = TRUE)[[1]]
+    )))
+    paste(items, collapse = "\t")
+  }, character(1))
+  keep <- !duplicated(itemsets)
+  rules <- rules[keep, , drop = FALSE]
+
   if (!is.null(top) && nrow(rules) > top) {
     rules <- rules[seq_len(top), , drop = FALSE]
   }
 
   vapply(seq_len(nrow(rules)), function(i) {
-    ante <- paste(rules$antecedent[[i]], collapse = " ")
-    cons <- paste(rules$consequent[[i]], collapse = " ")
+    ante <- gsub(", ", " ", rules$antecedent[i])
+    cons <- gsub(", ", " ", rules$consequent[i])
     paste(ante, "->", cons)
   }, character(1), USE.NAMES = FALSE)
 }

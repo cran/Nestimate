@@ -9,24 +9,24 @@ knitr::opts_chunk$set(
 
 ## ----data---------------------------------------------------------------------
 library(Nestimate)
-data("human_cat")
+data("human_long")
 
 # Subsample for vignette speed (CRAN build-time limit)
 set.seed(1)
-keep <- sample(unique(human_cat$session_id), 80)
-human_sub <- human_cat[human_cat$session_id %in% keep, ]
+keep <- sample(unique(human_long$session_id), 80)
+human_sub <- human_long[human_long$session_id %in% keep, ]
 
 head(human_sub)
 
 ## -----------------------------------------------------------------------------
-net <- build_network(human_sub, 
+net <- build_network(human_sub,
                      method = "tna",
-                     action = "category", 
-                     actor = "session_id",
-                     time = "timestamp")
+                     action = "cluster",
+                     actor  = "session_id",
+                     time   = "timestamp")
 
 ## ----cluster-basic------------------------------------------------------------
-clust <- cluster_data(net, k = 3)
+clust <- build_clusters(net, k = 3)
 
 clust
 
@@ -48,16 +48,16 @@ plot(clust, type = "mds")
 
 ## ----cluster-metrics----------------------------------------------------------
 # Levenshtein distance (allows insertions/deletions)
-clust_lv <- cluster_data(net, k = 3, dissimilarity = "lv")
+clust_lv <- build_clusters(net, k = 3, dissimilarity = "lv")
 clust_lv$silhouette
 
 # Longest common subsequence
-clust_lcs <- cluster_data(net, k = 3, dissimilarity = "lcs")
+clust_lcs <- build_clusters(net, k = 3, dissimilarity = "lcs")
 clust_lcs$silhouette
 
 ## ----cluster-weighted---------------------------------------------------------
 # Emphasize earlier positions (higher lambda = faster decay)
-clust_weighted <- cluster_data(net, 
+clust_weighted <- build_clusters(net, 
                                k = 3,
                                dissimilarity = "hamming",
                                weighted = TRUE,
@@ -66,11 +66,11 @@ clust_weighted$silhouette
 
 ## ----cluster-methods----------------------------------------------------------
 # Ward's method (minimizes within-cluster variance)
-clust_ward <- cluster_data(net, k = 3, method = "ward.D2")
+clust_ward <- build_clusters(net, k = 3, method = "ward.D2")
 clust_ward$silhouette
 
 # Complete linkage
-clust_complete <- cluster_data(net, k = 3, method = "complete")
+clust_complete <- build_clusters(net, k = 3, method = "complete")
 clust_complete$silhouette
 
 ## ----choose-k-----------------------------------------------------------------
@@ -78,7 +78,7 @@ methods <- c("pam", "ward.D2", "complete", "average")
 
 silhouettes <- lapply(methods, function(m) {
   sapply(2:4, function(k) {
-    cluster_data(net, k = k, method = m, seed = 42)$silhouette
+    build_clusters(net, k = k, method = m, seed = 42)$silhouette
   })
 })
 
@@ -103,7 +103,7 @@ for (i in 2:length(methods)) {
 legend("topright", legend = methods, col = colors, lty = 1, pch = 19)
 
 ## -----------------------------------------------------------------------------
-clust <- cluster_data(net, k = 2, method = "ward.D2", seed = 42)
+clust <- build_clusters(net, k = 2, method = "ward.D2", seed = 42)
 
 summary(clust)
 
@@ -118,5 +118,5 @@ head(mmm_default$assignments,10)
 cluster_net <- build_network(clust)
 
 ## -----------------------------------------------------------------------------
-comparison <- permutation_test(cluster_net, iter = 100)
+comparison <- permutation(cluster_net, iter = 100)
 
