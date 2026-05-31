@@ -39,7 +39,13 @@ When provided, data is sorted by \code{id} then \code{time} before lagging.}
 (each variable predicting itself at lag 1) are included as fixed paths.}
 
 \item{standardize}{Logical. If \code{TRUE} (default \code{FALSE}),
-variables are standardized per person before estimation.}
+variables are standardized per person before estimation. Note: the
+returned coefficient network (\code{$coefs}, \code{$psi},
+\code{$temporal_avg}, \code{$contemporaneous_avg}, \code{$group_paths})
+is unaffected because Nestimate extracts the standardized lavaan
+solution (\code{lavInspect(fit, "std")}), which is invariant to input
+scaling. Only the scale-dependent \code{$fit} statistics (chisq, aic,
+bic) change.}
 
 \item{groupcutoff}{Numeric between 0 and 1. Proportion of individuals for
 whom a path must be significant to be added at group level.
@@ -108,21 +114,20 @@ Uses \code{lavaan} for SEM estimation and modification indices.
 Accepts a single data frame with an ID column (not CSV directories).
 }
 \examples{
+\dontshow{if (requireNamespace("lavaan", quietly = TRUE)) withAutoprint(\{ # examplesIf}
 \donttest{
-if (requireNamespace("gimme", quietly = TRUE)) {
-  # Create simple panel data (3 subjects, 4 variables, 50 time points)
-  set.seed(42)
-  n_sub <- 3; n_t <- 50; vars <- paste0("V", 1:4)
-  rows <- lapply(seq_len(n_sub), function(i) {
-    d <- as.data.frame(matrix(rnorm(n_t * 4), ncol = 4))
-    names(d) <- vars; d$id <- i; d
-  })
-  panel <- do.call(rbind, rows)
-  res <- build_gimme(panel, vars = vars, id = "id")
-  print(res)
+# Create simple panel data (3 subjects, 4 variables, 50 time points).
+set.seed(42)
+n_sub <- 3; n_t <- 50; vars <- paste0("V", 1:4)
+rows <- lapply(seq_len(n_sub), function(i) {
+  d <- as.data.frame(matrix(rnorm(n_t * 4), ncol = 4))
+  names(d) <- vars; d$id <- i; d
+})
+panel <- do.call(rbind, rows)
+res <- build_gimme(panel, vars = vars, id = "id")
+print(res)
 }
-}
-
+\dontshow{\}) # examplesIf}
 }
 \seealso{
 \code{\link{build_network}}

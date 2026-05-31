@@ -87,6 +87,46 @@ test_that("passage_time errors on unsupported input", {
   expect_error(passage_time("not_a_matrix"), "numeric matrix")
 })
 
+# ---- zero-row guard (regression: silent NaN from row_sums == 0) ----
+
+test_that("passage_time errors on zero-sum row and names the dead state", {
+  P_dead <- .P3
+  P_dead["B", ] <- 0  # B has no outgoing transitions
+  expect_error(
+    passage_time(P_dead),
+    "zero-sum row.*B.*not.*ergodic"
+  )
+})
+
+test_that("markov_stability errors on zero-sum row and names the dead state", {
+  P_dead <- .P3
+  P_dead["C", ] <- 0
+  expect_error(
+    markov_stability(P_dead),
+    "zero-sum row.*C.*not.*ergodic"
+  )
+})
+
+test_that("passage_time zero-row error lists multiple dead states", {
+  P_dead <- .P3
+  P_dead[c("A", "C"), ] <- 0
+  expect_error(
+    passage_time(P_dead),
+    "zero-sum row.*A, C"
+  )
+})
+
+test_that("passage_time zero-row guard fires before normalize=FALSE check", {
+  P_dead <- .P3
+  P_dead["B", ] <- 0
+  # Even with normalize=FALSE, the zero-row diagnostic takes priority over
+  # the generic "must sum to 1" error — the message must point at B.
+  expect_error(
+    passage_time(P_dead, normalize = FALSE),
+    "zero-sum row.*B"
+  )
+})
+
 # ---- Numerical equivalence vs linear-system solve ----
 
 test_that("passage_time matches column-by-column linear solve", {
@@ -223,35 +263,6 @@ test_that("markov_stability works on trajectories netobject", {
 
 # ---- tna object support ----
 
-test_that("passage_time accepts a tna object", {
-  skip_if_pkg_broken("tna")
-  m  <- tna::tna(tna::group_regulation)
-  pt <- passage_time(m)
-  expect_s3_class(pt, "net_mpt")
-  expect_equal(ncol(pt$matrix), nrow(pt$matrix))
-  expect_true(all(pt$matrix > 0))
-})
-
-test_that("markov_stability accepts a tna object", {
-  skip_if_pkg_broken("tna")
-  m  <- tna::tna(tna::group_regulation)
-  ms <- markov_stability(m)
-  expect_s3_class(ms, "net_markov_stability")
-  expect_equal(nrow(ms$stability), ncol(m$weights))
-})
-
-test_that("passage_time matches netobject when built from same data as tna", {
-  skip_if_pkg_broken("tna")
-  m   <- tna::tna(tna::group_regulation)
-  pt_tna <- passage_time(m)
-  net    <- build_network(tna::group_regulation, method = "relative")
-  pt_net <- passage_time(net)
-  # Both extract the same weight matrix so results must be identical
-  expect_equal(pt_tna$matrix, pt_net$matrix, tolerance = 1e-8)
-})
-
-# ---- wide data.frame support ----
-
 test_that("passage_time accepts a wide sequence data.frame", {
   seqs <- data.frame(
     V1 = c("A","B","C","A","B"),
@@ -285,4 +296,55 @@ test_that("markov_stability accepts a wide sequence data.frame", {
   )
   ms <- markov_stability(seqs)
   expect_s3_class(ms, "net_markov_stability")
+})
+
+# --- Group dispatch -----------------------------------------------------
+
+test_that("passage_time dispatches over netobject_group", {
+  seqs <- data.frame(
+    V1 = rep(c("A","B","C"), 6L),
+    V2 = rep(c("B","C","A"), 6L),
+    V3 = rep(c("C","A","B"), 6L),
+    grp = rep(c("g1", "g2"), each = 9L),
+    stringsAsFactors = FALSE
+  )
+  grp_net <- build_network(seqs, method = "relative", group = "grp")
+  expect_s3_class(grp_net, "netobject_group")
+
+  pt_grp <- passage_time(grp_net)
+  expect_s3_class(pt_grp, "net_mpt_group")
+  expect_named(pt_grp, names(grp_net))
+  expect_true(all(vapply(pt_grp, inherits, logical(1), "net_mpt")))
+
+  # Group result for each member must match the per-member call.
+  for (nm in names(grp_net)) {
+    expect_equal(pt_grp[[nm]]$matrix,
+                 passage_time(grp_net[[nm]])$matrix,
+                 tolerance = 1e-12,
+                 info = sprintf("group %s", nm))
+  }
+  expect_invisible(print(pt_grp))
+})
+
+test_that("markov_stability dispatches over netobject_group", {
+  seqs <- data.frame(
+    V1 = rep(c("A","B","C"), 6L),
+    V2 = rep(c("B","C","A"), 6L),
+    V3 = rep(c("C","A","B"), 6L),
+    grp = rep(c("g1", "g2"), each = 9L),
+    stringsAsFactors = FALSE
+  )
+  grp_net <- build_network(seqs, method = "relative", group = "grp")
+
+  ms_grp <- markov_stability(grp_net)
+  expect_s3_class(ms_grp, "net_markov_stability_group")
+  expect_named(ms_grp, names(grp_net))
+  expect_true(all(vapply(ms_grp, inherits, logical(1),
+                         "net_markov_stability")))
+  for (nm in names(grp_net)) {
+    expect_equal(ms_grp[[nm]]$stability,
+                 markov_stability(grp_net[[nm]])$stability,
+                 info = sprintf("group %s", nm))
+  }
+  expect_invisible(print(ms_grp))
 })

@@ -11,7 +11,8 @@ bootstrap_network(
   inference = "stability",
   consistency_range = c(0.75, 1.25),
   edge_threshold = NULL,
-  seed = NULL
+  seed = NULL,
+  boundary = c("inclusive", "strict")
 )
 }
 \arguments{
@@ -37,6 +38,11 @@ bounds for stability inference (default: \code{c(0.75, 1.25)}).}
 percentile of absolute original edge weights.}
 
 \item{seed}{Integer or NULL. RNG seed for reproducibility.}
+
+\item{boundary}{Character. Comparison rule when computing the consistency-range
+p-value. \code{"inclusive"} (default, tna-compatible) counts iterations
+that meet the bound (\eqn{\le} / \eqn{\ge}); \code{"strict"} counts only
+iterations strictly outside (\eqn{<} / \eqn{>}).}
 }
 \value{
 An object of class \code{"net_bootstrap"} containing:
@@ -72,6 +78,10 @@ convert long-format data first.
 For association methods (\code{"cor"}, \code{"pcor"}, \code{"glasso"},
 and custom estimators), the full estimator is called on resampled rows
 each iteration.
+
+If a transition network contains only one sequence, the function warns that
+such a network is not recommended for bootstrap or other confirmatory
+testing.
 }
 \examples{
 net <- build_network(data.frame(V1 = c("A","B","C"), V2 = c("B","C","A")),

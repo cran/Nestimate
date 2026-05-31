@@ -123,6 +123,29 @@ simulate_sequences <- function(n_actors = 10, n_states = 5,
   df
 }
 
+#' Real-data sequence anchor for equivalence tests.
+#'
+#' Returns a list of character sequences extracted from a bundled long-format
+#' dataset, ordered within session. Used by higher-order equivalence tests to
+#' anchor synthetic-data validation against realistic state imbalance and
+#' non-trivial higher-order dependencies that random uniform sampling smooths
+#' away.
+#'
+#' @param dataset One of "human_long", "ai_long", "group_regulation_long".
+#' @param max_actors Optional cap on number of sessions returned (NULL = all).
+#' @noRd
+bundled_sequences <- function(dataset = "human_long", max_actors = NULL) {
+  e <- new.env()
+  utils::data(list = dataset, package = "Nestimate", envir = e)
+  d <- e[[dataset]]
+  stopifnot(all(c("session_id", "code", "order_in_session") %in% names(d)))
+  d <- d[order(d$session_id, d$order_in_session), ]
+  d <- d[!duplicated(d[, c("session_id", "order_in_session")]), ]
+  ids <- unique(d$session_id)
+  if (!is.null(max_actors)) ids <- ids[seq_len(min(length(ids), max_actors))]
+  lapply(ids, function(s) as.character(d$code[d$session_id == s]))
+}
+
 #' Generate random continuous data for association method equivalence testing
 #' @noRd
 simulate_continuous <- function(n = 100, p = 5, rho = 0.3, seed = NULL) {
@@ -139,100 +162,48 @@ simulate_continuous <- function(n = 100, p = 5, rho = 0.3, seed = NULL) {
   df
 }
 
-#' Equivalence report logger
+#' Generate a random binary incidence matrix for hypergraph equivalence tests.
+#'
+#' Columns are hyperedges, rows are nodes. Each hyperedge's size is drawn
+#' uniformly from `edge_size_range`, members are sampled without replacement
+#' from the node set. `density` adds per-edge jitter: with probability
+#' (1 - density) an edge is skipped (returned as a degenerate size-1 edge, or
+#' dropped if too small), ensuring size variability across runs.
+#'
+#' @param n_nodes Integer >= 3. Number of nodes.
+#' @param n_edges Integer >= 1. Number of hyperedges.
+#' @param edge_size_range Integer vector length 2. Min/max hyperedge size.
+#'   Must satisfy 2 <= min <= max <= n_nodes.
+#' @param density Numeric in (0, 1]. Probability that a given edge is kept.
+#' @param seed Integer or NULL. Random seed.
+#' @return list(incidence = matrix(n_nodes, n_edges_kept),
+#'              hyperedges = list of integer node indices,
+#'              nodes = character vector of node names)
 #' @noRd
-equiv_report <- function() {
-  env <- new.env(parent = emptyenv())
-  env$rows <- list()
-
-  env$log <- function(func, config, n_checked, n_failed,
-                      max_abs_err, mean_abs_err, median_abs_err,
-                      p95_abs_err, reference, notes = "") {
-    env$rows[[length(env$rows) + 1L]] <- data.frame(
-      func = func, config = config,
-      n_checked = n_checked, n_failed = n_failed,
-      max_abs_err = max_abs_err, mean_abs_err = mean_abs_err,
-      median_abs_err = median_abs_err, p95_abs_err = p95_abs_err,
-      reference = reference, notes = notes,
-      stringsAsFactors = FALSE
-    )
+simulate_hypergraph_incidence <- function(n_nodes = 15, n_edges = 20,
+                                          edge_size_range = c(2L, 4L),
+                                          density = 0.8,
+                                          seed = NULL) {
+  stopifnot(n_nodes >= 3L, n_edges >= 1L,
+            length(edge_size_range) == 2L,
+            edge_size_range[1] >= 2L,
+            edge_size_range[2] >= edge_size_range[1],
+            edge_size_range[2] <= n_nodes,
+            density > 0, density <= 1)
+  if (!is.null(seed)) set.seed(seed)
+  nodes <- paste0("n", seq_len(n_nodes))
+  sizes <- sample(edge_size_range[1]:edge_size_range[2], n_edges, replace = TRUE)
+  keep <- stats::runif(n_edges) < density
+  edges <- mapply(function(sz, k) {
+    if (!k) return(integer(0))
+    sort(sample.int(n_nodes, sz))
+  }, sizes, keep, SIMPLIFY = FALSE)
+  edges <- edges[vapply(edges, length, integer(1)) >= 2L]
+  if (length(edges) == 0L) {
+    edges <- list(sort(sample.int(n_nodes, edge_size_range[1])))
   }
-
-  env$write_csv <- function(module) {
-    if (length(env$rows) == 0L) return(invisible(NULL))
-    df <- do.call(rbind, env$rows)
-    dir.create("../../tmp", showWarnings = FALSE, recursive = TRUE)
-    path <- sprintf("../../tmp/%s_equivalence_report.csv", module)
-    write.csv(df, path, row.names = FALSE)
-    message(sprintf("Equivalence report: %s (%d checks)", path, sum(df$n_checked)))
-  }
-
-  env$write_cvs <- function(module, test_file = NULL) {
-    if (length(env$rows) == 0L) return(invisible(NULL))
-    df <- do.call(rbind, env$rows)
-
-    # Build vitest-compatible assertion results
-    assertions <- lapply(seq_len(nrow(df)), function(i) {
-      r <- df[i, ]
-      passed <- r$n_failed == 0
-      title <- sprintf("%s: %s delta=%.2e", r$func, r$config, r$max_abs_err)
-      list(
-        ancestorTitles = list(paste0(module, " equivalence")),
-        title = title,
-        fullName = sprintf("%s equivalence > %s", module, title),
-        status = if (passed) "passed" else "failed",
-        duration = 0,
-        failureMessages = if (passed) list() else list(
-          sprintf("max delta %.2e >= tolerance, %d/%d values failed",
-                  r$max_abs_err, r$n_failed, r$n_checked)
-        ),
-        `_cvs` = list(
-          delta = r$max_abs_err,
-          tolerance = 1e-10,
-          rFunction = r$func,
-          rPackage = r$reference,
-          module = module,
-          target = "nestimate"
-        )
-      )
-    })
-
-    n_passed <- sum(df$n_failed == 0)
-    n_failed <- sum(df$n_failed > 0)
-    result <- list(
-      numTotalTestSuites = 1L,
-      numPassedTestSuites = if (n_failed == 0) 1L else 0L,
-      numFailedTestSuites = if (n_failed > 0) 1L else 0L,
-      numTotalTests = nrow(df),
-      numPassedTests = n_passed,
-      numFailedTests = n_failed,
-      testResults = list(list(
-        name = if (!is.null(test_file)) test_file
-               else sprintf("tests/testthat/test-equiv-%s.R", module),
-        assertionResults = assertions
-      ))
-    )
-
-    inbox <- file.path("..", "..", "..", "validation", "data", "inbox")
-    if (!dir.exists(inbox)) inbox <- "../../validation/data/inbox"
-    if (!dir.exists(inbox)) {
-      # Try absolute path
-      inbox <- "/Users/mohammedsaqr/Documents/Github/validation/data/inbox"
-    }
-    if (dir.exists(inbox)) {
-      ts <- format(Sys.time(), "%Y%m%dT%H%M%S")
-      path <- file.path(inbox, sprintf("nestimate-%s-%s.json", module, ts))
-      writeLines(jsonlite::toJSON(result, auto_unbox = TRUE, pretty = TRUE), path)
-      message(sprintf("CVS report: %s", path))
-    }
-  }
-
-  env$summary <- function() {
-    if (length(env$rows) == 0L) return("No results logged.")
-    df <- do.call(rbind, env$rows)
-    sprintf("Total: %d values checked, %d failed, max delta %.2e",
-            sum(df$n_checked), sum(df$n_failed), max(df$max_abs_err))
-  }
-
-  env
+  inc <- matrix(0L, nrow = n_nodes, ncol = length(edges),
+                dimnames = list(nodes, paste0("e", seq_along(edges))))
+  for (j in seq_along(edges)) inc[edges[[j]], j] <- 1L
+  list(incidence = inc, hyperedges = edges, nodes = nodes)
 }

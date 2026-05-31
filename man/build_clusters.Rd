@@ -16,6 +16,7 @@ build_clusters(
   q = 2L,
   p = 0.1,
   covariates = NULL,
+  estimator = c("auto", "firth", "multinom", "chisq"),
   ...
 )
 }
@@ -49,14 +50,25 @@ Around Medoids, or a hierarchical method: \code{"ward.D2"},
 Default: \code{"pam"}.}
 
 \item{na_syms}{Character vector. Symbols treated as missing values.
-Default: \code{c("*", "\%")}.}
+Default: \code{c("*", "\%")}.
+
+\strong{Missing-value distance rule:} after symbols are converted to
+\code{NA}, missing values are encoded as a single comparable sentinel
+state -- \emph{not} pairwise-deleted. Two missing values in the same
+position match (distance contribution 0); a missing value paired with
+any observed state mismatches (distance contribution 1 for Hamming,
+etc.). This is the conventional behaviour for aligned sequence
+matrices because pairwise deletion would change the effective length
+of every pair and break the metric. If you want pairwise deletion or
+a different missing-value semantic, drop or recode the missing cells
+before passing the data in.}
 
 \item{weighted}{Logical. Apply exponential decay weighting to Hamming
 distance positions? Only valid when \code{dissimilarity = "hamming"}.
 Default: \code{FALSE}.}
 
-\item{lambda}{Numeric. Decay rate for weighted Hamming. Higher values
-weight earlier positions more strongly. Default: 1.}
+\item{lambda}{Numeric. Non-negative decay rate for weighted Hamming.
+Higher values weight earlier positions more strongly. Default: 1.}
 
 \item{seed}{Integer or NULL. Random seed for reproducibility. Default:
 \code{NULL}.}
@@ -64,25 +76,44 @@ weight earlier positions more strongly. Default: 1.}
 \item{q}{Integer. Size of q-grams for \code{"qgram"}, \code{"cosine"},
 and \code{"jaccard"} distances. Default: \code{2L}.}
 
-\item{p}{Numeric. Winkler prefix penalty for Jaro-Winkler distance
-(clamped to 0--0.25). Default: \code{0.1}.}
+\item{p}{Numeric. Winkler prefix penalty for Jaro-Winkler distance.
+Must be between 0 and 0.25. Default: \code{0.1}.}
 
 \item{covariates}{Optional. Post-hoc covariate analysis of cluster
-membership via multinomial logistic regression. Accepts:
+membership. Accepts:
 \describe{
-\item{formula}{\code{~ Age + Gender}}
-\item{character vector}{\code{c("Age", "Gender")}}
-\item{string}{\code{"Age + Gender"}}
-\item{data.frame}{All columns used as covariates}
-\item{NULL}{No covariate analysis (default)}
+\item{string}{Single column name, e.g. \code{"Age"}. Resolved
+against \code{x$metadata} (and \code{x$data}) for
+\code{netobject} or \code{cograph_network} input.}
+\item{character vector}{\code{c("Age", "Gender")}, same lookup.}
+\item{formula}{\code{~ Age + Gender}, same lookup; supports
+\code{"Age + Gender"} string form too.}
+\item{data.frame}{All columns used as covariates verbatim;
+must have one row per sequence.}
+\item{NULL}{No covariate analysis (default).}
 }
-Covariates are looked up in \code{netobject$metadata} or
-non-sequence columns of the input data. For \code{tna} and
-\code{cograph_network} inputs, pass covariates as a data.frame.
-Results stored in \code{$covariates}. Requires the \pkg{nnet}
-package.}
+For \code{netobject} or \code{cograph_network} input, names are
+resolved against \code{$metadata} first and then non-state columns
+of \code{$data}, so a typical call looks like
+\code{build_clusters(net, k = 3, covariates = "session_label")}
+without pre-extracting a data.frame. \code{tna} input requires the
+data.frame form. Results are stored in \code{$covariates}.}
 
-\item{...}{Additional arguments (currently unused).}
+\item{estimator}{Multinomial logit fitter for the covariate analysis.
+\code{"auto"} (default) inspects the cluster x covariate cross-tab
+and falls back to \code{"firth"} only when any cell has fewer than
+5 observations (quasi-complete separation risk); otherwise uses
+the much faster \code{"multinom"}. \code{"firth"} forces Firth's
+penalised likelihood via \code{brglm2::brmultinom} -- bias-reduced
+and finite under separation, but ~200x slower than multinom on
+well-conditioned data. \code{"multinom"} forces classical ML via
+\code{nnet::multinom}; warns because rare-cell separation produces
+astronomical ORs with degenerate CIs (silent failure).
+\code{"chisq"} runs WeightedCluster-style descriptive tests
+(chi-square + Cramer's V + standardized adjusted residuals for
+factors; Kruskal-Wallis + eta-squared for numerics).}
+
+\item{...}{Unsupported. Supplying unused arguments raises an error.}
 }
 \value{
 An object of class \code{"net_clustering"} containing:

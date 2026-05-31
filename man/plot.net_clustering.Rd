@@ -4,7 +4,12 @@
 \alias{plot.net_clustering}
 \title{Plot Sequence Clustering Results}
 \usage{
-\method{plot}{net_clustering}(x, type = c("silhouette", "mds", "heatmap", "predictors"), ...)
+\method{plot}{net_clustering}(
+  x,
+  type = c("silhouette", "mds", "heatmap", "predictors"),
+  combined = TRUE,
+  ...
+)
 }
 \arguments{
 \item{x}{A \code{net_clustering} object.}
@@ -14,7 +19,12 @@ silhouette bars), \code{"mds"} (2D MDS projection), or
 \code{"heatmap"} (distance matrix heatmap ordered by cluster).
 Default: \code{"silhouette"}.}
 
-\item{...}{Additional arguments (currently unused).}
+\item{combined}{Logical. For \code{type = "predictors"} only: when
+\code{TRUE} (default), covariate forest panels are combined into a
+single faceted plot; when \code{FALSE}, a list of separate ggplots is
+returned.}
+
+\item{...}{Unsupported. Supplying unused arguments raises an error.}
 }
 \value{
 A \code{ggplot} object (invisibly).

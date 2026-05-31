@@ -9,7 +9,7 @@ wtna(
   method = c("transition", "cooccurrence", "both"),
   type = c("frequency", "relative"),
   codes = NULL,
-  window_size = 1L,
+  window_size = 3L,
   mode = c("non-overlapping", "overlapping"),
   actor = NULL
 )
@@ -22,13 +22,19 @@ wtna(
 two networks). Default: \code{"transition"}.}
 
 \item{type}{Character. Output type: \code{"frequency"} (raw counts) or
-\code{"relative"} (row-normalized probabilities). Default: \code{"frequency"}.}
+\code{"relative"} (row-normalized probabilities). Default: \code{"frequency"}.
+Note that \code{type = "relative"} applied to \code{method = "cooccurrence"}
+produces an asymmetric matrix (conditional co-occurrence given row state),
+not a symmetric undirected weight matrix — use \code{type = "frequency"}
+if symmetric co-occurrence counts are required.}
 
 \item{codes}{Character vector or NULL. Names of the one-hot columns to use.
 If NULL, auto-detects binary columns. Default: NULL.}
 
-\item{window_size}{Integer. Number of consecutive rows to aggregate per
-window. Default: 1 (no windowing).}
+\item{window_size}{Integer (>= 1). Number of consecutive rows to aggregate
+per window. Default: 3 (windowed pairwise between-window counting). Set
+\code{window_size = 1} for ordinary consecutive (t -> t+1) transitions
+with no windowing.}
 
 \item{mode}{Character. Window mode: \code{"non-overlapping"} (fixed, separate
 windows) or \code{"overlapping"} (rolling, step = 1).

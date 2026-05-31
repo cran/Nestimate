@@ -19,6 +19,10 @@
 #' and custom estimators), the full estimator is called on resampled rows
 #' each iteration.
 #'
+#' If a transition network contains only one sequence, the function warns that
+#' such a network is not recommended for bootstrap or other confirmatory
+#' testing.
+#'
 #' @param x A \code{netobject} from \code{\link{build_network}}.
 #'   The data, method, params, scaling, threshold, and level are all
 #'   extracted from this object.
@@ -35,6 +39,10 @@
 #'   \code{inference = "threshold"}. If NULL, defaults to the 10th
 #'   percentile of absolute original edge weights.
 #' @param seed Integer or NULL. RNG seed for reproducibility.
+#' @param boundary Character. Comparison rule when computing the consistency-range
+#'   p-value. \code{"inclusive"} (default, tna-compatible) counts iterations
+#'   that meet the bound (\eqn{\le} / \eqn{\ge}); \code{"strict"} counts only
+#'   iterations strictly outside (\eqn{<} / \eqn{>}).
 #'
 #' @return An object of class \code{"net_bootstrap"} containing:
 #' \describe{
@@ -79,7 +87,9 @@ bootstrap_network <- function(x,
                               inference = "stability",
                               consistency_range = c(0.75, 1.25),
                               edge_threshold = NULL,
-                              seed = NULL) {
+                              seed = NULL,
+                              boundary = c("inclusive", "strict")) {
+  boundary <- match.arg(boundary)
 
   # ---- wtna_mixed dispatch: bootstrap both components ----
   if (inherits(x, "wtna_mixed")) {
@@ -88,11 +98,13 @@ bootstrap_network <- function(x,
       transition   = bootstrap_network(x$transition,   iter = iter,
                                        ci_level = ci_level, inference = inference,
                                        consistency_range = consistency_range,
-                                       edge_threshold = edge_threshold),
+                                       edge_threshold = edge_threshold,
+                                       boundary = boundary),
       cooccurrence = bootstrap_network(x$cooccurrence, iter = iter,
                                        ci_level = ci_level, inference = inference,
                                        consistency_range = consistency_range,
-                                       edge_threshold = edge_threshold)
+                                       edge_threshold = edge_threshold,
+                                       boundary = boundary)
     )
     class(result) <- "wtna_boot_mixed"
     return(result)
@@ -109,7 +121,8 @@ bootstrap_network <- function(x,
       bootstrap_network(net, iter = iter, ci_level = ci_level,
                         inference = inference,
                         consistency_range = consistency_range,
-                        edge_threshold = edge_threshold, seed = seed)
+                        edge_threshold = edge_threshold, seed = seed,
+                        boundary = boundary)
     })
     class(results) <- c("net_bootstrap_group", "list")
     return(results)
@@ -123,6 +136,30 @@ bootstrap_network <- function(x,
   if (is.null(x$data)) {
     stop("netobject does not contain $data. Rebuild with build_network().",
          call. = FALSE)
+  }
+
+  # Note: edgelist-derived data has no actor / session grouping, so
+  # row-resampling uses individual transitions as the unit -- which may
+  # under-represent within-actor correlation. Case-dropping and actor-
+  # level sequence reconstruction are both more robust alternatives.
+  if (identical(attr(x$data, "source"), "edgelist")) {
+    warning(
+      "Bootstrapping a network built from edgelist input (no per-actor ",
+      "sequence data). Each transition is treated as an independent case, ",
+      "which has limitations when transitions are correlated within ",
+      "actors or sessions.\n",
+      "Better alternatives:\n",
+      "  * Rebuild as a sequence-based network: build_network(data, ",
+      "method = \"tna\", actor = <...>, action = <...>, time = <...>) ",
+      "then feed the result to build_mcml(). This reconstructs per-actor ",
+      "sequences (via prepare()) so bootstrap and case-dropping operate at ",
+      "the actor level natively.\n",
+      "  * Use case-dropping rather than bootstrap:\n",
+      "      - casedrop_reliability(x)  - model-level edge-weight reliability\n",
+      "      - centrality_stability(x)  - per-centrality CS coefficient\n",
+      "  * permutation_test(x, y) for comparing two networks.",
+      call. = FALSE
+    )
   }
 
   data <- x$data
@@ -166,8 +203,10 @@ bootstrap_network <- function(x,
            "For wtna/cna networks, use wtna() directly instead of ",
            "build_network(method='cna').", call. = FALSE)
     }
+    transition_data <- .resampling_transition_data(data, x$metadata, params)
+    .warn_single_sequence_confirmatory_network(transition_data, params)
     boot_matrices <- .bootstrap_transition(
-      data = data, method = method, params = params, states = states,
+      data = transition_data, method = method, params = params, states = states,
       scaling = scaling, threshold = threshold, iter = iter
     )
   } else {
@@ -199,7 +238,8 @@ bootstrap_network <- function(x,
     ci_level = ci_level,
     inference = inference,
     consistency_range = consistency_range,
-    edge_threshold = edge_threshold
+    edge_threshold = edge_threshold,
+    boundary = boundary
   )
 
   # ---- Build summary data frame ----
@@ -260,6 +300,54 @@ bootstrap_network <- function(x,
 }
 
 
+#' Reattach grouping columns needed by transition resampling
+#' @noRd
+.resampling_transition_data <- function(data, metadata, params) {
+  if (!is.data.frame(data) || !is.data.frame(metadata)) return(data)
+  needed <- unique(c(params$actor, params$id, params$id_col))
+  needed <- needed[!is.na(needed) & nzchar(needed)]
+  add <- setdiff(intersect(needed, names(metadata)), names(data))
+  if (length(add) == 0L) return(data)
+  cbind(metadata[, add, drop = FALSE], data)
+}
+
+
+#' Warn when confirmatory testing is requested for one sequence
+#' @noRd
+.warn_single_sequence_confirmatory_network <- function(data, params,
+                                                       label = NULL) {
+  n_seq <- .transition_resampling_n_sequences(data, params)
+  if (!is.na(n_seq) && n_seq <= 1L) {
+    prefix <- if (is.null(label)) "" else paste0(label, ": ")
+    warning(
+      prefix,
+      "A network with one long sequence is not recommended and can't be ",
+      "validated using bootstrap and other confirmatory testings.",
+      call. = FALSE
+    )
+  }
+  invisible(n_seq)
+}
+
+
+#' @noRd
+.transition_resampling_n_sequences <- function(data, params) {
+  if (!is.data.frame(data)) {
+    return(NA_integer_)
+  }
+  actor <- .param_get(params, "actor") %||% .param_get(params, "id") %||%
+    .param_get(params, "id_col")
+  if (!is.null(actor) && all(actor %in% names(data))) {
+    if (length(actor) == 1L) {
+      return(length(unique(data[[actor]])))
+    }
+    return(length(unique(interaction(data[, actor, drop = FALSE],
+                                     drop = TRUE))))
+  }
+  nrow(data)
+}
+
+
 # ---- Transition fast path ----
 
 #' Bootstrap transition networks via pre-computed per-sequence counts
@@ -278,7 +366,7 @@ bootstrap_network <- function(x,
   boot_flat <- vapply(seq_len(iter), function(i) {
     idx <- sample.int(n_seq, n_seq, replace = TRUE)
     boot_counts <- colSums(trans_2d[idx, , drop = FALSE])
-    # Inline post-processing (no dimnames — we flatten immediately)
+    # Inline post-processing (no dimnames -- we flatten immediately)
     mat <- matrix(boot_counts, n_states, n_states, byrow = TRUE)
     if (is_relative) {
       rs <- rowSums(mat)
@@ -305,8 +393,8 @@ bootstrap_network <- function(x,
 #' @noRd
 .precompute_per_sequence <- function(data, method, params, states) {
   # Determine format (mirrors estimator dispatch)
-  format <- params$format %||% "auto"
-  action <- params$action %||% "Action"
+  format <- .param_get(params, "format", "auto")
+  action <- .param_get(params, "action", "Action")
 
   if (format == "auto") {
     format <- if (action %in% names(data)) "long" else "wide"
@@ -320,9 +408,49 @@ bootstrap_network <- function(x,
     )
   }
 
-  id_col <- params$id %||% params$id_col
+  id_col <- .param_get(params, "id") %||% .param_get(params, "id_col")
+  codes <- .param_get(params, "codes")
+  if (identical(format, "onehot") || !is.null(codes)) {
+    return(.precompute_per_sequence_onehot(data, method, params, states))
+  }
   cols <- params$cols
   .precompute_per_sequence_wide(data, method, cols, id_col, states)
+}
+
+
+#' Pre-compute per-sequence counts from one-hot format
+#' @noRd
+.precompute_per_sequence_onehot <- function(data, method, params, states) {
+  codes <- .param_get(params, "codes", states)
+  actor <- .param_get(params, "actor")
+  window_size <- .param_get(params, "window_size", 1L)
+  mode <- .param_get(params, "mode", "non-overlapping")
+  wtna_method <- if (method == "co_occurrence") "cooccurrence" else "transition"
+  n_states <- length(states)
+  nbins <- n_states * n_states
+
+  groups <- if (is.null(actor)) {
+    list(data)
+  } else if (length(actor) == 1L) {
+    split(data, data[[actor]], drop = TRUE)
+  } else {
+    split(data, interaction(data[, actor, drop = FALSE], drop = TRUE),
+          drop = TRUE)
+  }
+
+  rows <- lapply(groups, function(g) {
+    mat <- .estimator_wtna_core(
+      g, codes = codes, window_size = window_size, mode = mode,
+      actor = NULL, wtna_method = wtna_method, type = "frequency"
+    )$matrix
+    mat <- mat[states, states, drop = FALSE]
+    as.vector(t(mat))
+  })
+
+  if (length(rows) == 0L) {
+    return(matrix(numeric(0), nrow = 0L, ncol = nbins))
+  }
+  do.call(rbind, rows)
 }
 
 
@@ -449,7 +577,8 @@ bootstrap_network <- function(x,
 #' @noRd
 .compute_bootstrap_stats <- function(boot_matrices, original_matrix, states,
                                      directed, iter, ci_level, inference,
-                                     consistency_range, edge_threshold) {
+                                     consistency_range, edge_threshold,
+                                     boundary = "inclusive") {
   n_states <- length(states)
   orig_flat <- as.vector(original_matrix)
 
@@ -475,8 +604,13 @@ bootstrap_network <- function(x,
                    orig_flat * consistency_range[2])
     cr_high <- pmax(orig_flat * consistency_range[1],
                     orig_flat * consistency_range[2])
-    below <- sweep(bm, 2, cr_low, "<")
-    above <- sweep(bm, 2, cr_high, ">")
+    # boundary = "inclusive" (default, tna-compatible): <=, >= count an
+    # iteration that lands EXACTLY on the band edge as outside the band.
+    # boundary = "strict": <, > count only iterations strictly outside.
+    cmp_lo <- if (identical(boundary, "strict")) "<"  else "<="
+    cmp_hi <- if (identical(boundary, "strict")) ">"  else ">="
+    below <- sweep(bm, 2, cr_low,  cmp_lo)
+    above <- sweep(bm, 2, cr_high, cmp_hi)
     p_counts <- colSums(below | above)
     p_values <- (p_counts + 1) / (n_valid + 1)
   } else {
@@ -688,7 +822,7 @@ print.net_bootstrap_group <- function(x, ...) {
     c(total = b$original$n_edges, sig = b$model$n_edges)
   }, numeric(2L))
 
-  # Helper: make edge keys "from→to" from a summary df
+  # Helper: make edge keys "from->to" from a summary df
   .edge_keys <- function(s) {
     if (is.null(s) || nrow(s) == 0L) return(character(0L))
     idx <- which(s$sig)
@@ -699,6 +833,17 @@ print.net_bootstrap_group <- function(x, ...) {
   # Shared significant edges (present in all groups)
   sig_keys  <- lapply(grp_names, function(nm) .edge_keys(x[[nm]]$summary))
   shared    <- Reduce(intersect, sig_keys)
+
+  # Detect disjoint state spaces (e.g. mcml: macro carries cluster
+  # names, each within-cluster carries different code names). When the
+  # union of every group's FULL edge set has empty pairwise overlap,
+  # the "shared edges" metric is meaningless -- suppress its line.
+  full_keys <- lapply(grp_names, function(nm) {
+    s <- x[[nm]]$summary
+    if (is.null(s) || nrow(s) == 0L) character(0L)
+    else paste0(s$from, "->", s$to)
+  })
+  has_shared_space <- length(Reduce(intersect, full_keys)) > 0L
 
   # Top shared edges table first
   if (length(shared) > 0L) {
@@ -731,7 +876,9 @@ print.net_bootstrap_group <- function(x, ...) {
     cat(sprintf("  %-20s  %d sig / %d total\n",
                 nm, grp_stats["sig", nm], grp_stats["total", nm]))
   }
-  cat(sprintf("  Shared (all groups)   %d edges\n", length(shared)))
+  if (has_shared_space) {
+    cat(sprintf("  Shared (all groups)   %d edges\n", length(shared)))
+  }
 
   invisible(x)
 }
@@ -834,5 +981,3 @@ summary.wtna_boot_mixed <- function(object, ...) {
     cooccurrence = summary(object$cooccurrence)
   )
 }
-
-

@@ -10,8 +10,10 @@
 #' renders the result as a stacked area (default) or stacked bar chart.
 #' Accepts the same inputs as \code{\link{sequence_plot}}.
 #'
-#' @param x Wide-format sequence data (\code{data.frame} or \code{matrix})
-#'   or a \code{net_clustering}. When a \code{net_clustering} is passed,
+#' @param x Wide-format sequence data. Accepts the same inputs as
+#'   \code{\link{sequence_plot}}: \code{data.frame}, \code{matrix},
+#'   \code{netobject}, \code{net_clustering}, \code{netobject_group},
+#'   \code{net_mmm}, or \code{tna}. When clustering info is available,
 #'   one panel is drawn per cluster.
 #' @param group Optional grouping vector (length \code{nrow(x)}) producing
 #'   one panel per group. Ignored if \code{x} is a \code{net_clustering}.
@@ -38,6 +40,13 @@
 #' @param tick Show every Nth x-axis label. \code{NULL} = auto.
 #' @param ncol,nrow Facet grid dimensions. \code{NULL} = auto:
 #'   \code{ncol = ceiling(sqrt(G))}, \code{nrow = ceiling(G / ncol)}.
+#'   Ignored when \code{combined = FALSE}.
+#' @param combined When \code{TRUE} (default), groups are arranged on one
+#'   figure via \code{graphics::layout()}. When \code{FALSE}, each group
+#'   is drawn on its own page (one full-size figure per group, with its
+#'   own legend). Useful when you want each group at full size in knitr
+#'   (\code{fig.show = "asis"}) or to save each as a separate file.
+#'   Single-group calls (\code{G == 1}) ignore this argument.
 #' @param legend Legend position: \code{"right"} (default),
 #'   \code{"bottom"}, or \code{"none"}.
 #' @param legend_size Legend text size. \code{NULL} (default) auto-scales
@@ -74,6 +83,7 @@ distribution_plot <- function(x,
                               tick           = NULL,
                               ncol           = NULL,
                               nrow           = NULL,
+                              combined       = TRUE,
                               legend         = c("right", "bottom", "none"),
                               legend_size    = NULL,
                               legend_title   = NULL,
@@ -88,8 +98,9 @@ distribution_plot <- function(x,
   if (!is.null(ylab)) y_label    <- ylab
 
   stopifnot(
-    is.logical(na),    length(na)    == 1L,
-    is.logical(frame), length(frame) == 1L
+    is.logical(na),       length(na)       == 1L,
+    is.logical(frame),    length(frame)    == 1L,
+    is.logical(combined), length(combined) == 1L
   )
 
   if (interactive() && (!is.null(width) || !is.null(height))) {
@@ -103,10 +114,11 @@ distribution_plot <- function(x,
   stopifnot(is.numeric(legend_size), length(legend_size) == 1L,
             legend_size > 0)
 
-  if (inherits(x, "net_clustering")) {
-    group <- x$assignments
-    x <- x$data
-  }
+  # Extract data and group from various input types
+  extracted <- .extract_seqplot_input(x, group)
+  x <- extracted$data
+  group <- extracted$group
+
   if (!is.null(group)) {
     stopifnot(length(group) == nrow(x))
     group <- as.factor(group)
@@ -173,7 +185,8 @@ distribution_plot <- function(x,
                         0.3, 0.3,
                         if (legend == "right")  oma[["oma_r"]] else 0.3))
 
-  if (nrow * ncol > 1L) {
+  use_layout <- combined && nrow * ncol > 1L
+  if (use_layout) {
     layout_mat <- matrix(c(seq_len(G), integer(nrow * ncol - G)),
                          nrow = nrow, ncol = ncol, byrow = TRUE)
     graphics::layout(layout_mat)
@@ -186,6 +199,14 @@ distribution_plot <- function(x,
   invisible(lapply(seq_len(G), function(g_idx) {
     g   <- group_levels[g_idx]
     mat <- plot_mats[[g_idx]]
+    # When combined = FALSE, restore oma per page so each group's legend
+    # has room (graphics::layout() preserves oma for the whole page; with
+    # no layout, every plot.new() starts a fresh page that resets oma).
+    if (!combined && g_idx > 1L) {
+      graphics::par(oma = c(if (legend == "bottom") oma[["oma_b"]] else 0.3,
+                            0.3, 0.3,
+                            if (legend == "right")  oma[["oma_r"]] else 0.3))
+    }
     graphics::par(mar = c(mar_bottom, 4, mar_top, 1))
     graphics::plot.new()
     graphics::plot.window(xlim = c(0.5, n_cols + 0.5),
@@ -234,13 +255,19 @@ distribution_plot <- function(x,
       graphics::mtext(panel_title, side = 3, line = 0.5, font = 2,
                       cex = if (G > 1L) 0.9 else 1)
     }
+    # In combined = FALSE mode, draw a legend on each page (layout() is not
+    # used, so the post-loop draw would only land on the last page).
+    if (!combined && legend != "none") {
+      .draw_legend_in_oma(legend_labels, full_palette, legend, legend_size,
+                          legend_ncol, legend_title, legend_border, legend_bty)
+    }
   }))
-  if (G > 1L && !is.null(main)) {
+  if (combined && G > 1L && !is.null(main)) {
     graphics::mtext(main, side = 3, line = 1.5, font = 2,
                     outer = TRUE, cex = 1)
   }
 
-  if (legend != "none") {
+  if (combined && legend != "none") {
     .draw_legend_in_oma(legend_labels, full_palette, legend, legend_size,
                         legend_ncol, legend_title, legend_border, legend_bty)
   }

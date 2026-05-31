@@ -62,7 +62,7 @@ sequence_plot(trajectories, type = "index", row_gap = 0.25,
               main = "index with row_gap = 0.25")
 
 ## ----i-cluster----------------------------------------------------------------
-cl <- build_clusters(as.data.frame(trajectories), k = 3L,
+cl <- build_clusters(trajectories, k = 3L,
                    dissimilarity = "hamming", method = "ward.D2")
 sequence_plot(cl, type = "index",
               main = "index faceted by build_clusters(k = 3)")
@@ -92,25 +92,25 @@ sequence_plot(trajectories, type = "distribution", na = FALSE,
 sequence_plot(cl, type = "distribution",
               main = "distribution by cluster (k = 3)")
 
-## ----cheatsheet, eval = FALSE-------------------------------------------------
-# # Always explore first with the default:
-# sequence_plot(trajectories)
-# 
-# # Zoom in on cluster structure:
-# sequence_plot(trajectories, k = 3)
-# sequence_plot(trajectories, sort = "hamming", k = 4)
-# 
-# # Compare cluster compositions:
-# cl <- build_clusters(as.data.frame(trajectories), k = 3,
-#                    dissimilarity = "hamming", method = "ward.D2")
-# sequence_plot(cl, type = "index")
-# sequence_plot(cl, type = "distribution")
-# 
-# # Polish for a paper:
-# sequence_plot(trajectories, k = 3,
-#               state_colors = c("#2a9d8f", "#e9c46a", "#e76f51"),
-#               legend_title = "Engagement",
-#               legend = "bottom",
-#               cell_border = "grey70",
-#               main = "Student engagement trajectories")
+## ----cheatsheet---------------------------------------------------------------
+# Always explore first with the default:
+sequence_plot(trajectories)
+
+# Zoom in on cluster structure:
+sequence_plot(trajectories, k = 3)
+sequence_plot(trajectories, sort = "hamming", k = 4)
+
+# Compare cluster compositions:
+cl <- build_clusters(trajectories, k = 3,
+                   dissimilarity = "hamming", method = "ward.D2")
+sequence_plot(cl, type = "index")
+sequence_plot(cl, type = "distribution")
+
+# Polish for a paper:
+sequence_plot(trajectories, k = 3,
+              state_colors = c("#2a9d8f", "#e9c46a", "#e76f51"),
+              legend_title = "Engagement",
+              legend = "bottom",
+              cell_border = "grey70",
+              main = "Student engagement trajectories")
 

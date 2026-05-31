@@ -18,13 +18,22 @@ cluster_network(data, k, cluster_by = "pam", dissimilarity = "hamming", ...)
 \code{"single"}, \code{"mcquitty"}, \code{"median"}, \code{"centroid"}),
 or \code{"mmm"} for Mixed Markov Model clustering. Default: \code{"pam"}.}
 
-\item{dissimilarity}{Character. Distance metric for sequence clustering
-(ignored when \code{cluster_by = "mmm"}). Default: \code{"hamming"}.}
+\item{dissimilarity}{Character. Distance metric for sequence clustering.
+Only valid when \code{cluster_by != "mmm"}. Default: \code{"hamming"}.}
 
-\item{...}{Passed directly to \code{\link{build_network}}. Use
-\code{method} to specify the network type; \code{threshold},
-\code{scaling}, and all other \code{build_network} arguments are
-supported.}
+\item{...}{Routed to two stages. For distance clustering
+(\code{cluster_by != "mmm"}), \code{\link{build_clusters}} arguments
+\code{na_syms}, \code{weighted}, \code{lambda}, \code{seed}, \code{q},
+\code{p}, and \code{covariates} are intercepted and forwarded to the
+clusterer; recognised network-estimation arguments flow to
+\code{\link{build_network}}. Unknown arguments error before either stage
+is run. When
+\code{cluster_by = "mmm"}, the recognised \code{\link{build_mmm}}
+arguments (\code{n_starts}, \code{max_iter}, \code{tol}, \code{smooth},
+\code{seed}, \code{covariates}) are intercepted instead, and the rest
+flows to \code{build_network}. In both modes, when \code{data} is a
+\code{netobject}, its \code{build_args} are merged into the
+\code{build_network} side (caller's explicit values take precedence).}
 }
 \value{
 A \code{netobject_group}.
@@ -45,6 +54,7 @@ seqs <- data.frame(V1 = c("A","B","C","A","B"), V2 = c("B","C","A","B","A"),
 grp <- cluster_network(seqs, k = 2)
 grp
 \donttest{
+set.seed(1)
 seqs <- data.frame(
   V1 = sample(LETTERS[1:4], 50, TRUE), V2 = sample(LETTERS[1:4], 50, TRUE),
   V3 = sample(LETTERS[1:4], 50, TRUE), V4 = sample(LETTERS[1:4], 50, TRUE)

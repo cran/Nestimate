@@ -8,9 +8,16 @@ build_mcml(
   x,
   clusters = NULL,
   method = c("sum", "mean", "median", "max", "min", "density", "geomean"),
-  type = c("tna", "frequency", "cooccurrence", "semi_markov", "raw"),
+  type = c("tna", "frequency", "cooccurrence", "raw"),
   directed = TRUE,
-  compute_within = TRUE
+  compute_within = TRUE,
+  actor = NULL,
+  action = NULL,
+  time = NULL,
+  order = NULL,
+  session = NULL,
+  time_threshold = 900,
+  labels = NULL
 )
 }
 \arguments{
@@ -44,20 +51,59 @@ extracted from the data.
 Example: \code{c("A","A","B","B")}}
 \item{column name string}{For edge list data.frames, the name of a
 column containing cluster labels. The mapping is built from unique
-(node, group) pairs in both from and to columns.}
+(node, group) pairs in both from and to columns. \strong{Limitation:}
+this mode assigns the row's group label to \emph{both} endpoints, so
+it only makes sense for edge lists where source and target nodes
+always share the same group (within-group edges only). For general
+edge lists where a single node may be source in some rows and target
+in others, or where source and target belong to different groups,
+pass an explicit named list (\code{list(G1 = c("N1","N2"), ...)})
+or a two-column data frame \code{data.frame(node, group)} instead.}
 \item{NULL}{Auto-detect from \code{netobject$nodes} or
 \code{$node_groups} (same logic as \code{\link{cluster_summary}}).}
 }}
 
 \item{method}{Aggregation method for combining edge weights: "sum", "mean",
-"median", "max", "min", "density", "geomean". Default "sum".}
+"median", "max", "min", "density", "geomean". Default "sum". For raw
+sequence/event-log inputs the function is counting observed transitions,
+so \code{"sum"} is the only interpretation that preserves the count
+semantics -- the other methods are useful when aggregating
+weighted edge lists or pre-existing weight matrices, where each row
+already represents a measurement rather than a single observation.}
 
-\item{type}{Post-processing: "tna" (row-normalize), "cooccurrence"
-(symmetrize), "semi_markov", or "raw". Default "tna".}
+\item{type}{Post-processing of the aggregated count matrix. One of:
+\describe{
+\item{"tna"}{(default) Row-normalize so each row sums to 1
+(first-order Markov transition probabilities).}
+\item{"raw"}{Return the un-normalized count matrix.}
+\item{"frequency"}{Explicit alias of \code{"raw"} -- identical raw
+count construction (kept as a synonym for callers using
+frequency-network terminology).}
+\item{"cooccurrence"}{Symmetrize the matrix (undirected
+co-occurrence).}
+}
+\code{"semi_markov"} is \emph{not} accepted: the package does not
+implement a semi-Markov / holding-time construction, so passing it
+errors rather than silently aliasing \code{"tna"}.}
 
-\item{directed}{Logical. Treat as directed network? Default TRUE.}
+\item{directed}{Logical. If \code{TRUE} (default), treat transitions as
+directed. If \code{FALSE}, symmetrize sequence- and edge-derived weights
+before returning raw/frequency weights or before row-normalizing
+transition probabilities.}
 
 \item{compute_within}{Logical. Compute within-cluster matrices? Default TRUE.}
+
+\item{actor, action, time, order, session, time_threshold}{Long-format event-log
+shortcut. When \code{action} is supplied on a data.frame input, the data
+is passed through \code{prepare()} to derive a wide sequence, which is
+then routed to the existing sequence path. Behaves identically to
+\code{prepare(...) |> build_network() |> build_mcml()}.}
+
+\item{labels}{Optional name -> label remap applied to within-cluster nodes
+(the macro layer is left untouched because its labels are cluster
+names). Accepts a 2-column data.frame \code{(name, label)}, a named
+character vector \code{c(name = "label")}, or a named list. Unmapped
+names pass through unchanged.}
 }
 \value{
 A \code{cluster_summary} object with \code{meta$source = "transitions"},

@@ -5,12 +5,194 @@
 #' @importFrom utils tail head
 NULL
 
+# Polyfill `%||%` for R < 4.4. Base R 4.4 added it; before then it lived only
+# in rlang/purrr. Many internal call sites already use it. Defined unconditionally
+# because Nestimate's namespace looks here first; base's version on R >= 4.4 is
+# functionally identical, so this is a harmless shadow.
+`%||%` <- function(a, b) if (is.null(a)) b else a
+
+
+#' Coerce a labels argument to a named character lookup.
+#' Accepts a 2-col data.frame `(name, label)`, a named character vector,
+#' or a named list. Returns a named character vector or NULL on empty input.
+#' @noRd
+.coerce_label_map <- function(labels) {
+  if (is.null(labels)) return(NULL)
+  if (is.data.frame(labels)) {
+    if (ncol(labels) < 2L) {
+      stop("`labels` data.frame must have at least two columns.",
+           call. = FALSE)
+    }
+    map <- setNames(as.character(labels[[2]]), as.character(labels[[1]]))
+    return(.validate_label_map(map))
+  }
+  if (is.list(labels) && !is.null(names(labels))) {
+    return(.validate_label_map(unlist(labels)))
+  }
+  if (is.character(labels) && !is.null(names(labels))) {
+    return(.validate_label_map(labels))
+  }
+  stop("`labels` must be a named character vector, named list, or 2-column ",
+       "data.frame (name, label).", call. = FALSE)
+}
+
+.validate_label_map <- function(map) {
+  key <- names(map)
+  map <- as.character(map)
+  names(map) <- key
+  if (is.null(key) || any(is.na(key)) || any(!nzchar(key))) {
+    stop("`labels` must have non-empty source names.", call. = FALSE)
+  }
+  if (anyDuplicated(key)) {
+    stop("`labels` source names must be unique.", call. = FALSE)
+  }
+  if (any(is.na(map)) || any(!nzchar(map))) {
+    stop("`labels` values must be non-missing and non-empty.",
+         call. = FALSE)
+  }
+  if (anyDuplicated(map)) {
+    stop("`labels` values must be unique.", call. = FALSE)
+  }
+  map
+}
+
+#' Apply a name -> label remap to a netobject or mcml object.
+#'
+#' For a netobject: rewrites `$nodes$label` and the dimnames of `$weights`.
+#' For an mcml object: rewrites within-cluster `$labels`, weight dimnames,
+#' init names, `$cluster_members`, and `$edges$from`/`$to`. Macro layer is
+#' left untouched (its labels are cluster names, not node names).
+#' Unmapped names pass through unchanged.
+#' @noRd
+.apply_node_labels <- function(x, labels) {
+  map <- .coerce_label_map(labels)
+  if (is.null(map)) return(x)
+
+  remap <- function(v) {
+    out <- map[v]; out[is.na(out)] <- v[is.na(out)]; unname(out)
+  }
+  check_unique <- function(v) {
+    if (anyDuplicated(v)) {
+      stop("`labels` must map nodes to unique labels.", call. = FALSE)
+    }
+    v
+  }
+
+  if (inherits(x, "mcml")) {
+    # Apply the label remap to the values inside a cluster's $data so
+    # they line up with the relabeled $weights rownames. Without this,
+    # bootstrap_network() in its precomputed fast path silently
+    # produces all-zero matrices because match($data, states) returns
+    # NA for every cell. Values not in `map` (e.g. macro $data carries
+    # cluster names) are preserved.
+    remap_data <- function(d) {
+      if (is.null(d)) return(d)
+      if (is.data.frame(d)) {
+        for (j in seq_along(d)) {
+          col <- d[[j]]
+          if (is.factor(col)) {
+            levels(col) <- remap(levels(col))
+            d[[j]] <- col
+          } else if (is.character(col)) {
+            d[[j]] <- remap(col)
+          }
+        }
+        return(d)
+      }
+      if (is.matrix(d) && is.character(d)) {
+        d[] <- remap(as.vector(d))
+        return(d)
+      }
+      d
+    }
+    relabel_one <- function(net) {
+      if (is.null(net)) return(net)
+      net$labels <- check_unique(remap(net$labels))
+      if (!is.null(net$weights))
+        dimnames(net$weights) <- list(net$labels, net$labels)
+      if (!is.null(net$inits)) names(net$inits) <- net$labels
+      net$data <- remap_data(net$data)
+      net
+    }
+    if (!is.null(x$clusters))        x$clusters        <- lapply(x$clusters, relabel_one)
+    if (!is.null(x$cluster_members)) x$cluster_members <- lapply(x$cluster_members, remap)
+    if (!is.null(x$edges)) {
+      x$edges$from <- remap(x$edges$from)
+      x$edges$to   <- remap(x$edges$to)
+    }
+    return(x)
+  }
+
+  if (inherits(x, "netobject")) {
+    if (!is.null(x$nodes) && "name" %in% names(x$nodes)) {
+      x$nodes$label <- check_unique(remap(as.character(x$nodes$name)))
+    }
+    if (!is.null(x$weights)) {
+      nm <- rownames(x$weights) %||% colnames(x$weights)
+      if (!is.null(nm)) {
+        mapped <- check_unique(remap(nm))
+        dimnames(x$weights) <- list(mapped, mapped)
+      }
+    }
+    return(x)
+  }
+
+  x
+}
+
+
+#' Convert a named numeric matrix to a long tidy data.frame.
+#'
+#' Used by `summary()` methods on class-stamped matrix returns to produce a
+#' `(from, to, <value>)` edge-list view, keeping row/column names as strings.
+#'
+#' @param m A numeric matrix.
+#' @param value_col Name of the value column (e.g. "weight", "count").
+#' @param include One of `"nonzero"` (default) or `"positive"` — which entries
+#'   to include.
+#' @param sort_by One of `"abs_value"` (default, descending) or `"none"`.
+#' @return A data.frame with columns `from`, `to`, and `<value_col>`.
+#' @noRd
+.matrix_to_long_df <- function(m, value_col = "weight",
+                               include = c("nonzero", "positive"),
+                               sort_by = c("abs_value", "none")) {
+  include <- match.arg(include)
+  sort_by <- match.arg(sort_by)
+  empty_df <- function() {
+    out <- data.frame(from = character(0L), to = character(0L),
+                      x = numeric(0L), stringsAsFactors = FALSE)
+    names(out)[3L] <- value_col
+    out
+  }
+  if (!is.matrix(m) || nrow(m) == 0L || ncol(m) == 0L) return(empty_df())
+  idx <- switch(include,
+                nonzero  = which(m != 0, arr.ind = TRUE),
+                positive = which(m > 0,  arr.ind = TRUE))
+  if (nrow(idx) == 0L) return(empty_df())
+  rn <- rownames(m); if (is.null(rn)) rn <- as.character(seq_len(nrow(m)))
+  cn <- colnames(m); if (is.null(cn)) cn <- as.character(seq_len(ncol(m)))
+  vals <- m[idx]
+  df <- data.frame(
+    from = rn[idx[, 1L]],
+    to   = cn[idx[, 2L]],
+    x    = if (value_col == "count") as.integer(vals) else as.numeric(vals),
+    stringsAsFactors = FALSE,
+    row.names        = NULL
+  )
+  names(df)[3L] <- value_col
+  if (sort_by == "abs_value") df <- df[order(-abs(df[[3L]])), ]
+  row.names(df) <- NULL
+  df
+}
+
 # Global variable declarations to avoid R CMD check notes
 utils::globalVariables(c(
   # Common column names
   ".", ":=", ".I", ".SD", ".N",
   "cr_lower", "cr_upper", "effect_size", "sig",
   "from", "to", "value", "run_id", "setting_name",
+  # ggplot2 NSE: density is a computed stat from geom_histogram(after_stat(density))
+  "density",
   # Metrics
   "TP", "TN", "FP", "FN", "Sensitivity", "Specificity", "FPR", "FNR",
   "Accuracy", "MCC", "mcc_denom_sq", "Metric", "Value",
@@ -141,6 +323,10 @@ safe_sd <- function(x) {
     }
     return(df)
   }
+  ## Bare sequence matrix (character / logical) → wide data.frame.
+  if (is.matrix(data) && !is.numeric(data)) {
+    return(as.data.frame(data, stringsAsFactors = FALSE))
+  }
   data
 }
 
@@ -249,5 +435,3 @@ safe_sd <- function(x) {
     node_groups = NULL
   )
 }
-
-

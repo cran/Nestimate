@@ -49,6 +49,9 @@
 #' @return List of character vectors.
 #' @noRd
 .hon_parse_input <- function(data, collapse_repeats = FALSE) {
+  if (is.matrix(data) && !is.numeric(data)) {
+    data <- as.data.frame(data, stringsAsFactors = FALSE)
+  }
   if (is.data.frame(data)) {
     stopifnot("data.frame must have at least one column" = ncol(data) >= 1L)
     stopifnot("data.frame must have at least one row" = nrow(data) >= 1L)
@@ -1061,7 +1064,10 @@
 #'     \code{to} (predicted next state), \code{count} (raw frequency),
 #'     \code{probability} (transition probability), \code{from_order},
 #'     \code{to_order}.}
-#'   \item{nodes}{Character vector of HON node names in arrow notation.}
+#'   \item{nodes}{data.frame with columns \code{id}, \code{label},
+#'     \code{name} (one row per HON node; \code{label}/\code{name} are the
+#'     arrow-notation node names). Stored as a data.frame for
+#'     \code{cograph_network} compatibility.}
 #'   \item{n_nodes}{Number of HON nodes.}
 #'   \item{n_edges}{Number of edges.}
 #'   \item{first_order_states}{Character vector of unique original states.}
@@ -1208,7 +1214,10 @@ print.net_hon <- function(x, ...) {
 #' @param object A \code{net_hon} object.
 #' @param ... Additional arguments (ignored).
 #'
-#' @return The input object, invisibly.
+#' @return The edge data.frame \code{object$edges} (columns \code{path},
+#'   \code{from}, \code{to}, \code{count}, \code{probability},
+#'   \code{from_order}, \code{to_order}), returned visibly; the summary text
+#'   is printed as a side effect.
 #'
 #' @examples
 #' seqs <- list(c("A","B","C","D"), c("A","B","C","A"), c("B","C","D","A"))
@@ -1237,7 +1246,6 @@ summary.net_hon <- function(object, ...) {
   cat(sprintf("  Min frequency: %d\n", object$min_freq))
 
   if (object$n_nodes > 0L) {
-    # Order distribution: count arrows to determine order
     node_orders <- vapply(object$nodes$label, function(nd) {
       length(strsplit(nd, " -> ", fixed = TRUE)[[1L]])
     }, integer(1L))
@@ -1248,6 +1256,6 @@ summary.net_hon <- function(object, ...) {
     }
   }
 
-  invisible(object)
+  object$edges
 }
 

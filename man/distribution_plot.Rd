@@ -24,6 +24,7 @@ distribution_plot(
   tick = NULL,
   ncol = NULL,
   nrow = NULL,
+  combined = TRUE,
   legend = c("right", "bottom", "none"),
   legend_size = NULL,
   legend_title = NULL,
@@ -33,8 +34,10 @@ distribution_plot(
 )
 }
 \arguments{
-\item{x}{Wide-format sequence data (\code{data.frame} or \code{matrix})
-or a \code{net_clustering}. When a \code{net_clustering} is passed,
+\item{x}{Wide-format sequence data. Accepts the same inputs as
+\code{\link{sequence_plot}}: \code{data.frame}, \code{matrix},
+\code{netobject}, \code{net_clustering}, \code{netobject_group},
+\code{net_mmm}, or \code{tna}. When clustering info is available,
 one panel is drawn per cluster.}
 
 \item{group}{Optional grouping vector (length \code{nrow(x)}) producing
@@ -76,7 +79,15 @@ title.}
 \item{tick}{Show every Nth x-axis label. \code{NULL} = auto.}
 
 \item{ncol, nrow}{Facet grid dimensions. \code{NULL} = auto:
-\code{ncol = ceiling(sqrt(G))}, \code{nrow = ceiling(G / ncol)}.}
+\code{ncol = ceiling(sqrt(G))}, \code{nrow = ceiling(G / ncol)}.
+Ignored when \code{combined = FALSE}.}
+
+\item{combined}{When \code{TRUE} (default), groups are arranged on one
+figure via \code{graphics::layout()}. When \code{FALSE}, each group
+is drawn on its own page (one full-size figure per group, with its
+own legend). Useful when you want each group at full size in knitr
+(\code{fig.show = "asis"}) or to save each as a separate file.
+Single-group calls (\code{G == 1}) ignore this argument.}
 
 \item{legend}{Legend position: \code{"right"} (default),
 \code{"bottom"}, or \code{"none"}.}

@@ -35,13 +35,62 @@ make_data_with_na <- function(n = 30, k = 20, n_states = 3, seed = 42) {
 
 test_that("build_clusters validates inputs", {
   df <- make_test_data(n = 20, k = 10)
-  expect_error(build_clusters(df, k = 1), "k >= 2")
-  expect_error(build_clusters(df, k = 20), "k <= n - 1")
+  # audit_clustering #2: explicit messages instead of bare predicate dump.
+  expect_error(build_clusters(df, k = 1), "must be at least 2")
+  expect_error(build_clusters(df, k = 20), "must be <= n - 1")
   expect_error(build_clusters(df, k = 2, dissimilarity = "invalid"))
   expect_error(build_clusters(df, k = 2, method = "invalid"))
   expect_error(build_clusters(df, k = 2, dissimilarity = "lv", weighted = TRUE),
                "Weighting is only supported")
   expect_error(build_clusters("not a df", k = 2))
+})
+
+test_that("build_clusters rejects all-missing input early (audit #4)", {
+  # Every cell is a configured NA symbol, so .encode_sequences() finds 0
+  # observed states. Without the early check the failure would be indirect
+  # (downstream pam/hclust crash on a degenerate distance matrix).
+  df <- data.frame(
+    V1 = c("*", "*", "*"),
+    V2 = c("%", "%", "%"),
+    V3 = c("*", "%", "*"),
+    stringsAsFactors = FALSE
+  )
+  expect_error(build_clusters(df, k = 2),
+               "No observed sequence states were found")
+})
+
+test_that("build_clusters error messages name the offending argument", {
+  # audit_clustering #2: failures should tell the user what to fix.
+  df <- make_test_data(n = 20, k = 10)
+  expect_error(build_clusters(df, k = "two"),
+               "'k' must be a single numeric value")
+  expect_error(build_clusters(df, k = 2, na_syms = 42),
+               "'na_syms' must be a character vector")
+  expect_error(build_clusters(df, k = 2, weighted = "yes"),
+               "'weighted' must be a single logical")
+})
+
+test_that("build_clusters rejects non-finite or silently truncated numeric arguments", {
+  df <- make_test_data(n = 20, k = 10)
+
+  expect_error(build_clusters(df, k = 2.9), "'k' must be a whole")
+  expect_error(build_clusters(df, k = NA_real_), "'k' must be a whole")
+  expect_error(build_clusters(df, k = 2, weighted = NA),
+               "'weighted' must be TRUE or FALSE")
+  expect_error(build_clusters(df, k = 2, lambda = -1),
+               "'lambda' must be a finite non-negative")
+  expect_error(build_clusters(df, k = 2, q = 2.5),
+               "'q' must be a positive whole")
+  expect_error(build_clusters(df, k = 2, q = 0),
+               "'q' must be a positive whole")
+  expect_error(build_clusters(df, k = 2, p = 0.5),
+               "'p' must be a finite number between 0 and 0.25")
+})
+
+test_that("build_clusters rejects unsupported extra arguments", {
+  df <- make_test_data(n = 20, k = 10)
+  expect_error(build_clusters(df, k = 2, typo_arg = TRUE),
+               "unsupported argument: typo_arg")
 })
 
 # ==============================================================================
@@ -159,7 +208,7 @@ test_that("print.net_clustering works", {
   expect_true(any(grepl("Sequence Clustering", out)))
   expect_true(any(grepl("pam", out)))
   expect_true(any(grepl("hamming", out)))
-  expect_true(any(grepl("Silhouette", out)))
+  expect_true(any(grepl("silhouette", out, ignore.case = TRUE)))
 })
 
 test_that("summary.net_clustering works", {
@@ -170,6 +219,35 @@ test_that("summary.net_clustering works", {
   expect_equal(nrow(res), 2L)
   expect_true("size" %in% names(res))
   expect_true("mean_within_dist" %in% names(res))
+})
+
+test_that("summary.net_clustering matches direct within-distance computation", {
+  df <- make_test_data(n = 24, k = 8, n_states = 3, seed = 31)
+  cl <- build_clusters(df, k = 3, method = "ward.D2")
+  capture.output(res <- summary(cl))
+
+  expect_equal(res$size, as.integer(tabulate(cl$assignments, nbins = cl$k)))
+  expect_equal(
+    res$mean_within_dist,
+    .per_cluster_within_dist(cl$distance, cl$assignments, cl$k),
+    tolerance = 1e-12
+  )
+})
+
+test_that("net_clustering methods reject unsupported dots and bad digits", {
+  df <- make_test_data(n = 20, k = 10)
+  cl <- build_clusters(df, k = 2)
+
+  expect_error(print(cl, typo_arg = TRUE),
+               "unsupported argument: typo_arg")
+  expect_error(summary(cl, typo_arg = TRUE),
+               "unsupported argument: typo_arg")
+  expect_error(plot(cl, typo_arg = TRUE),
+               "unsupported argument: typo_arg")
+  expect_error(print(cl, digits = NA_real_),
+               "'digits' must be a single non-negative whole")
+  expect_error(print(cl, digits = 2.5),
+               "'digits' must be a single non-negative whole")
 })
 
 test_that("plot.net_clustering silhouette works", {
@@ -195,91 +273,6 @@ test_that("plot.net_clustering heatmap works", {
 
 # ==============================================================================
 # 9. Cross-validation against tna
-# ==============================================================================
-
-test_that("distance matrices match tna for metrics with matching implementations", {
-  skip_if_not_installed("tna")
-  data <- tna::group_regulation[1:50, ]
-
-  # Only compare metrics where tna and stringdist agree.
-  # tna's own C implementations of osa/lv/dl/lcs/jw differ from
-  # stringdist (which is the reference implementation). Confirmed:
-  # stringdist::stringdist("acfhicbc", tna3, method="lv") matches
-  # our result (21) while tna:::levenshtein_dist gives 18.
-  for (metric in c("hamming", "qgram", "cosine", "jaccard")) {
-    tna_r <- tna::cluster_data(data, k = 2, dissimilarity = metric, q = 2)
-    our_r <- build_clusters(data, k = 2, dissimilarity = metric, q = 2L)
-    expect_equal(
-      as.matrix(our_r$distance), as.matrix(tna_r$distance),
-      tolerance = 1e-10, info = metric
-    )
-  }
-})
-
-test_that("weighted hamming matches tna (lambda = 0.5)", {
-  skip_if_not_installed("tna")
-  data <- tna::group_regulation[1:50, ]
-
-  tna_r <- tna::cluster_data(data, k = 2, dissimilarity = "hamming",
-                             weighted = TRUE, lambda = 0.5)
-  our_r <- build_clusters(data, k = 2, dissimilarity = "hamming",
-                        weighted = TRUE, lambda = 0.5)
-  expect_equal(
-    as.matrix(our_r$distance), as.matrix(tna_r$distance),
-    tolerance = 1e-10
-  )
-})
-
-test_that("weighted hamming matches tna (lambda = 2.0)", {
-  skip_if_not_installed("tna")
-  data <- tna::group_regulation[1:50, ]
-
-  tna_r <- tna::cluster_data(data, k = 2, dissimilarity = "hamming",
-                             weighted = TRUE, lambda = 2.0)
-  our_r <- build_clusters(data, k = 2, dissimilarity = "hamming",
-                        weighted = TRUE, lambda = 2.0)
-  expect_equal(
-    as.matrix(our_r$distance), as.matrix(tna_r$distance),
-    tolerance = 1e-10
-  )
-})
-
-test_that("cluster assignments match tna for PAM", {
-  skip_if_not_installed("tna")
-  data <- tna::group_regulation[1:50, ]
-
-  tna_r <- tna::cluster_data(data, k = 3, dissimilarity = "hamming")
-  our_r <- build_clusters(data, k = 3, dissimilarity = "hamming")
-
-  # Distance matrices must match exactly
-  expect_equal(
-    as.matrix(our_r$distance), as.matrix(tna_r$distance),
-    tolerance = 1e-10
-  )
-  # PAM is deterministic on same distance matrix → same assignments
-  expect_equal(our_r$assignments, tna_r$assignments)
-  expect_equal(our_r$silhouette, tna_r$silhouette, tolerance = 1e-10)
-})
-
-test_that("cluster assignments match tna for hclust methods", {
-  skip_if_not_installed("tna")
-  data <- tna::group_regulation[1:50, ]
-
-  for (m in c("complete", "average")) {
-    tna_r <- tna::cluster_data(data, k = 3, dissimilarity = "hamming",
-                               method = m)
-    our_r <- build_clusters(data, k = 3, dissimilarity = "hamming",
-                          method = m)
-    expect_equal(
-      as.matrix(our_r$distance), as.matrix(tna_r$distance),
-      tolerance = 1e-10, info = m
-    )
-    expect_equal(our_r$assignments, tna_r$assignments, info = m)
-  }
-})
-
-# ==============================================================================
-# 10. R fallback vs stringdist consistency
 # ==============================================================================
 
 test_that("R fallback matches stringdist for all applicable metrics", {
@@ -462,36 +455,6 @@ test_that("build_clusters rejects association-method netobjects", {
   net <- build_network(ndf, method = "cor")
   expect_error(build_clusters(net, k = 2), "sequence data")
 })
-
-test_that("build_clusters works on tna model", {
-  skip_if_not_installed("tna")
-  data <- tna::group_regulation[1:30, ]
-  model <- tna::tna(data)
-  cl_tna <- build_clusters(model, k = 2)
-  cl_df <- build_clusters(data, k = 2)
-  expect_s3_class(cl_tna, "net_clustering")
-  expect_equal(as.matrix(cl_tna$distance), as.matrix(cl_df$distance),
-               tolerance = 1e-10)
-})
-
-test_that("build_clusters works on cograph_network", {
-  skip_if_not_installed("cograph")
-  df <- make_test_data(n = 30, k = 10, n_states = 4)
-  # Build a mock cograph_network with $data
-  cg <- structure(
-    list(data = df, weights = matrix(0, 4, 4), directed = TRUE),
-    class = c("cograph_network", "list")
-  )
-  cl_cg <- build_clusters(cg, k = 3)
-  cl_df <- build_clusters(df, k = 3)
-  expect_s3_class(cl_cg, "net_clustering")
-  expect_equal(as.matrix(cl_cg$distance), as.matrix(cl_df$distance),
-               tolerance = 1e-10)
-})
-
-# ==============================================================================
-# 15. build_network dispatch for net_clustering
-# ==============================================================================
 
 test_that("build_network dispatches on net_clustering", {
   df <- make_test_data(n = 30, k = 10, n_states = 4)
@@ -754,10 +717,9 @@ test_that("summary shows covariate analysis", {
   expect_true(any(grepl("Predictors of Membership", out)))
   expect_true(any(grepl("McFadden", out)))
   expect_true(any(grepl("does not influence", out)))
-  # Return value is a list with cluster_stats and covariates
-  expect_true(is.list(res))
-  expect_true(!is.null(res$cluster_stats))
-  expect_true(!is.null(res$covariates))
+  # Return value is the cluster-stats data.frame; covariate block is an attribute.
+  expect_s3_class(res, "data.frame")
+  expect_true(!is.null(attr(res, "covariates")))
 })
 
 test_that("summary without covariates returns data.frame (backwards compat)", {
@@ -943,15 +905,6 @@ test_that("cosine distance R path handles all-NA sequences (zero-norm rows)", {
 # ==============================================================================
 # 27. tna / cograph_network covariates rejection (L430, L440)
 # ==============================================================================
-
-test_that("tna input with column-name covariates errors", {
-  skip_if_not_installed("tna")
-  model <- tna::tna(tna::group_regulation[1:20, ])
-  expect_error(
-    build_clusters(model, k = 2, covariates = "some_col"),
-    "tna/cograph_network"
-  )
-})
 
 test_that("cograph_network input with column-name covariates errors", {
   cg <- structure(
@@ -1202,4 +1155,189 @@ test_that("cluster_network from netobject inherits build_args (L1438-1443)", {
   net <- build_network(data, method = "relative")
   grp <- cluster_network(net, k = 2)
   expect_true(inherits(grp, "netobject_group"))
+})
+
+# ------------------------------------------------------------------
+# audit_clustering finding #1: cluster_network() must forward
+# build_clusters() args (weighted, lambda, seed, q, p, na_syms,
+# covariates) instead of silently passing them to build_network().
+# ------------------------------------------------------------------
+
+test_that("cluster_network forwards weighted+lambda to build_clusters", {
+  data <- make_test_data(n = 30, k = 6, n_states = 3, seed = 11)
+  grp <- cluster_network(data, k = 2, weighted = TRUE, lambda = 2.5)
+  cls <- attr(grp, "clustering")
+  expect_true(inherits(cls, "net_clustering"))
+  expect_true(cls$weighted)
+  expect_equal(cls$lambda, 2.5)
+})
+
+test_that("cluster_network forwards seed and yields reproducible assignments", {
+  data <- make_test_data(n = 30, k = 6, n_states = 3, seed = 12)
+  grp1 <- cluster_network(data, k = 2, seed = 99L)
+  grp2 <- cluster_network(data, k = 2, seed = 99L)
+  cls1 <- attr(grp1, "clustering")
+  cls2 <- attr(grp2, "clustering")
+  expect_equal(cls1$seed, 99L)
+  expect_equal(cls1$assignments, cls2$assignments)
+})
+
+test_that("cluster_network forwards covariates to build_clusters", {
+  skip_if_not_installed("nnet")
+  data <- make_test_data(n = 40, k = 6, n_states = 3, seed = 13)
+  cov_df <- data.frame(grp = factor(rep(c("x", "y"), each = 20)))
+  grp <- cluster_network(data, k = 2, covariates = cov_df)
+  cls <- attr(grp, "clustering")
+  expect_false(is.null(cls$covariates))
+})
+
+test_that("cluster_network still routes build_network args to the network step", {
+  # Regression guard: the new arg-split must NOT pull build_network params
+  # (method, threshold, scaling) into build_clusters(). If a build_network
+  # arg leaked into the cluster step, build_clusters() would either ignore
+  # it (silently dropping the user intent) or error on an unknown arg.
+  data <- make_test_data(n = 30, k = 6, n_states = 3, seed = 14)
+  grp <- cluster_network(data, k = 2, method = "frequency")
+  expect_true(inherits(grp, "netobject_group"))
+  expect_equal(grp[[1]]$method, "frequency")
+  expect_equal(grp[[2]]$method, "frequency")
+})
+
+test_that("cluster_network preserves build_args when input is a netobject", {
+  # Caller dots should still flow to build_clusters; netobject build_args
+  # should still flow to build_network (caller wins on conflicts). This
+  # locks in the contract that the split operates on caller dots only,
+  # not on build_args.
+  data <- make_test_data(n = 30, k = 6, n_states = 3, seed = 15)
+  net <- build_network(data, method = "frequency")
+  grp <- cluster_network(net, k = 2, weighted = TRUE, lambda = 1.5)
+  cls <- attr(grp, "clustering")
+  expect_true(cls$weighted)
+  expect_equal(cls$lambda, 1.5)
+  # Inherited method survives
+  expect_equal(grp[[1]]$method, "frequency")
+})
+
+test_that("cluster_network distance branch is equivalent to explicit two-step call", {
+  data <- make_test_data(n = 36, k = 6, n_states = 3, seed = 18)
+
+  one_step <- cluster_network(
+    data, k = 3, seed = 180L, weighted = TRUE, lambda = 1.25,
+    method = "frequency"
+  )
+  clustered <- build_clusters(
+    data, k = 3, seed = 180L, weighted = TRUE, lambda = 1.25
+  )
+  two_step <- build_network(clustered, method = "frequency")
+
+  expect_equal(attr(one_step, "clustering")$assignments, clustered$assignments)
+  expect_equal(lapply(one_step, `[[`, "weights"),
+               lapply(two_step, `[[`, "weights"))
+})
+
+test_that("cluster_network MMM branch is equivalent to explicit two-step call", {
+  data <- make_test_data(n = 36, k = 6, n_states = 3, seed = 19)
+
+  one_step <- cluster_network(
+    data, k = 2, cluster_by = "mmm", n_starts = 3, max_iter = 50,
+    seed = 190L, method = "frequency"
+  )
+  mmm <- build_mmm(data, k = 2, n_starts = 3, max_iter = 50, seed = 190L)
+  two_step <- build_network(mmm, method = "frequency")
+
+  expect_equal(attr(one_step, "clustering")$assignments, mmm$assignments)
+  expect_equal(lapply(one_step, `[[`, "weights"),
+               lapply(two_step, `[[`, "weights"))
+})
+
+test_that("cluster_network rejects unknown routed arguments", {
+  data <- make_test_data(n = 30, k = 6, n_states = 3, seed = 20)
+
+  expect_error(
+    cluster_network(data, k = 2, typo_arg = TRUE),
+    "Unknown argument"
+  )
+  expect_error(
+    cluster_network(
+      data, k = 2, cluster_by = "mmm", n_starts = 1, max_iter = 5,
+      typo_arg = TRUE
+    ),
+    "Unknown argument"
+  )
+})
+
+test_that("cluster_network rejects distance options on MMM branch", {
+  data <- make_test_data(n = 30, k = 6, n_states = 3, seed = 21)
+
+  expect_error(
+    cluster_network(
+      data, k = 2, cluster_by = "mmm", dissimilarity = "lv",
+      n_starts = 1, max_iter = 5
+    ),
+    "dissimilarity"
+  )
+})
+
+# ---- Branch-matrix coverage (task #17) ----
+# Crosses dissimilarity x method. All 9 dissimilarities x 5 representative
+# methods = 45 cells. Each must produce a valid net_clustering with k
+# non-empty clusters. Detects regressions where one dissimilarity silently
+# returns NA-filled distance or a clustering backend drops support for a
+# particular metric. weighted=FALSE here; weighted-path error is tested
+# separately because it only applies to hamming.
+
+test_that("build_clusters branch matrix: dissimilarity x method all succeed", {
+  set.seed(17)
+  data <- make_test_data(n = 30, k = 8, n_states = 3)
+  k_target <- 3L
+
+  # Keep the method list small and representative: one partitional (pam),
+  # one agglomerative per linkage family (ward.D2 minvar, complete, average,
+  # single). Skipping centroid/median/mcquitty — they exercise the same
+  # hclust branch as the ones already covered.
+  methods_subset <- c("pam", "ward.D2", "complete", "average", "single")
+
+  grid <- expand.grid(
+    dissimilarity = Nestimate:::.clustering_metrics,
+    method        = methods_subset,
+    stringsAsFactors = FALSE
+  )
+
+  for (i in seq_len(nrow(grid))) {
+    cfg <- grid[i, ]
+    info <- sprintf("dissim=%s method=%s", cfg$dissimilarity, cfg$method)
+    fit <- tryCatch(
+      build_clusters(
+        data, k = k_target,
+        dissimilarity = cfg$dissimilarity,
+        method        = cfg$method,
+        seed          = 17L
+      ),
+      error = function(e) e
+    )
+    if (inherits(fit, "error")) {
+      fail(sprintf("%s -> %s", info, conditionMessage(fit)))
+      next
+    }
+    expect_true(inherits(fit, "net_clustering"), info = info)
+    # The fit must produce exactly k_target clusters and every cluster
+    # must have at least one assigned sequence.
+    clust <- fit$clusters %||% fit$assignments %||% fit$cluster
+    if (is.null(clust)) clust <- fit[[which(vapply(fit, function(el)
+      is.integer(el) && length(el) == nrow(data), logical(1)))[1]]]
+    expect_equal(length(unique(clust)), k_target, info = info)
+    expect_true(all(tabulate(clust, nbins = k_target) > 0), info = info)
+  }
+})
+
+test_that("build_clusters weighted=TRUE errors on non-hamming dissimilarity", {
+  data <- make_test_data(n = 20, k = 6, n_states = 3)
+  # Only hamming supports weighted=TRUE — every other metric must error.
+  for (d in setdiff(Nestimate:::.clustering_metrics, "hamming")) {
+    expect_error(
+      build_clusters(data, k = 2, dissimilarity = d, weighted = TRUE),
+      "Weighting is only supported for Hamming",
+      info = sprintf("dissim=%s", d)
+    )
+  }
 })

@@ -225,7 +225,10 @@ print.net_honem <- function(x, ...) {
 #' @param object A \code{net_honem} object.
 #' @param ... Additional arguments (ignored).
 #'
-#' @return The input object, invisibly.
+#' @return A data.frame with one row per node: column \code{node} (node
+#'   label) followed by \code{dim1}, \code{dim2}, ..., \code{dim}\emph{d}
+#'   embedding coordinates, returned visibly; the summary text is printed as
+#'   a side effect.
 #'
 #' @examples
 #' seqs <- list(c("A","B","C","D"), c("A","B","C","A"), c("B","C","D","A"))
@@ -250,7 +253,14 @@ summary.net_honem <- function(object, ...) {
                           3), collapse = ", ")))
   cat(sprintf("  Embedding range: [%.3f, %.3f]\n",
               min(object$embeddings), max(object$embeddings)))
-  invisible(object)
+
+  emb <- object$embeddings
+  node_labels <- rownames(emb)
+  if (is.null(node_labels)) node_labels <- paste0("n", seq_len(nrow(emb)))
+  dim_cols <- as.data.frame(emb)
+  colnames(dim_cols) <- paste0("dim", seq_len(ncol(emb)))
+  data.frame(node = node_labels, dim_cols,
+             stringsAsFactors = FALSE, row.names = NULL)
 }
 
 #' Plot Method for net_honem

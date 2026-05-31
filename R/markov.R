@@ -10,15 +10,46 @@
       stop("Object has no numeric weight matrix.", call. = FALSE)
     return(P)
   }
+  if (is.matrix(x) && (is.character(x) || is.logical(x))) {
+    x <- as.data.frame(x, stringsAsFactors = FALSE)
+  }
   if (is.data.frame(x)) {
     net <- build_network(x, method = "relative")
     return(net$weights)
   }
   stop(
-    "'x' must be a numeric matrix, netobject, cograph_network, tna object, ",
-    "or a wide sequence data.frame.",
+    "'x' must be a numeric matrix (transition matrix), a netobject / ",
+    "cograph_network / tna object, or a wide sequence data.frame / ",
+    "character matrix.",
     call. = FALSE
   )
+}
+
+#' @noRd
+.mpt_normalize_rows <- function(P, state_names, normalize = TRUE) {
+  row_sums <- rowSums(P)
+
+  zero_rows <- which(row_sums <= 0)
+  if (length(zero_rows)) {
+    bad <- state_names[zero_rows]
+    stop(
+      "Transition matrix has zero-sum row(s) for state(s): ",
+      paste(bad, collapse = ", "),
+      ". These states have no outgoing transitions, so the chain is not ",
+      "ergodic and mean first passage times are undefined. Remove the ",
+      "state(s) or supply a different transition matrix.",
+      call. = FALSE
+    )
+  }
+
+  if (any(abs(row_sums - 1) > 1e-6)) {
+    if (!normalize)
+      stop("Transition matrix rows must sum to 1.", call. = FALSE)
+    warning("Rows do not sum to 1; normalizing.", call. = FALSE)
+    P <- P / row_sums
+  }
+
+  P
 }
 
 #' @noRd
@@ -96,6 +127,13 @@
 #'
 #' @export
 passage_time <- function(x, states = NULL, normalize = TRUE) {
+  if (inherits(x, "netobject_group")) {
+    out <- lapply(x, function(net) {
+      passage_time(net, states = states, normalize = normalize)
+    })
+    class(out) <- c("net_mpt_group", "list")
+    return(out)
+  }
   P           <- .mpt_extract_P(x)
   state_names <- colnames(P)
   if (is.null(state_names)) {
@@ -103,13 +141,7 @@ passage_time <- function(x, states = NULL, normalize = TRUE) {
     colnames(P)     <- rownames(P) <- state_names
   }
 
-  row_sums <- rowSums(P)
-  if (any(abs(row_sums - 1) > 1e-6)) {
-    if (!normalize)
-      stop("Transition matrix rows must sum to 1.", call. = FALSE)
-    warning("Rows do not sum to 1; normalizing.", call. = FALSE)
-    P <- P / row_sums
-  }
+  P <- .mpt_normalize_rows(P, state_names, normalize = normalize)
 
   pi <- .mpt_stationary(P)
   names(pi) <- state_names
@@ -149,6 +181,23 @@ print.net_mpt <- function(x, digits = 1, ...) {
   print(round(x$matrix, digits))
   cat("\nStationary distribution:\n")
   print(round(x$stationary, 4))
+  invisible(x)
+}
+
+#' Print method for `net_mpt_group`
+#'
+#' @param x A `net_mpt_group` (named list of `net_mpt` results).
+#' @param ... Forwarded to `print.net_mpt` for each element.
+#' @return `x` invisibly.
+#' @export
+print.net_mpt_group <- function(x, ...) {
+  cat(sprintf("Mean First Passage Times -- %d groups: %s\n\n",
+              length(x), paste(names(x), collapse = ", ")))
+  for (nm in names(x)) {
+    cat(sprintf("--- %s ---\n", nm))
+    print(x[[nm]], ...)
+    cat("\n")
+  }
   invisible(x)
 }
 
@@ -289,6 +338,13 @@ plot.net_mpt <- function(x,
 #' @seealso \code{\link{passage_time}}
 #' @export
 markov_stability <- function(x, normalize = TRUE) {
+  if (inherits(x, "netobject_group")) {
+    out <- lapply(x, function(net) {
+      markov_stability(net, normalize = normalize)
+    })
+    class(out) <- c("net_markov_stability_group", "list")
+    return(out)
+  }
   P           <- .mpt_extract_P(x)
   state_names <- colnames(P)
   if (is.null(state_names)) {
@@ -296,13 +352,7 @@ markov_stability <- function(x, normalize = TRUE) {
     colnames(P)     <- rownames(P) <- state_names
   }
 
-  row_sums <- rowSums(P)
-  if (any(abs(row_sums - 1) > 1e-6)) {
-    if (!normalize)
-      stop("Transition matrix rows must sum to 1.", call. = FALSE)
-    warning("Rows do not sum to 1; normalizing.", call. = FALSE)
-    P <- P / row_sums
-  }
+  P <- .mpt_normalize_rows(P, state_names, normalize = normalize)
 
   mpt  <- passage_time(P, normalize = FALSE)
   M    <- mpt$matrix
@@ -338,6 +388,24 @@ print.net_markov_stability <- function(x, ...) {
   invisible(x)
 }
 
+#' Print method for `net_markov_stability_group`
+#'
+#' @param x A `net_markov_stability_group` (named list of
+#'   `net_markov_stability` results).
+#' @param ... Forwarded to `print.net_markov_stability` for each element.
+#' @return `x` invisibly.
+#' @export
+print.net_markov_stability_group <- function(x, ...) {
+  cat(sprintf("Markov Stability -- %d groups: %s\n\n",
+              length(x), paste(names(x), collapse = ", ")))
+  for (nm in names(x)) {
+    cat(sprintf("--- %s ---\n", nm))
+    print(x[[nm]], ...)
+    cat("\n")
+  }
+  invisible(x)
+}
+
 #' @export
 summary.net_markov_stability <- function(object, ...) {
   df      <- object$stability
@@ -345,14 +413,17 @@ summary.net_markov_stability <- function(object, ...) {
   sticky  <- df$state[which.max(df$sojourn_time)]
   cat(sprintf("Most accessible state (attractor): %s\n", attract))
   cat(sprintf("Most persistent state (stickiest): %s\n\n", sticky))
-  print(df, row.names = FALSE)
-  invisible(object)
+  df
 }
 
 #' @param metrics Character vector. Which metrics to plot. Options:
 #'   \code{"persistence"}, \code{"stationary_prob"}, \code{"return_time"},
 #'   \code{"sojourn_time"}, \code{"avg_time_to_others"},
 #'   \code{"avg_time_from_others"}. Default: all six.
+#' @param combined When \code{TRUE} (default), all selected metrics are
+#'   shown in one ggplot via \code{facet_wrap(~ metric)}. When \code{FALSE},
+#'   returns a named list of single-panel ggplots, one per metric, so each
+#'   can be printed, saved, or re-laid-out independently.
 #' @rdname markov_stability
 #' @export
 plot.net_markov_stability <- function(x,
@@ -362,9 +433,11 @@ plot.net_markov_stability <- function(x,
                                                    "sojourn_time",
                                                    "avg_time_to_others",
                                                    "avg_time_from_others"),
+                                       combined = TRUE,
                                        ...) {
   df <- x$stability
   metrics <- match.arg(metrics, several.ok = TRUE)
+  stopifnot(is.logical(combined), length(combined) == 1L)
 
   labels <- c(
     persistence          = "Persistence",
@@ -393,18 +466,28 @@ plot.net_markov_stability <- function(x,
   plot_df <- do.call(rbind, plot_rows)
   plot_df$metric <- factor(plot_df$metric, levels = labels[metrics])
 
-  ggplot2::ggplot(plot_df,
-    ggplot2::aes(x = state, y = value, fill = state)) +
-    ggplot2::geom_col(show.legend = TRUE) +
-    ggplot2::scale_fill_manual(values = state_colors, name = NULL) +
-    ggplot2::facet_wrap(~ metric, scales = "free_x", ncol = 2) +
-    ggplot2::coord_flip() +
-    ggplot2::labs(x = NULL, y = NULL,
-                  title = "Markov Stability Metrics") +
-    ggplot2::theme_minimal(base_size = 12) +
-    ggplot2::theme(
-      panel.grid.minor = ggplot2::element_blank(),
-      plot.title       = ggplot2::element_text(face = "bold"),
-      legend.position  = "bottom"
-    )
+  base_plot <- function(d, ttl) {
+    ggplot2::ggplot(d, ggplot2::aes(x = state, y = value, fill = state)) +
+      ggplot2::geom_col(show.legend = TRUE) +
+      ggplot2::scale_fill_manual(values = state_colors, name = NULL) +
+      ggplot2::coord_flip() +
+      ggplot2::labs(x = NULL, y = NULL, title = ttl) +
+      ggplot2::theme_minimal(base_size = 12) +
+      ggplot2::theme(
+        panel.grid.minor = ggplot2::element_blank(),
+        plot.title       = ggplot2::element_text(face = "bold"),
+        legend.position  = "bottom"
+      )
+  }
+  if (!combined) {
+    levs <- levels(plot_df$metric)
+    plots <- lapply(levs, function(lv) {
+      sub <- plot_df[plot_df$metric == lv, , drop = FALSE]
+      base_plot(sub, lv)
+    })
+    names(plots) <- as.character(metrics)
+    return(invisible(plots))
+  }
+  base_plot(plot_df, "Markov Stability Metrics") +
+    ggplot2::facet_wrap(~ metric, scales = "free_x", ncol = 2)
 }

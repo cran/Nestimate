@@ -249,7 +249,7 @@ network_reliability <- function(..., iter = 1000L, split = 0.5,
   threshold <- net$threshold
   params <- net$params
   level <- net$level
-  id_col <- params$id %||% params$id_col
+  id_col <- .param_get(params, "id") %||% .param_get(params, "id_col")
 
   estimator <- get_estimator(method)
   n <- nrow(data)
@@ -309,20 +309,15 @@ network_reliability <- function(..., iter = 1000L, split = 0.5,
 # ---- Helpers ----
 
 #' Compute split-half metrics between two matrices
+#'
+#' Thin wrapper around `.network_similarity()` (R/compare_network.R) that
+#' returns the four metrics the reliability summary table reports, in the
+#' fixed order `c(mean_dev, median_dev, cor, max_dev)`.
 #' @noRd
 .split_half_metrics <- function(mat_a, mat_b) {
-  diffs <- abs(mat_a - mat_b)
-  vec_a <- as.vector(mat_a)
-  vec_b <- as.vector(mat_b)
-
-  r <- if (sd(vec_a) == 0 || sd(vec_b) == 0) NA_real_ else cor(vec_a, vec_b)
-
-  c(
-    mean(diffs),
-    median(diffs),
-    r,
-    max(diffs)
-  )
+  unname(.network_similarity(mat_a, mat_b,
+                             metrics = c("mean_abs_diff", "median_abs_diff",
+                                         "pearson", "max_abs_diff")))
 }
 
 
@@ -387,10 +382,10 @@ print.net_reliability <- function(x, ...) {
 
   models <- unique(x$summary$model)
   metric_labels <- c(
-    mean_dev = "Mean Abs. Dev.",
-    median_dev = "Median Abs. Dev.",
-    cor = "Correlation",
-    max_dev = "Max Abs. Dev."
+    mean_dev = "Mean Abs. Diff.",
+    median_dev = "Median Abs. Diff.",
+    cor = "Pearson",
+    max_dev = "Max Abs. Diff."
   )
 
   for (m in models) {
@@ -408,6 +403,19 @@ print.net_reliability <- function(x, ...) {
 }
 
 
+#' Summary Method for net_reliability
+#'
+#' @param object A \code{net_reliability} object.
+#' @param ... Ignored.
+#' @return A tidy data frame with columns \code{model}, \code{metric},
+#'   \code{mean}, \code{sd} summarising the split-half iterations.
+#' @inherit network_reliability examples
+#' @export
+summary.net_reliability <- function(object, ...) {
+  object$summary
+}
+
+
 #' Plot Method for net_reliability
 #'
 #' @description
@@ -415,9 +423,14 @@ print.net_reliability <- function(x, ...) {
 #' Multi-model comparisons show overlaid densities colored by model.
 #'
 #' @param x A \code{net_reliability} object.
+#' @param bins Integer. Number of histogram bins per panel (default 60).
+#' @param combined When \code{TRUE} (default), all four metrics are shown
+#'   in one ggplot via \code{facet_wrap(~ metric)}. When \code{FALSE},
+#'   returns a named list of four single-panel ggplots, one per metric.
 #' @param ... Additional arguments (ignored).
 #'
-#' @return A \code{ggplot} object (invisibly).
+#' @return A \code{ggplot} object (invisibly), or a named list of four
+#'   ggplots when \code{combined = FALSE}.
 #'
 #' @examples
 #' net <- build_network(data.frame(V1 = c("A","B","C","A"),
@@ -437,20 +450,20 @@ print.net_reliability <- function(x, ...) {
 #' }
 #'
 #' @export
-plot.net_reliability <- function(x, ...) {
+plot.net_reliability <- function(x, bins = 60L, combined = TRUE, ...) {
+  stopifnot(is.logical(combined), length(combined) == 1L)
   iters <- x$iterations
   models <- unique(iters$model)
   multi <- length(models) > 1L
 
   metric_labels <- c(
-    mean_dev = "Mean Abs. Dev.",
-    median_dev = "Median Abs. Dev.",
-    cor = "Correlation",
-    max_dev = "Max Abs. Dev."
+    max_dev = "Max Abs. Diff.",
+    mean_dev = "Mean Abs. Diff.",
+    median_dev = "Median Abs. Diff.",
+    cor = "Pearson"
   )
 
-  # Reshape to long format
-  metric_cols <- c("mean_dev", "median_dev", "cor", "max_dev")
+  metric_cols <- names(metric_labels)
   long <- do.call(rbind, lapply(metric_cols, function(met) {
     data.frame(
       model = iters$model,
@@ -462,36 +475,59 @@ plot.net_reliability <- function(x, ...) {
   }))
   long$metric <- factor(long$metric, levels = metric_labels)
 
-  # Mean lines per model per metric
   means <- aggregate(value ~ model + metric, data = long, FUN = mean)
+  means$label <- sprintf("%.2f", means$value)
 
-  if (multi) {
-    p <- ggplot2::ggplot(long, ggplot2::aes(
-      x = .data$value, fill = .data$model, color = .data$model)) +
-      ggplot2::geom_density(alpha = 0.3) +
+  palette <- c("#4DA167", "#E89AB4", "#2B6CB0", "#DD8452",
+               "#8172B2", "#937860", "#DA8BC3", "#8C8C8C")
+  fill_vals <- palette[seq_along(models)]
+  names(fill_vals) <- models
+
+  base_p <- function(d, m_subset, ttl) {
+    ggplot2::ggplot(d, ggplot2::aes(x = .data$value)) +
+      ggplot2::geom_histogram(
+        ggplot2::aes(fill = .data$model),
+        bins = bins, alpha = 0.65, position = "identity",
+        color = NA
+      ) +
       ggplot2::geom_vline(
-        data = means,
+        data = m_subset,
         ggplot2::aes(xintercept = .data$value, color = .data$model),
-        linetype = "dashed", linewidth = 0.6
+        linetype = "dashed", linewidth = 0.6,
+        show.legend = FALSE
       ) +
-      ggplot2::facet_wrap(~ metric, scales = "free") +
-      ggplot2::labs(x = "Value", y = "Density",
-                    title = "Split-Half Reliability") +
-      ggplot2::theme_minimal() +
-      ggplot2::theme(legend.position = "bottom")
-  } else {
-    p <- ggplot2::ggplot(long, ggplot2::aes(x = .data$value)) +
-      ggplot2::geom_density(fill = "#4E79A7", alpha = 0.4, color = "#4E79A7") +
-      ggplot2::geom_vline(
-        data = means,
-        ggplot2::aes(xintercept = .data$value),
-        linetype = "dashed", color = "#E15759", linewidth = 0.6
+      ggplot2::geom_label(
+        data = m_subset,
+        ggplot2::aes(x = .data$value, y = Inf, label = .data$label,
+                     color = .data$model),
+        vjust = 1.2, size = 3.3, label.size = 0.4,
+        fill = "white", show.legend = FALSE
       ) +
-      ggplot2::facet_wrap(~ metric, scales = "free") +
-      ggplot2::labs(x = "Value", y = "Density",
-                    title = "Split-Half Reliability") +
-      ggplot2::theme_minimal()
+      ggplot2::scale_fill_manual(values = fill_vals, name = "Model") +
+      ggplot2::scale_color_manual(values = fill_vals, guide = "none") +
+      ggplot2::labs(x = "Metric Value", y = "Frequency", title = ttl) +
+      ggplot2::theme_minimal(base_size = 12) +
+      ggplot2::theme(
+        legend.position = if (multi) "bottom" else "none",
+        strip.text = ggplot2::element_text(face = "bold", size = 12),
+        panel.grid.minor = ggplot2::element_blank()
+      )
   }
+
+  if (!combined) {
+    levs <- levels(long$metric)
+    plots <- lapply(levs, function(lv) {
+      sub_long  <- long[long$metric == lv, , drop = FALSE]
+      sub_means <- means[means$metric == lv, , drop = FALSE]
+      base_p(sub_long, sub_means, lv)
+    })
+    names(plots) <- levs
+    return(invisible(plots))
+  }
+
+  p <- base_p(long, means,
+              if (multi) "Split-Half Reliability" else NULL) +
+    ggplot2::facet_wrap(~ metric, scales = "free", ncol = 2L)
 
   print(p)
   invisible(p)

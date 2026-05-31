@@ -339,7 +339,14 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 
 <h1 class="title toc-ignore">Network Estimation and Analysis with
 Nestimate</h1>
-
+<h4 class="author">Mohammed Saqr</h4>
+<address class="author_afil">
+University of Eastern Finland<br><h4 class="author">Sonsoles
+López-Pernas</h4>
+<address class="author_afil">
+University of Eastern Finland<br><h4 class="author">Kamila Misiejuk</h4>
+<address class="author_afil">
+FernUniversität in Hagen, Germany<br>
 
 
 <p><code>Nestimate</code> is a unified framework for estimating,
@@ -397,27 +404,21 @@ and <code>timestamp</code> providing temporal ordering. For a detailed
 description of the dataset and coding scheme, see <a href="https://saqr.me/blog/2026/human-ai-interaction-cograph/">Saqr
 (2026)</a>.</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="fu">library</span>(Nestimate)</span>
-<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a></span>
-<span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a><span class="co"># Subsample for vignette speed (CRAN build-time limit)</span></span>
-<span id="cb1-4"><a href="#cb1-4" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">1</span>)</span>
-<span id="cb1-5"><a href="#cb1-5" tabindex="-1"></a>keep <span class="ot">&lt;-</span> <span class="fu">sample</span>(<span class="fu">unique</span>(human_long<span class="sc">$</span>session_id), <span class="dv">100</span>)</span>
-<span id="cb1-6"><a href="#cb1-6" tabindex="-1"></a>human_sub <span class="ot">&lt;-</span> human_long[human_long<span class="sc">$</span>session_id <span class="sc">%in%</span> keep, ]</span>
-<span id="cb1-7"><a href="#cb1-7" tabindex="-1"></a></span>
-<span id="cb1-8"><a href="#cb1-8" tabindex="-1"></a><span class="fu">head</span>(human_sub)</span>
-<span id="cb1-9"><a href="#cb1-9" tabindex="-1"></a><span class="co">#&gt;     message_id   project   session_id  timestamp session_date      code</span></span>
-<span id="cb1-10"><a href="#cb1-10" tabindex="-1"></a><span class="co">#&gt; 395       2902 Project_7 0605767ae57f 1772229600   2026-02-28   Specify</span></span>
-<span id="cb1-11"><a href="#cb1-11" tabindex="-1"></a><span class="co">#&gt; 396       2902 Project_7 0605767ae57f 1772229600   2026-02-28   Command</span></span>
-<span id="cb1-12"><a href="#cb1-12" tabindex="-1"></a><span class="co">#&gt; 397       2902 Project_7 0605767ae57f 1772229600   2026-02-28   Request</span></span>
-<span id="cb1-13"><a href="#cb1-13" tabindex="-1"></a><span class="co">#&gt; 398       2902 Project_7 0605767ae57f 1772229600   2026-02-28   Specify</span></span>
-<span id="cb1-14"><a href="#cb1-14" tabindex="-1"></a><span class="co">#&gt; 399       2903 Project_7 0605767ae57f 1772229600   2026-02-28 Interrupt</span></span>
-<span id="cb1-15"><a href="#cb1-15" tabindex="-1"></a><span class="co">#&gt; 400       2905 Project_7 0605767ae57f 1772229600   2026-02-28   Command</span></span>
-<span id="cb1-16"><a href="#cb1-16" tabindex="-1"></a><span class="co">#&gt;           cluster code_order order_in_session</span></span>
-<span id="cb1-17"><a href="#cb1-17" tabindex="-1"></a><span class="co">#&gt; 395     Directive          1                1</span></span>
-<span id="cb1-18"><a href="#cb1-18" tabindex="-1"></a><span class="co">#&gt; 396     Directive          2                2</span></span>
-<span id="cb1-19"><a href="#cb1-19" tabindex="-1"></a><span class="co">#&gt; 397     Directive          3                3</span></span>
-<span id="cb1-20"><a href="#cb1-20" tabindex="-1"></a><span class="co">#&gt; 398     Directive          4                4</span></span>
-<span id="cb1-21"><a href="#cb1-21" tabindex="-1"></a><span class="co">#&gt; 399 Metacognitive          1                5</span></span>
-<span id="cb1-22"><a href="#cb1-22" tabindex="-1"></a><span class="co">#&gt; 400     Directive          1                8</span></span></code></pre></div>
+<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a><span class="fu">head</span>(human_long)</span>
+<span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a><span class="co">#&gt;   message_id   project   session_id  timestamp session_date      code</span></span>
+<span id="cb1-4"><a href="#cb1-4" tabindex="-1"></a><span class="co">#&gt; 1       3439 Project_7 0086cabebd15 1772661600   2026-03-05   Specify</span></span>
+<span id="cb1-5"><a href="#cb1-5" tabindex="-1"></a><span class="co">#&gt; 2       3439 Project_7 0086cabebd15 1772661600   2026-03-05   Command</span></span>
+<span id="cb1-6"><a href="#cb1-6" tabindex="-1"></a><span class="co">#&gt; 3       3439 Project_7 0086cabebd15 1772661600   2026-03-05   Specify</span></span>
+<span id="cb1-7"><a href="#cb1-7" tabindex="-1"></a><span class="co">#&gt; 4       3440 Project_7 0086cabebd15 1772661600   2026-03-05 Interrupt</span></span>
+<span id="cb1-8"><a href="#cb1-8" tabindex="-1"></a><span class="co">#&gt; 5       3442 Project_7 0086cabebd15 1772661600   2026-03-05    Verify</span></span>
+<span id="cb1-9"><a href="#cb1-9" tabindex="-1"></a><span class="co">#&gt; 6       3444 Project_7 0086cabebd15 1772661600   2026-03-05   Specify</span></span>
+<span id="cb1-10"><a href="#cb1-10" tabindex="-1"></a><span class="co">#&gt;         cluster code_order order_in_session</span></span>
+<span id="cb1-11"><a href="#cb1-11" tabindex="-1"></a><span class="co">#&gt; 1     Directive          1                1</span></span>
+<span id="cb1-12"><a href="#cb1-12" tabindex="-1"></a><span class="co">#&gt; 2     Directive          2                2</span></span>
+<span id="cb1-13"><a href="#cb1-13" tabindex="-1"></a><span class="co">#&gt; 3     Directive          3                3</span></span>
+<span id="cb1-14"><a href="#cb1-14" tabindex="-1"></a><span class="co">#&gt; 4 Metacognitive          1                4</span></span>
+<span id="cb1-15"><a href="#cb1-15" tabindex="-1"></a><span class="co">#&gt; 5    Evaluative          1                7</span></span>
+<span id="cb1-16"><a href="#cb1-16" tabindex="-1"></a><span class="co">#&gt; 6     Directive          1               10</span></span></code></pre></div>
 <p>The dataset is in long format: <code>code</code> records what
 happened, <code>session_id</code> who did it, and <code>timestamp</code>
 when. Additional columns like <code>project</code> and
@@ -454,45 +455,45 @@ transitions from <span class="math inline">\(v_i\)</span>. These
 probabilities are assembled into a <strong>transition matrix</strong>
 <span class="math inline">\(T\)</span>, where each element <span class="math inline">\(T_{ij}\)</span> represents the estimated
 probability of transitioning from <span class="math inline">\(v_i\)</span> to <span class="math inline">\(v_j\)</span> (Saqr et al., 2025a).</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a>net_tna <span class="ot">&lt;-</span> <span class="fu">build_network</span>(human_sub, <span class="at">method =</span> <span class="st">&quot;tna&quot;</span>,</span>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a>net_tna <span class="ot">&lt;-</span> <span class="fu">build_network</span>(human_long, <span class="at">method =</span> <span class="st">&quot;tna&quot;</span>,</span>
 <span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a>                         <span class="at">action =</span> <span class="st">&quot;code&quot;</span>, <span class="at">actor =</span> <span class="st">&quot;session_id&quot;</span>,</span>
 <span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a>                         <span class="at">time =</span> <span class="st">&quot;timestamp&quot;</span>)</span>
 <span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a><span class="fu">print</span>(net_tna)</span>
 <span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a><span class="co">#&gt; Transition Network (relative probabilities) [directed]</span></span>
-<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a><span class="co">#&gt;   Weights: [0.019, 0.577]  |  mean: 0.108</span></span>
+<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a><span class="co">#&gt;   Weights: [0.018, 0.620]  |  mean: 0.111</span></span>
 <span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a><span class="co">#&gt;   Weight matrix:</span></span>
 <span id="cb2-9"><a href="#cb2-9" tabindex="-1"></a><span class="co">#&gt;             Command Correct Frustrate Inquire Interrupt Refine Request Specify</span></span>
-<span id="cb2-10"><a href="#cb2-10" tabindex="-1"></a><span class="co">#&gt;   Command     0.209   0.091     0.040   0.067     0.037  0.047   0.158   0.295</span></span>
-<span id="cb2-11"><a href="#cb2-11" tabindex="-1"></a><span class="co">#&gt;   Correct     0.099   0.109     0.134   0.054     0.059  0.109   0.124   0.282</span></span>
-<span id="cb2-12"><a href="#cb2-12" tabindex="-1"></a><span class="co">#&gt;   Frustrate   0.078   0.150     0.204   0.083     0.019  0.209   0.107   0.117</span></span>
-<span id="cb2-13"><a href="#cb2-13" tabindex="-1"></a><span class="co">#&gt;   Inquire     0.155   0.155     0.140   0.166     0.109  0.041   0.093   0.098</span></span>
-<span id="cb2-14"><a href="#cb2-14" tabindex="-1"></a><span class="co">#&gt;   Interrupt   0.298   0.055     0.055   0.193     0.144  0.039   0.066   0.077</span></span>
-<span id="cb2-15"><a href="#cb2-15" tabindex="-1"></a><span class="co">#&gt;   Refine      0.042   0.090     0.090   0.066     0.048  0.096   0.114   0.416</span></span>
-<span id="cb2-16"><a href="#cb2-16" tabindex="-1"></a><span class="co">#&gt;   Request     0.102   0.019     0.070   0.074     0.051  0.033   0.033   0.577</span></span>
-<span id="cb2-17"><a href="#cb2-17" tabindex="-1"></a><span class="co">#&gt;   Specify     0.291   0.069     0.076   0.067     0.176  0.052   0.064   0.162</span></span>
-<span id="cb2-18"><a href="#cb2-18" tabindex="-1"></a><span class="co">#&gt;   Verify      0.230   0.100     0.110   0.100     0.050  0.140   0.080   0.110</span></span>
+<span id="cb2-10"><a href="#cb2-10" tabindex="-1"></a><span class="co">#&gt;   Command     0.235   0.088     0.055   0.066     0.035  0.038   0.155   0.280</span></span>
+<span id="cb2-11"><a href="#cb2-11" tabindex="-1"></a><span class="co">#&gt;   Correct     0.093   0.091     0.138   0.057     0.054  0.112   0.120   0.278</span></span>
+<span id="cb2-12"><a href="#cb2-12" tabindex="-1"></a><span class="co">#&gt;   Frustrate   0.103   0.115     0.176   0.075     0.047  0.171   0.111   0.125</span></span>
+<span id="cb2-13"><a href="#cb2-13" tabindex="-1"></a><span class="co">#&gt;   Inquire     0.196   0.126     0.098   0.188     0.094  0.062   0.084   0.106</span></span>
+<span id="cb2-14"><a href="#cb2-14" tabindex="-1"></a><span class="co">#&gt;   Interrupt   0.259   0.081     0.094   0.123     0.102  0.080   0.069   0.122</span></span>
+<span id="cb2-15"><a href="#cb2-15" tabindex="-1"></a><span class="co">#&gt;   Refine      0.058   0.075     0.072   0.047     0.042  0.086   0.146   0.457</span></span>
+<span id="cb2-16"><a href="#cb2-16" tabindex="-1"></a><span class="co">#&gt;   Request     0.096   0.019     0.044   0.067     0.051  0.033   0.039   0.620</span></span>
+<span id="cb2-17"><a href="#cb2-17" tabindex="-1"></a><span class="co">#&gt;   Specify     0.263   0.058     0.081   0.072     0.167  0.074   0.070   0.172</span></span>
+<span id="cb2-18"><a href="#cb2-18" tabindex="-1"></a><span class="co">#&gt;   Verify      0.224   0.079     0.164   0.118     0.043  0.097   0.116   0.083</span></span>
 <span id="cb2-19"><a href="#cb2-19" tabindex="-1"></a><span class="co">#&gt;             Verify</span></span>
-<span id="cb2-20"><a href="#cb2-20" tabindex="-1"></a><span class="co">#&gt;   Command    0.056</span></span>
-<span id="cb2-21"><a href="#cb2-21" tabindex="-1"></a><span class="co">#&gt;   Correct    0.030</span></span>
-<span id="cb2-22"><a href="#cb2-22" tabindex="-1"></a><span class="co">#&gt;   Frustrate  0.034</span></span>
-<span id="cb2-23"><a href="#cb2-23" tabindex="-1"></a><span class="co">#&gt;   Inquire    0.041</span></span>
-<span id="cb2-24"><a href="#cb2-24" tabindex="-1"></a><span class="co">#&gt;   Interrupt  0.072</span></span>
-<span id="cb2-25"><a href="#cb2-25" tabindex="-1"></a><span class="co">#&gt;   Refine     0.036</span></span>
-<span id="cb2-26"><a href="#cb2-26" tabindex="-1"></a><span class="co">#&gt;   Request    0.042</span></span>
+<span id="cb2-20"><a href="#cb2-20" tabindex="-1"></a><span class="co">#&gt;   Command    0.048</span></span>
+<span id="cb2-21"><a href="#cb2-21" tabindex="-1"></a><span class="co">#&gt;   Correct    0.056</span></span>
+<span id="cb2-22"><a href="#cb2-22" tabindex="-1"></a><span class="co">#&gt;   Frustrate  0.077</span></span>
+<span id="cb2-23"><a href="#cb2-23" tabindex="-1"></a><span class="co">#&gt;   Inquire    0.044</span></span>
+<span id="cb2-24"><a href="#cb2-24" tabindex="-1"></a><span class="co">#&gt;   Interrupt  0.069</span></span>
+<span id="cb2-25"><a href="#cb2-25" tabindex="-1"></a><span class="co">#&gt;   Refine     0.018</span></span>
+<span id="cb2-26"><a href="#cb2-26" tabindex="-1"></a><span class="co">#&gt;   Request    0.032</span></span>
 <span id="cb2-27"><a href="#cb2-27" tabindex="-1"></a><span class="co">#&gt;   Specify    0.043</span></span>
-<span id="cb2-28"><a href="#cb2-28" tabindex="-1"></a><span class="co">#&gt;   Verify     0.080 </span></span>
+<span id="cb2-28"><a href="#cb2-28" tabindex="-1"></a><span class="co">#&gt;   Verify     0.077 </span></span>
 <span id="cb2-29"><a href="#cb2-29" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb2-30"><a href="#cb2-30" tabindex="-1"></a><span class="co">#&gt;   Initial probabilities:</span></span>
-<span id="cb2-31"><a href="#cb2-31" tabindex="-1"></a><span class="co">#&gt;   Specify       0.664  ████████████████████████████████████████</span></span>
-<span id="cb2-32"><a href="#cb2-32" tabindex="-1"></a><span class="co">#&gt;   Command       0.216  █████████████</span></span>
-<span id="cb2-33"><a href="#cb2-33" tabindex="-1"></a><span class="co">#&gt;   Request       0.048  ███</span></span>
-<span id="cb2-34"><a href="#cb2-34" tabindex="-1"></a><span class="co">#&gt;   Correct       0.040  ██</span></span>
-<span id="cb2-35"><a href="#cb2-35" tabindex="-1"></a><span class="co">#&gt;   Interrupt     0.016  █</span></span>
-<span id="cb2-36"><a href="#cb2-36" tabindex="-1"></a><span class="co">#&gt;   Frustrate     0.008  </span></span>
-<span id="cb2-37"><a href="#cb2-37" tabindex="-1"></a><span class="co">#&gt;   Refine        0.008  </span></span>
-<span id="cb2-38"><a href="#cb2-38" tabindex="-1"></a><span class="co">#&gt;   Inquire       0.000  </span></span>
-<span id="cb2-39"><a href="#cb2-39" tabindex="-1"></a><span class="co">#&gt;   Verify        0.000</span></span></code></pre></div>
+<span id="cb2-31"><a href="#cb2-31" tabindex="-1"></a><span class="co">#&gt;   Specify       0.679  ████████████████████████████████████████</span></span>
+<span id="cb2-32"><a href="#cb2-32" tabindex="-1"></a><span class="co">#&gt;   Command       0.175  ██████████</span></span>
+<span id="cb2-33"><a href="#cb2-33" tabindex="-1"></a><span class="co">#&gt;   Request       0.055  ███</span></span>
+<span id="cb2-34"><a href="#cb2-34" tabindex="-1"></a><span class="co">#&gt;   Interrupt     0.030  ██</span></span>
+<span id="cb2-35"><a href="#cb2-35" tabindex="-1"></a><span class="co">#&gt;   Correct       0.019  █</span></span>
+<span id="cb2-36"><a href="#cb2-36" tabindex="-1"></a><span class="co">#&gt;   Refine        0.019  █</span></span>
+<span id="cb2-37"><a href="#cb2-37" tabindex="-1"></a><span class="co">#&gt;   Frustrate     0.013  █</span></span>
+<span id="cb2-38"><a href="#cb2-38" tabindex="-1"></a><span class="co">#&gt;   Inquire       0.008  </span></span>
+<span id="cb2-39"><a href="#cb2-39" tabindex="-1"></a><span class="co">#&gt;   Verify        0.002</span></span></code></pre></div>
 </div>
 <div id="frequency-network-ftna" class="section level3">
 <h3>Frequency Network (FTNA)</h3>
@@ -502,45 +503,45 @@ frequencies matter — a transition occurring 500 times from a common
 state may be more practically important than one occurring 5 times from
 a rare state, even if the latter has a higher conditional
 probability.</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a>net_ftna <span class="ot">&lt;-</span> <span class="fu">build_network</span>(human_sub, <span class="at">method =</span> <span class="st">&quot;ftna&quot;</span>,</span>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a>net_ftna <span class="ot">&lt;-</span> <span class="fu">build_network</span>(human_long, <span class="at">method =</span> <span class="st">&quot;ftna&quot;</span>,</span>
 <span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>                          <span class="at">action =</span> <span class="st">&quot;code&quot;</span>, <span class="at">actor =</span> <span class="st">&quot;session_id&quot;</span>,</span>
 <span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a>                          <span class="at">time =</span> <span class="st">&quot;timestamp&quot;</span>)</span>
 <span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a><span class="fu">print</span>(net_ftna)</span>
 <span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a><span class="co">#&gt; Transition Network (frequency counts) [directed]</span></span>
-<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a><span class="co">#&gt;   Weights: [4.000, 169.000]  |  mean: 26.889</span></span>
+<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a><span class="co">#&gt;   Weights: [14.000, 732.000]  |  mean: 126.790</span></span>
 <span id="cb3-7"><a href="#cb3-7" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb3-8"><a href="#cb3-8" tabindex="-1"></a><span class="co">#&gt;   Weight matrix:</span></span>
 <span id="cb3-9"><a href="#cb3-9" tabindex="-1"></a><span class="co">#&gt;             Command Correct Frustrate Inquire Interrupt Refine Request Specify</span></span>
-<span id="cb3-10"><a href="#cb3-10" tabindex="-1"></a><span class="co">#&gt;   Command        90      39        17      29        16     20      68     127</span></span>
-<span id="cb3-11"><a href="#cb3-11" tabindex="-1"></a><span class="co">#&gt;   Correct        20      22        27      11        12     22      25      57</span></span>
-<span id="cb3-12"><a href="#cb3-12" tabindex="-1"></a><span class="co">#&gt;   Frustrate      16      31        42      17         4     43      22      24</span></span>
-<span id="cb3-13"><a href="#cb3-13" tabindex="-1"></a><span class="co">#&gt;   Inquire        30      30        27      32        21      8      18      19</span></span>
-<span id="cb3-14"><a href="#cb3-14" tabindex="-1"></a><span class="co">#&gt;   Interrupt      54      10        10      35        26      7      12      14</span></span>
-<span id="cb3-15"><a href="#cb3-15" tabindex="-1"></a><span class="co">#&gt;   Refine          7      15        15      11         8     16      19      69</span></span>
-<span id="cb3-16"><a href="#cb3-16" tabindex="-1"></a><span class="co">#&gt;   Request        22       4        15      16        11      7       7     124</span></span>
-<span id="cb3-17"><a href="#cb3-17" tabindex="-1"></a><span class="co">#&gt;   Specify       169      40        44      39       102     30      37      94</span></span>
-<span id="cb3-18"><a href="#cb3-18" tabindex="-1"></a><span class="co">#&gt;   Verify         23      10        11      10         5     14       8      11</span></span>
+<span id="cb3-10"><a href="#cb3-10" tabindex="-1"></a><span class="co">#&gt;   Command       459     171       107     129        68     75     303     548</span></span>
+<span id="cb3-11"><a href="#cb3-11" tabindex="-1"></a><span class="co">#&gt;   Correct        73      71       108      45        42     88      94     218</span></span>
+<span id="cb3-12"><a href="#cb3-12" tabindex="-1"></a><span class="co">#&gt;   Frustrate      95     106       162      69        43    157     102     115</span></span>
+<span id="cb3-13"><a href="#cb3-13" tabindex="-1"></a><span class="co">#&gt;   Inquire       160     103        80     154        77     51      69      87</span></span>
+<span id="cb3-14"><a href="#cb3-14" tabindex="-1"></a><span class="co">#&gt;   Interrupt     191      60        69      91        75     59      51      90</span></span>
+<span id="cb3-15"><a href="#cb3-15" tabindex="-1"></a><span class="co">#&gt;   Refine         45      59        56      37        33     67     114     357</span></span>
+<span id="cb3-16"><a href="#cb3-16" tabindex="-1"></a><span class="co">#&gt;   Request        97      19        45      68        52     33      40     629</span></span>
+<span id="cb3-17"><a href="#cb3-17" tabindex="-1"></a><span class="co">#&gt;   Specify       732     161       226     199       463    205     194     479</span></span>
+<span id="cb3-18"><a href="#cb3-18" tabindex="-1"></a><span class="co">#&gt;   Verify        108      38        79      57        21     47      56      40</span></span>
 <span id="cb3-19"><a href="#cb3-19" tabindex="-1"></a><span class="co">#&gt;             Verify</span></span>
-<span id="cb3-20"><a href="#cb3-20" tabindex="-1"></a><span class="co">#&gt;   Command       24</span></span>
-<span id="cb3-21"><a href="#cb3-21" tabindex="-1"></a><span class="co">#&gt;   Correct        6</span></span>
-<span id="cb3-22"><a href="#cb3-22" tabindex="-1"></a><span class="co">#&gt;   Frustrate      7</span></span>
-<span id="cb3-23"><a href="#cb3-23" tabindex="-1"></a><span class="co">#&gt;   Inquire        8</span></span>
-<span id="cb3-24"><a href="#cb3-24" tabindex="-1"></a><span class="co">#&gt;   Interrupt     13</span></span>
-<span id="cb3-25"><a href="#cb3-25" tabindex="-1"></a><span class="co">#&gt;   Refine         6</span></span>
-<span id="cb3-26"><a href="#cb3-26" tabindex="-1"></a><span class="co">#&gt;   Request        9</span></span>
-<span id="cb3-27"><a href="#cb3-27" tabindex="-1"></a><span class="co">#&gt;   Specify       25</span></span>
-<span id="cb3-28"><a href="#cb3-28" tabindex="-1"></a><span class="co">#&gt;   Verify         8 </span></span>
+<span id="cb3-20"><a href="#cb3-20" tabindex="-1"></a><span class="co">#&gt;   Command       94</span></span>
+<span id="cb3-21"><a href="#cb3-21" tabindex="-1"></a><span class="co">#&gt;   Correct       44</span></span>
+<span id="cb3-22"><a href="#cb3-22" tabindex="-1"></a><span class="co">#&gt;   Frustrate     71</span></span>
+<span id="cb3-23"><a href="#cb3-23" tabindex="-1"></a><span class="co">#&gt;   Inquire       36</span></span>
+<span id="cb3-24"><a href="#cb3-24" tabindex="-1"></a><span class="co">#&gt;   Interrupt     51</span></span>
+<span id="cb3-25"><a href="#cb3-25" tabindex="-1"></a><span class="co">#&gt;   Refine        14</span></span>
+<span id="cb3-26"><a href="#cb3-26" tabindex="-1"></a><span class="co">#&gt;   Request       32</span></span>
+<span id="cb3-27"><a href="#cb3-27" tabindex="-1"></a><span class="co">#&gt;   Specify      120</span></span>
+<span id="cb3-28"><a href="#cb3-28" tabindex="-1"></a><span class="co">#&gt;   Verify        37 </span></span>
 <span id="cb3-29"><a href="#cb3-29" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb3-30"><a href="#cb3-30" tabindex="-1"></a><span class="co">#&gt;   Initial probabilities:</span></span>
-<span id="cb3-31"><a href="#cb3-31" tabindex="-1"></a><span class="co">#&gt;   Specify       0.664  ████████████████████████████████████████</span></span>
-<span id="cb3-32"><a href="#cb3-32" tabindex="-1"></a><span class="co">#&gt;   Command       0.216  █████████████</span></span>
-<span id="cb3-33"><a href="#cb3-33" tabindex="-1"></a><span class="co">#&gt;   Request       0.048  ███</span></span>
-<span id="cb3-34"><a href="#cb3-34" tabindex="-1"></a><span class="co">#&gt;   Correct       0.040  ██</span></span>
-<span id="cb3-35"><a href="#cb3-35" tabindex="-1"></a><span class="co">#&gt;   Interrupt     0.016  █</span></span>
-<span id="cb3-36"><a href="#cb3-36" tabindex="-1"></a><span class="co">#&gt;   Frustrate     0.008  </span></span>
-<span id="cb3-37"><a href="#cb3-37" tabindex="-1"></a><span class="co">#&gt;   Refine        0.008  </span></span>
-<span id="cb3-38"><a href="#cb3-38" tabindex="-1"></a><span class="co">#&gt;   Inquire       0.000  </span></span>
-<span id="cb3-39"><a href="#cb3-39" tabindex="-1"></a><span class="co">#&gt;   Verify        0.000</span></span></code></pre></div>
+<span id="cb3-31"><a href="#cb3-31" tabindex="-1"></a><span class="co">#&gt;   Specify       0.679  ████████████████████████████████████████</span></span>
+<span id="cb3-32"><a href="#cb3-32" tabindex="-1"></a><span class="co">#&gt;   Command       0.175  ██████████</span></span>
+<span id="cb3-33"><a href="#cb3-33" tabindex="-1"></a><span class="co">#&gt;   Request       0.055  ███</span></span>
+<span id="cb3-34"><a href="#cb3-34" tabindex="-1"></a><span class="co">#&gt;   Interrupt     0.030  ██</span></span>
+<span id="cb3-35"><a href="#cb3-35" tabindex="-1"></a><span class="co">#&gt;   Correct       0.019  █</span></span>
+<span id="cb3-36"><a href="#cb3-36" tabindex="-1"></a><span class="co">#&gt;   Refine        0.019  █</span></span>
+<span id="cb3-37"><a href="#cb3-37" tabindex="-1"></a><span class="co">#&gt;   Frustrate     0.013  █</span></span>
+<span id="cb3-38"><a href="#cb3-38" tabindex="-1"></a><span class="co">#&gt;   Inquire       0.008  </span></span>
+<span id="cb3-39"><a href="#cb3-39" tabindex="-1"></a><span class="co">#&gt;   Verify        0.002</span></span></code></pre></div>
 </div>
 <div id="attention-network-atna" class="section level3">
 <h3>Attention Network (ATNA)</h3>
@@ -550,45 +551,45 @@ importance to recent transitions within each sequence. The
 produce faster decay. This captures the idea that later events in a
 process may be more indicative of the underlying dynamics than early
 ones.</p>
-<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a>net_atna <span class="ot">&lt;-</span> <span class="fu">build_network</span>(human_sub, <span class="at">method =</span> <span class="st">&quot;atna&quot;</span>,</span>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a>net_atna <span class="ot">&lt;-</span> <span class="fu">build_network</span>(human_long, <span class="at">method =</span> <span class="st">&quot;atna&quot;</span>,</span>
 <span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a>                          <span class="at">action =</span> <span class="st">&quot;code&quot;</span>, <span class="at">actor =</span> <span class="st">&quot;session_id&quot;</span>,</span>
 <span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a>                          <span class="at">time =</span> <span class="st">&quot;timestamp&quot;</span>)</span>
 <span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a><span class="fu">print</span>(net_atna)</span>
 <span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a><span class="co">#&gt; Attention Network (decay-weighted transitions) [directed]</span></span>
-<span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a><span class="co">#&gt;   Weights: [2.719, 81.786]  |  mean: 14.928</span></span>
+<span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a><span class="co">#&gt;   Weights: [11.018, 357.662]  |  mean: 71.690</span></span>
 <span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a><span class="co">#&gt;   Weight matrix:</span></span>
-<span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a><span class="co">#&gt;             Command Correct Frustrate Inquire Interrupt Refine Request Specify</span></span>
-<span id="cb4-10"><a href="#cb4-10" tabindex="-1"></a><span class="co">#&gt;   Command    50.398  21.700    12.450  16.556    15.164 11.968  31.860  68.371</span></span>
-<span id="cb4-11"><a href="#cb4-11" tabindex="-1"></a><span class="co">#&gt;   Correct    13.595  13.498    14.098   8.029     7.025 12.674  11.888  30.257</span></span>
-<span id="cb4-12"><a href="#cb4-12" tabindex="-1"></a><span class="co">#&gt;   Frustrate  10.506  15.087    23.142   9.736     3.927 20.308  12.254  18.614</span></span>
-<span id="cb4-13"><a href="#cb4-13" tabindex="-1"></a><span class="co">#&gt;   Inquire    16.073  17.002    13.903  16.691    11.297  4.845   9.755  14.765</span></span>
-<span id="cb4-14"><a href="#cb4-14" tabindex="-1"></a><span class="co">#&gt;   Interrupt  25.913   6.000     5.844  17.104    17.124  3.850   6.353  12.338</span></span>
-<span id="cb4-15"><a href="#cb4-15" tabindex="-1"></a><span class="co">#&gt;   Refine      6.765   9.389     9.894   6.244     4.124 10.875  10.187  33.191</span></span>
-<span id="cb4-16"><a href="#cb4-16" tabindex="-1"></a><span class="co">#&gt;   Request    14.348   4.176     8.718  10.071    10.654  6.075   6.291  53.456</span></span>
-<span id="cb4-17"><a href="#cb4-17" tabindex="-1"></a><span class="co">#&gt;   Specify    81.786  22.700    26.216  25.113    44.442 18.861  28.052  65.762</span></span>
-<span id="cb4-18"><a href="#cb4-18" tabindex="-1"></a><span class="co">#&gt;   Verify     11.587   5.170     5.991   5.540     2.719  7.318   5.262   8.894</span></span>
+<span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a><span class="co">#&gt;             Command Correct Frustrate Inquire Interrupt  Refine Request Specify</span></span>
+<span id="cb4-10"><a href="#cb4-10" tabindex="-1"></a><span class="co">#&gt;   Command   254.753  91.496    66.797  80.402    65.936  47.423 145.985 297.131</span></span>
+<span id="cb4-11"><a href="#cb4-11" tabindex="-1"></a><span class="co">#&gt;   Correct    51.382  44.627    55.538  29.832    27.286  46.929  46.160 119.340</span></span>
+<span id="cb4-12"><a href="#cb4-12" tabindex="-1"></a><span class="co">#&gt;   Frustrate  57.452  55.341    92.756  40.085    28.624  74.892  54.606  87.031</span></span>
+<span id="cb4-13"><a href="#cb4-13" tabindex="-1"></a><span class="co">#&gt;   Inquire    85.134  56.787    43.046  81.061    38.782  29.220  40.091  69.990</span></span>
+<span id="cb4-14"><a href="#cb4-14" tabindex="-1"></a><span class="co">#&gt;   Interrupt  94.228  31.160    36.365  46.634    48.698  30.005  28.457  67.398</span></span>
+<span id="cb4-15"><a href="#cb4-15" tabindex="-1"></a><span class="co">#&gt;   Refine     36.306  37.008    37.761  24.197    21.236  51.087  58.478 167.226</span></span>
+<span id="cb4-16"><a href="#cb4-16" tabindex="-1"></a><span class="co">#&gt;   Request    63.272  18.659    31.998  41.056    51.503  30.285  33.277 272.476</span></span>
+<span id="cb4-17"><a href="#cb4-17" tabindex="-1"></a><span class="co">#&gt;   Specify   357.662  96.031   134.432 115.671   206.063 116.889 141.240 335.302</span></span>
+<span id="cb4-18"><a href="#cb4-18" tabindex="-1"></a><span class="co">#&gt;   Verify     53.941  20.958    40.429  30.820    11.349  25.768  29.387  39.412</span></span>
 <span id="cb4-19"><a href="#cb4-19" tabindex="-1"></a><span class="co">#&gt;             Verify</span></span>
-<span id="cb4-20"><a href="#cb4-20" tabindex="-1"></a><span class="co">#&gt;   Command   13.721</span></span>
-<span id="cb4-21"><a href="#cb4-21" tabindex="-1"></a><span class="co">#&gt;   Correct    3.554</span></span>
-<span id="cb4-22"><a href="#cb4-22" tabindex="-1"></a><span class="co">#&gt;   Frustrate  3.574</span></span>
-<span id="cb4-23"><a href="#cb4-23" tabindex="-1"></a><span class="co">#&gt;   Inquire    4.062</span></span>
-<span id="cb4-24"><a href="#cb4-24" tabindex="-1"></a><span class="co">#&gt;   Interrupt  6.741</span></span>
-<span id="cb4-25"><a href="#cb4-25" tabindex="-1"></a><span class="co">#&gt;   Refine     3.204</span></span>
-<span id="cb4-26"><a href="#cb4-26" tabindex="-1"></a><span class="co">#&gt;   Request    5.989</span></span>
-<span id="cb4-27"><a href="#cb4-27" tabindex="-1"></a><span class="co">#&gt;   Specify   15.915</span></span>
-<span id="cb4-28"><a href="#cb4-28" tabindex="-1"></a><span class="co">#&gt;   Verify     3.943 </span></span>
+<span id="cb4-20"><a href="#cb4-20" tabindex="-1"></a><span class="co">#&gt;   Command   53.492</span></span>
+<span id="cb4-21"><a href="#cb4-21" tabindex="-1"></a><span class="co">#&gt;   Correct   22.847</span></span>
+<span id="cb4-22"><a href="#cb4-22" tabindex="-1"></a><span class="co">#&gt;   Frustrate 32.765</span></span>
+<span id="cb4-23"><a href="#cb4-23" tabindex="-1"></a><span class="co">#&gt;   Inquire   17.833</span></span>
+<span id="cb4-24"><a href="#cb4-24" tabindex="-1"></a><span class="co">#&gt;   Interrupt 27.393</span></span>
+<span id="cb4-25"><a href="#cb4-25" tabindex="-1"></a><span class="co">#&gt;   Refine    11.018</span></span>
+<span id="cb4-26"><a href="#cb4-26" tabindex="-1"></a><span class="co">#&gt;   Request   21.781</span></span>
+<span id="cb4-27"><a href="#cb4-27" tabindex="-1"></a><span class="co">#&gt;   Specify   76.312</span></span>
+<span id="cb4-28"><a href="#cb4-28" tabindex="-1"></a><span class="co">#&gt;   Verify    23.444 </span></span>
 <span id="cb4-29"><a href="#cb4-29" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb4-30"><a href="#cb4-30" tabindex="-1"></a><span class="co">#&gt;   Initial probabilities:</span></span>
-<span id="cb4-31"><a href="#cb4-31" tabindex="-1"></a><span class="co">#&gt;   Specify       0.664  ████████████████████████████████████████</span></span>
-<span id="cb4-32"><a href="#cb4-32" tabindex="-1"></a><span class="co">#&gt;   Command       0.216  █████████████</span></span>
-<span id="cb4-33"><a href="#cb4-33" tabindex="-1"></a><span class="co">#&gt;   Request       0.048  ███</span></span>
-<span id="cb4-34"><a href="#cb4-34" tabindex="-1"></a><span class="co">#&gt;   Correct       0.040  ██</span></span>
-<span id="cb4-35"><a href="#cb4-35" tabindex="-1"></a><span class="co">#&gt;   Interrupt     0.016  █</span></span>
-<span id="cb4-36"><a href="#cb4-36" tabindex="-1"></a><span class="co">#&gt;   Frustrate     0.008  </span></span>
-<span id="cb4-37"><a href="#cb4-37" tabindex="-1"></a><span class="co">#&gt;   Refine        0.008  </span></span>
-<span id="cb4-38"><a href="#cb4-38" tabindex="-1"></a><span class="co">#&gt;   Inquire       0.000  </span></span>
-<span id="cb4-39"><a href="#cb4-39" tabindex="-1"></a><span class="co">#&gt;   Verify        0.000</span></span></code></pre></div>
+<span id="cb4-31"><a href="#cb4-31" tabindex="-1"></a><span class="co">#&gt;   Specify       0.679  ████████████████████████████████████████</span></span>
+<span id="cb4-32"><a href="#cb4-32" tabindex="-1"></a><span class="co">#&gt;   Command       0.175  ██████████</span></span>
+<span id="cb4-33"><a href="#cb4-33" tabindex="-1"></a><span class="co">#&gt;   Request       0.055  ███</span></span>
+<span id="cb4-34"><a href="#cb4-34" tabindex="-1"></a><span class="co">#&gt;   Interrupt     0.030  ██</span></span>
+<span id="cb4-35"><a href="#cb4-35" tabindex="-1"></a><span class="co">#&gt;   Correct       0.019  █</span></span>
+<span id="cb4-36"><a href="#cb4-36" tabindex="-1"></a><span class="co">#&gt;   Refine        0.019  █</span></span>
+<span id="cb4-37"><a href="#cb4-37" tabindex="-1"></a><span class="co">#&gt;   Frustrate     0.013  █</span></span>
+<span id="cb4-38"><a href="#cb4-38" tabindex="-1"></a><span class="co">#&gt;   Inquire       0.008  </span></span>
+<span id="cb4-39"><a href="#cb4-39" tabindex="-1"></a><span class="co">#&gt;   Verify        0.002</span></span></code></pre></div>
 </div>
 <div id="co-occurrence-network-from-binary-data" class="section level3">
 <h3>Co-occurrence Network from Binary Data</h3>
@@ -601,7 +602,7 @@ events tend to co-occur.</p>
 <span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a>net <span class="ot">&lt;-</span> <span class="fu">build_network</span>(learning_activities, <span class="at">method =</span> <span class="st">&quot;cna&quot;</span>, <span class="at">actor =</span> <span class="st">&quot;student&quot;</span>)</span>
 <span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a><span class="fu">print</span>(net)</span>
 <span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a><span class="co">#&gt; Co-occurrence Network [undirected]</span></span>
-<span id="cb5-5"><a href="#cb5-5" tabindex="-1"></a><span class="co">#&gt;   Weights: [2681.000, 3290.000]  |  mean: 3047.333</span></span>
+<span id="cb5-5"><a href="#cb5-5" tabindex="-1"></a><span class="co">#&gt;   Weights: [2681.000, 6262.000]  |  mean: 3867.381</span></span>
 <span id="cb5-6"><a href="#cb5-6" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb5-7"><a href="#cb5-7" tabindex="-1"></a><span class="co">#&gt;   Weight matrix:</span></span>
 <span id="cb5-8"><a href="#cb5-8" tabindex="-1"></a><span class="co">#&gt;           Reading Video Forum Quiz Coding Review</span></span>
@@ -629,16 +630,16 @@ transitions and co-occurrences</li>
 <span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a>                 <span class="at">method =</span> <span class="st">&quot;transition&quot;</span>, <span class="at">type =</span> <span class="st">&quot;frequency&quot;</span>)</span>
 <span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a><span class="fu">print</span>(net_wtna)</span>
 <span id="cb6-4"><a href="#cb6-4" tabindex="-1"></a><span class="co">#&gt; Network (method: wtna_transition) [directed]</span></span>
-<span id="cb6-5"><a href="#cb6-5" tabindex="-1"></a><span class="co">#&gt;   Weights: [877.000, 1094.000]  |  mean: 995.233</span></span>
+<span id="cb6-5"><a href="#cb6-5" tabindex="-1"></a><span class="co">#&gt;   Weights: [2493.000, 4314.000]  |  mean: 3025.056</span></span>
 <span id="cb6-6"><a href="#cb6-6" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb6-7"><a href="#cb6-7" tabindex="-1"></a><span class="co">#&gt;   Weight matrix:</span></span>
 <span id="cb6-8"><a href="#cb6-8" tabindex="-1"></a><span class="co">#&gt;           Reading Video Forum Quiz Coding Review</span></span>
-<span id="cb6-9"><a href="#cb6-9" tabindex="-1"></a><span class="co">#&gt;   Reading    1797  1006  1047  955   1036   1021</span></span>
-<span id="cb6-10"><a href="#cb6-10" tabindex="-1"></a><span class="co">#&gt;   Video      1054  1861  1054  972   1058   1043</span></span>
-<span id="cb6-11"><a href="#cb6-11" tabindex="-1"></a><span class="co">#&gt;   Forum      1043  1021  1672  943    956   1004</span></span>
-<span id="cb6-12"><a href="#cb6-12" tabindex="-1"></a><span class="co">#&gt;   Quiz        935   951   955 1584    877    894</span></span>
-<span id="cb6-13"><a href="#cb6-13" tabindex="-1"></a><span class="co">#&gt;   Coding     1008  1074   967  886   1737   1048</span></span>
-<span id="cb6-14"><a href="#cb6-14" tabindex="-1"></a><span class="co">#&gt;   Review     1033  1094   985  908   1029   1822 </span></span>
+<span id="cb6-9"><a href="#cb6-9" tabindex="-1"></a><span class="co">#&gt;   Reading    4297  2903  2908 2638   2935   3008</span></span>
+<span id="cb6-10"><a href="#cb6-10" tabindex="-1"></a><span class="co">#&gt;   Video      2921  4314  2943 2651   2909   3018</span></span>
+<span id="cb6-11"><a href="#cb6-11" tabindex="-1"></a><span class="co">#&gt;   Forum      2863  2875  3881 2675   2747   2902</span></span>
+<span id="cb6-12"><a href="#cb6-12" tabindex="-1"></a><span class="co">#&gt;   Quiz       2691  2654  2706 3695   2518   2542</span></span>
+<span id="cb6-13"><a href="#cb6-13" tabindex="-1"></a><span class="co">#&gt;   Coding     2814  3094  2767 2559   4005   2953</span></span>
+<span id="cb6-14"><a href="#cb6-14" tabindex="-1"></a><span class="co">#&gt;   Review     2971  3113  2824 2493   2909   4206 </span></span>
 <span id="cb6-15"><a href="#cb6-15" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb6-16"><a href="#cb6-16" tabindex="-1"></a><span class="co">#&gt;   Initial probabilities:</span></span>
 <span id="cb6-17"><a href="#cb6-17" tabindex="-1"></a><span class="co">#&gt;   Reading       0.209  ████████████████████████████████████████</span></span>
@@ -650,16 +651,16 @@ transitions and co-occurrences</li>
 <div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a>net_wtna_rel <span class="ot">&lt;-</span> <span class="fu">wtna</span>(learning_activities, <span class="at">method =</span> <span class="st">&quot;transition&quot;</span>, <span class="at">type =</span> <span class="st">&quot;relative&quot;</span>)</span>
 <span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a><span class="fu">print</span>(net_wtna_rel)</span>
 <span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a><span class="co">#&gt; Network (method: wtna_transition) [directed]</span></span>
-<span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a><span class="co">#&gt;   Weights: [0.132, 0.159]  |  mean: 0.148</span></span>
+<span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a><span class="co">#&gt;   Weights: [0.136, 0.225]  |  mean: 0.167</span></span>
 <span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a><span class="co">#&gt;   Weight matrix:</span></span>
 <span id="cb7-7"><a href="#cb7-7" tabindex="-1"></a><span class="co">#&gt;           Reading Video Forum  Quiz Coding Review</span></span>
-<span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a><span class="co">#&gt;   Reading   0.260 0.147 0.152 0.139  0.153  0.149</span></span>
-<span id="cb7-9"><a href="#cb7-9" tabindex="-1"></a><span class="co">#&gt;   Video     0.151 0.263 0.149 0.138  0.152  0.148</span></span>
-<span id="cb7-10"><a href="#cb7-10" tabindex="-1"></a><span class="co">#&gt;   Forum     0.158 0.154 0.249 0.142  0.146  0.150</span></span>
-<span id="cb7-11"><a href="#cb7-11" tabindex="-1"></a><span class="co">#&gt;   Quiz      0.152 0.153 0.154 0.253  0.142  0.146</span></span>
-<span id="cb7-12"><a href="#cb7-12" tabindex="-1"></a><span class="co">#&gt;   Coding    0.151 0.159 0.144 0.132  0.258  0.156</span></span>
-<span id="cb7-13"><a href="#cb7-13" tabindex="-1"></a><span class="co">#&gt;   Review    0.151 0.159 0.143 0.133  0.151  0.263 </span></span>
+<span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a><span class="co">#&gt;   Reading   0.225 0.157 0.155 0.142  0.159  0.162</span></span>
+<span id="cb7-9"><a href="#cb7-9" tabindex="-1"></a><span class="co">#&gt;   Video     0.156 0.225 0.157 0.142  0.159  0.161</span></span>
+<span id="cb7-10"><a href="#cb7-10" tabindex="-1"></a><span class="co">#&gt;   Forum     0.160 0.161 0.210 0.150  0.156  0.162</span></span>
+<span id="cb7-11"><a href="#cb7-11" tabindex="-1"></a><span class="co">#&gt;   Quiz      0.161 0.160 0.161 0.213  0.151  0.153</span></span>
+<span id="cb7-12"><a href="#cb7-12" tabindex="-1"></a><span class="co">#&gt;   Coding    0.157 0.169 0.152 0.141  0.220  0.162</span></span>
+<span id="cb7-13"><a href="#cb7-13" tabindex="-1"></a><span class="co">#&gt;   Review    0.162 0.167 0.152 0.136  0.159  0.224 </span></span>
 <span id="cb7-14"><a href="#cb7-14" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb7-15"><a href="#cb7-15" tabindex="-1"></a><span class="co">#&gt;   Initial probabilities:</span></span>
 <span id="cb7-16"><a href="#cb7-16" tabindex="-1"></a><span class="co">#&gt;   Reading       0.500  ████████████████████████████████████████</span></span>
@@ -679,9 +680,9 @@ single structure.</p>
 <span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a><span class="fu">print</span>(net_wtna_mixed)</span>
 <span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a><span class="co">#&gt; Mixed Window TNA (transition + co-occurrence)</span></span>
 <span id="cb8-4"><a href="#cb8-4" tabindex="-1"></a><span class="co">#&gt; -- Transition (directed) --</span></span>
-<span id="cb8-5"><a href="#cb8-5" tabindex="-1"></a><span class="co">#&gt;   Nodes: 6  |  Edges: 30</span></span>
+<span id="cb8-5"><a href="#cb8-5" tabindex="-1"></a><span class="co">#&gt;   Nodes: 6  |  Edges: 36</span></span>
 <span id="cb8-6"><a href="#cb8-6" tabindex="-1"></a><span class="co">#&gt; -- Co-occurrence (undirected) --</span></span>
-<span id="cb8-7"><a href="#cb8-7" tabindex="-1"></a><span class="co">#&gt;   Nodes: 6  |  Edges: 15</span></span></code></pre></div>
+<span id="cb8-7"><a href="#cb8-7" tabindex="-1"></a><span class="co">#&gt;   Nodes: 6  |  Edges: 21</span></span></code></pre></div>
 </div>
 </div>
 <div id="validation" class="section level2">
@@ -700,10 +701,10 @@ reliability means the network structure is a consistent property of the
 data, not driven by a small number of idiosyncratic sequences.</p>
 <div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a><span class="fu">network_reliability</span>(net_tna)</span>
 <span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a><span class="co">#&gt; Split-Half Reliability (1000 iterations, split = 50%)</span></span>
-<span id="cb9-3"><a href="#cb9-3" tabindex="-1"></a><span class="co">#&gt;   Mean Abs. Dev.      mean = 0.0361  sd = 0.0038</span></span>
-<span id="cb9-4"><a href="#cb9-4" tabindex="-1"></a><span class="co">#&gt;   Median Abs. Dev.    mean = 0.0269  sd = 0.0038</span></span>
-<span id="cb9-5"><a href="#cb9-5" tabindex="-1"></a><span class="co">#&gt;   Correlation         mean = 0.8642  sd = 0.0290</span></span>
-<span id="cb9-6"><a href="#cb9-6" tabindex="-1"></a><span class="co">#&gt;   Max Abs. Dev.       mean = 0.1733  sd = 0.0391</span></span></code></pre></div>
+<span id="cb9-3"><a href="#cb9-3" tabindex="-1"></a><span class="co">#&gt;   Mean Abs. Diff.     mean = 0.0170  sd = 0.0018</span></span>
+<span id="cb9-4"><a href="#cb9-4" tabindex="-1"></a><span class="co">#&gt;   Median Abs. Diff.   mean = 0.0129  sd = 0.0018</span></span>
+<span id="cb9-5"><a href="#cb9-5" tabindex="-1"></a><span class="co">#&gt;   Pearson             mean = 0.9705  sd = 0.0064</span></span>
+<span id="cb9-6"><a href="#cb9-6" tabindex="-1"></a><span class="co">#&gt;   Max Abs. Diff.      mean = 0.0740  sd = 0.0177</span></span></code></pre></div>
 </div>
 <div id="bootstrap-analysis" class="section level3">
 <h3>Bootstrap Analysis</h3>
@@ -719,16 +720,16 @@ in the network.</p>
 <span id="cb10-3"><a href="#cb10-3" tabindex="-1"></a>boot</span>
 <span id="cb10-4"><a href="#cb10-4" tabindex="-1"></a><span class="co">#&gt;   Edge                   Mean     95% CI          p</span></span>
 <span id="cb10-5"><a href="#cb10-5" tabindex="-1"></a><span class="co">#&gt;   -----------------------------------------------</span></span>
-<span id="cb10-6"><a href="#cb10-6" tabindex="-1"></a><span class="co">#&gt;   Request → Specify    0.578  [0.506, 0.661]  ** </span></span>
-<span id="cb10-7"><a href="#cb10-7" tabindex="-1"></a><span class="co">#&gt;   Refine → Specify     0.417  [0.320, 0.496]  *  </span></span>
-<span id="cb10-8"><a href="#cb10-8" tabindex="-1"></a><span class="co">#&gt;   Command → Specify    0.294  [0.251, 0.331]  ** </span></span>
-<span id="cb10-9"><a href="#cb10-9" tabindex="-1"></a><span class="co">#&gt;   Specify → Command    0.290  [0.256, 0.327]  ** </span></span>
-<span id="cb10-10"><a href="#cb10-10" tabindex="-1"></a><span class="co">#&gt;   Correct → Specify    0.285  [0.234, 0.350]  *  </span></span>
-<span id="cb10-11"><a href="#cb10-11" tabindex="-1"></a><span class="co">#&gt;   ... and 3 more significant edges</span></span>
+<span id="cb10-6"><a href="#cb10-6" tabindex="-1"></a><span class="co">#&gt;   Request → Specify    0.619  [0.584, 0.655]  ** </span></span>
+<span id="cb10-7"><a href="#cb10-7" tabindex="-1"></a><span class="co">#&gt;   Refine → Specify     0.455  [0.413, 0.502]  ** </span></span>
+<span id="cb10-8"><a href="#cb10-8" tabindex="-1"></a><span class="co">#&gt;   Command → Specify    0.281  [0.256, 0.301]  ** </span></span>
+<span id="cb10-9"><a href="#cb10-9" tabindex="-1"></a><span class="co">#&gt;   Correct → Specify    0.280  [0.249, 0.309]  ** </span></span>
+<span id="cb10-10"><a href="#cb10-10" tabindex="-1"></a><span class="co">#&gt;   Specify → Command    0.263  [0.246, 0.279]  ** </span></span>
+<span id="cb10-11"><a href="#cb10-11" tabindex="-1"></a><span class="co">#&gt;   ... and 40 more significant edges</span></span>
 <span id="cb10-12"><a href="#cb10-12" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb10-13"><a href="#cb10-13" tabindex="-1"></a><span class="co">#&gt; Bootstrap Network  [Transition Network (relative) | directed]</span></span>
 <span id="cb10-14"><a href="#cb10-14" tabindex="-1"></a><span class="co">#&gt;   Iterations : 100  |  Nodes : 9</span></span>
-<span id="cb10-15"><a href="#cb10-15" tabindex="-1"></a><span class="co">#&gt;   Edges      : 6 significant / 72 total</span></span>
+<span id="cb10-15"><a href="#cb10-15" tabindex="-1"></a><span class="co">#&gt;   Edges      : 45 significant / 81 total</span></span>
 <span id="cb10-16"><a href="#cb10-16" tabindex="-1"></a><span class="co">#&gt;   CI         : 95%  |  Inference: stability  |  CR [0.75, 1.25]</span></span></code></pre></div>
 </div>
 <div id="centrality-stability" class="section level3">
@@ -746,8 +747,8 @@ instability.</p>
 <span id="cb11-4"><a href="#cb11-4" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb11-5"><a href="#cb11-5" tabindex="-1"></a><span class="co">#&gt;   CS-coefficients:</span></span>
 <span id="cb11-6"><a href="#cb11-6" tabindex="-1"></a><span class="co">#&gt;     InStrength       0.90</span></span>
-<span id="cb11-7"><a href="#cb11-7" tabindex="-1"></a><span class="co">#&gt;     OutStrength      0.50</span></span>
-<span id="cb11-8"><a href="#cb11-8" tabindex="-1"></a><span class="co">#&gt;     Betweenness      0.70</span></span></code></pre></div>
+<span id="cb11-7"><a href="#cb11-7" tabindex="-1"></a><span class="co">#&gt;     OutStrength      0.80</span></span>
+<span id="cb11-8"><a href="#cb11-8" tabindex="-1"></a><span class="co">#&gt;     Betweenness      0.90</span></span></code></pre></div>
 </div>
 </div>
 <div id="clustering" class="section level2">
@@ -764,10 +765,12 @@ separate network for each cluster (López-Pernas et al., 2025).</p>
 <div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" tabindex="-1"></a>Cls <span class="ot">&lt;-</span> <span class="fu">build_clusters</span>(net_tna, <span class="at">k =</span> <span class="dv">3</span>)</span>
 <span id="cb12-2"><a href="#cb12-2" tabindex="-1"></a>Clusters <span class="ot">&lt;-</span> <span class="fu">build_network</span>(Cls, <span class="at">method =</span> <span class="st">&quot;tna&quot;</span>)</span>
 <span id="cb12-3"><a href="#cb12-3" tabindex="-1"></a>Clusters</span>
-<span id="cb12-4"><a href="#cb12-4" tabindex="-1"></a><span class="co">#&gt; Group Networks (3 groups)</span></span>
-<span id="cb12-5"><a href="#cb12-5" tabindex="-1"></a><span class="co">#&gt;   Cluster 1: 9 nodes, 72 edges</span></span>
-<span id="cb12-6"><a href="#cb12-6" tabindex="-1"></a><span class="co">#&gt;   Cluster 2: 9 nodes, 72 edges</span></span>
-<span id="cb12-7"><a href="#cb12-7" tabindex="-1"></a><span class="co">#&gt;   Cluster 3: 9 nodes, 46 edges</span></span></code></pre></div>
+<span id="cb12-4"><a href="#cb12-4" tabindex="-1"></a><span class="co">#&gt; Group Networks (3 clusters via pam / hamming)</span></span>
+<span id="cb12-5"><a href="#cb12-5" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb12-6"><a href="#cb12-6" tabindex="-1"></a><span class="co">#&gt;   Group      Nodes  Edges  Weights         N</span></span>
+<span id="cb12-7"><a href="#cb12-7" tabindex="-1"></a><span class="co">#&gt;   Cluster 1  9      81     [0.006, 0.538]  145 (27.6%)</span></span>
+<span id="cb12-8"><a href="#cb12-8" tabindex="-1"></a><span class="co">#&gt;   Cluster 2  9      81     [0.003, 0.694]  299 (56.8%)</span></span>
+<span id="cb12-9"><a href="#cb12-9" tabindex="-1"></a><span class="co">#&gt;   Cluster 3  9      81     [0.018, 0.588]  82 (15.6%)</span></span></code></pre></div>
 <div id="permutation-test-for-clusters" class="section level3">
 <h3>Permutation Test for Clusters</h3>
 <p>Permutation testing is particularly important for data-driven
@@ -784,7 +787,7 @@ divergence rather than algorithmic artifacts.</p>
 <span id="cb13-3"><a href="#cb13-3" tabindex="-1"></a>perm</span>
 <span id="cb13-4"><a href="#cb13-4" tabindex="-1"></a><span class="co">#&gt; Permutation Test:Transition Network (relative probabilities) [directed]</span></span>
 <span id="cb13-5"><a href="#cb13-5" tabindex="-1"></a><span class="co">#&gt;   Iterations: 100  |  Alpha: 0.05</span></span>
-<span id="cb13-6"><a href="#cb13-6" tabindex="-1"></a><span class="co">#&gt;   Nodes: 9  |  Edges tested: 81  |  Significant: 8</span></span></code></pre></div>
+<span id="cb13-6"><a href="#cb13-6" tabindex="-1"></a><span class="co">#&gt;   Nodes: 9  |  Edges tested: 81  |  Significant: 9</span></span></code></pre></div>
 </div>
 </div>
 <div id="post-hoc-covariate-analysis" class="section level2">
@@ -803,37 +806,43 @@ achievers.</p>
 <span id="cb14-2"><a href="#cb14-2" tabindex="-1"></a>net_GR <span class="ot">&lt;-</span> <span class="fu">build_network</span>(group_regulation_long, <span class="at">method =</span> <span class="st">&quot;tna&quot;</span>,</span>
 <span id="cb14-3"><a href="#cb14-3" tabindex="-1"></a>                        <span class="at">action =</span> <span class="st">&quot;Action&quot;</span>, <span class="at">actor =</span> <span class="st">&quot;Actor&quot;</span>,</span>
 <span id="cb14-4"><a href="#cb14-4" tabindex="-1"></a>                        <span class="at">time =</span> <span class="st">&quot;Time&quot;</span>)</span></code></pre></div>
-<div class="sourceCode" id="cb15"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" tabindex="-1"></a>Post <span class="ot">&lt;-</span> <span class="fu">build_clusters</span>(net_GR, <span class="at">k =</span> <span class="dv">2</span>, <span class="at">covariates =</span> <span class="fu">c</span>(<span class="st">&quot;Achiever&quot;</span>))</span>
-<span id="cb15-2"><a href="#cb15-2" tabindex="-1"></a><span class="fu">summary</span>(Post)</span>
-<span id="cb15-3"><a href="#cb15-3" tabindex="-1"></a><span class="co">#&gt; Sequence Clustering Summary</span></span>
-<span id="cb15-4"><a href="#cb15-4" tabindex="-1"></a><span class="co">#&gt;   Method:        pam </span></span>
-<span id="cb15-5"><a href="#cb15-5" tabindex="-1"></a><span class="co">#&gt;   Dissimilarity: hamming </span></span>
-<span id="cb15-6"><a href="#cb15-6" tabindex="-1"></a><span class="co">#&gt;   Silhouette:    0.1839 </span></span>
-<span id="cb15-7"><a href="#cb15-7" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb15-8"><a href="#cb15-8" tabindex="-1"></a><span class="co">#&gt; Per-cluster statistics:</span></span>
-<span id="cb15-9"><a href="#cb15-9" tabindex="-1"></a><span class="co">#&gt;  cluster size mean_within_dist</span></span>
-<span id="cb15-10"><a href="#cb15-10" tabindex="-1"></a><span class="co">#&gt;        1  982         10.69340</span></span>
-<span id="cb15-11"><a href="#cb15-11" tabindex="-1"></a><span class="co">#&gt;        2 1018         18.59498</span></span>
-<span id="cb15-12"><a href="#cb15-12" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb15-13"><a href="#cb15-13" tabindex="-1"></a><span class="co">#&gt; Post-hoc Covariate Analysis (does not influence cluster membership) </span></span>
-<span id="cb15-14"><a href="#cb15-14" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb15-15"><a href="#cb15-15" tabindex="-1"></a><span class="co">#&gt; Cluster Profiles (categorical):</span></span>
-<span id="cb15-16"><a href="#cb15-16" tabindex="-1"></a><span class="co">#&gt;  Cluster N    Achiever=High N(%) Achiever=Low N(%)</span></span>
-<span id="cb15-17"><a href="#cb15-17" tabindex="-1"></a><span class="co">#&gt;  1        982 504 (51%)          478 (49%)        </span></span>
-<span id="cb15-18"><a href="#cb15-18" tabindex="-1"></a><span class="co">#&gt;  2       1018 496 (49%)          522 (51%)        </span></span>
-<span id="cb15-19"><a href="#cb15-19" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb15-20"><a href="#cb15-20" tabindex="-1"></a><span class="co">#&gt; Predictors of Membership (reference: Cluster 1):</span></span>
-<span id="cb15-21"><a href="#cb15-21" tabindex="-1"></a><span class="co">#&gt;  Cluster Variable    OR   95% CI       p     Sig</span></span>
-<span id="cb15-22"><a href="#cb15-22" tabindex="-1"></a><span class="co">#&gt;  2       AchieverLow 1.11 [0.93, 1.32] 0.245    </span></span>
+<div class="sourceCode" id="cb15"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" tabindex="-1"></a><span class="co"># Default estimator = &quot;auto&quot; inspects the cluster x covariate cross-tab</span></span>
+<span id="cb15-2"><a href="#cb15-2" tabindex="-1"></a><span class="co"># and picks firth (brglm2, bias-reduced) only when rare cells signal</span></span>
+<span id="cb15-3"><a href="#cb15-3" tabindex="-1"></a><span class="co"># separation risk; otherwise it uses the much faster nnet::multinom.</span></span>
+<span id="cb15-4"><a href="#cb15-4" tabindex="-1"></a><span class="co"># With Achiever balanced 50/50, multinom is selected (~0.5 s vs ~85 s).</span></span>
+<span id="cb15-5"><a href="#cb15-5" tabindex="-1"></a>Post <span class="ot">&lt;-</span> <span class="fu">build_clusters</span>(net_GR, <span class="at">k =</span> <span class="dv">2</span>, <span class="at">covariates =</span> <span class="fu">c</span>(<span class="st">&quot;Achiever&quot;</span>))</span>
+<span id="cb15-6"><a href="#cb15-6" tabindex="-1"></a><span class="fu">summary</span>(Post)</span>
+<span id="cb15-7"><a href="#cb15-7" tabindex="-1"></a><span class="co">#&gt; Sequence Clustering Summary</span></span>
+<span id="cb15-8"><a href="#cb15-8" tabindex="-1"></a><span class="co">#&gt;   Method:        pam </span></span>
+<span id="cb15-9"><a href="#cb15-9" tabindex="-1"></a><span class="co">#&gt;   Dissimilarity: hamming </span></span>
+<span id="cb15-10"><a href="#cb15-10" tabindex="-1"></a><span class="co">#&gt;   Silhouette:    0.1839 </span></span>
+<span id="cb15-11"><a href="#cb15-11" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb15-12"><a href="#cb15-12" tabindex="-1"></a><span class="co">#&gt; Per-cluster statistics:</span></span>
+<span id="cb15-13"><a href="#cb15-13" tabindex="-1"></a><span class="co">#&gt;  cluster size mean_within_dist</span></span>
+<span id="cb15-14"><a href="#cb15-14" tabindex="-1"></a><span class="co">#&gt;        1  982         10.69340</span></span>
+<span id="cb15-15"><a href="#cb15-15" tabindex="-1"></a><span class="co">#&gt;        2 1018         18.59498</span></span>
+<span id="cb15-16"><a href="#cb15-16" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb15-17"><a href="#cb15-17" tabindex="-1"></a><span class="co">#&gt; Post-hoc Covariate Analysis (does not influence cluster membership) </span></span>
+<span id="cb15-18"><a href="#cb15-18" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb15-19"><a href="#cb15-19" tabindex="-1"></a><span class="co">#&gt; Cluster Profiles (categorical):</span></span>
+<span id="cb15-20"><a href="#cb15-20" tabindex="-1"></a><span class="co">#&gt;  Cluster N    Achiever=High N(%) Achiever=Low N(%)</span></span>
+<span id="cb15-21"><a href="#cb15-21" tabindex="-1"></a><span class="co">#&gt;  1        982 504 (51%)          478 (49%)        </span></span>
+<span id="cb15-22"><a href="#cb15-22" tabindex="-1"></a><span class="co">#&gt;  2       1018 496 (49%)          522 (51%)        </span></span>
 <span id="cb15-23"><a href="#cb15-23" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb15-24"><a href="#cb15-24" tabindex="-1"></a><span class="co">#&gt; Model: AIC = 2774.6 | BIC = 2785.8 | McFadden R-squared = 0.00</span></span>
-<span id="cb15-25"><a href="#cb15-25" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb15-26"><a href="#cb15-26" tabindex="-1"></a><span class="co">#&gt; Note: Covariates are post-hoc and do not influence cluster assignments.</span></span></code></pre></div>
+<span id="cb15-24"><a href="#cb15-24" tabindex="-1"></a><span class="co">#&gt; Predictors of Membership (estimator = multinom, reference: Cluster 1):</span></span>
+<span id="cb15-25"><a href="#cb15-25" tabindex="-1"></a><span class="co">#&gt;  Cluster Variable    OR   95% CI       p     Sig</span></span>
+<span id="cb15-26"><a href="#cb15-26" tabindex="-1"></a><span class="co">#&gt;  2       AchieverLow 1.11 [0.93, 1.32] 0.245    </span></span>
+<span id="cb15-27"><a href="#cb15-27" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb15-28"><a href="#cb15-28" tabindex="-1"></a><span class="co">#&gt; Model: AIC = 2774.6 | BIC = 2785.8 | McFadden R-squared = 0.00</span></span>
+<span id="cb15-29"><a href="#cb15-29" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb15-30"><a href="#cb15-30" tabindex="-1"></a><span class="co">#&gt; Note: Covariates are post-hoc and do not influence cluster assignments.</span></span></code></pre></div>
 <div class="sourceCode" id="cb16"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" tabindex="-1"></a>Postgr <span class="ot">&lt;-</span> <span class="fu">build_network</span>(Post)</span>
 <span id="cb16-2"><a href="#cb16-2" tabindex="-1"></a>Postgr</span>
-<span id="cb16-3"><a href="#cb16-3" tabindex="-1"></a><span class="co">#&gt; Group Networks (2 groups)</span></span>
-<span id="cb16-4"><a href="#cb16-4" tabindex="-1"></a><span class="co">#&gt;   Cluster 1: 9 nodes, 71 edges</span></span>
-<span id="cb16-5"><a href="#cb16-5" tabindex="-1"></a><span class="co">#&gt;   Cluster 2: 9 nodes, 71 edges</span></span></code></pre></div>
+<span id="cb16-3"><a href="#cb16-3" tabindex="-1"></a><span class="co">#&gt; Group Networks (2 clusters via pam / hamming)</span></span>
+<span id="cb16-4"><a href="#cb16-4" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb16-5"><a href="#cb16-5" tabindex="-1"></a><span class="co">#&gt;   Group      Nodes  Edges  Weights         N</span></span>
+<span id="cb16-6"><a href="#cb16-6" tabindex="-1"></a><span class="co">#&gt;   Cluster 1  9      78     [0.001, 0.506]  982 (49.1%)</span></span>
+<span id="cb16-7"><a href="#cb16-7" tabindex="-1"></a><span class="co">#&gt;   Cluster 2  9      78     [0.001, 0.494]  1018 (50.9%)</span></span></code></pre></div>
 </div>
 </div>
 <div id="part-ii-psychological-network-analysis" class="section level1">

@@ -6,6 +6,91 @@
 # type = "distribution" - dispatches to distribution_plot().
 # ==============================================================================
 
+# ---- Input extraction helper ------------------------------------------------
+#' Extract sequence data and clustering info from various input types
+#'
+#' Supports: data.frame, matrix, net_clustering, netobject, netobject_group,
+#' net_mmm. Returns a list with data, group (assignments), and clustering info.
+#' @noRd
+.extract_seqplot_input <- function(x, group = NULL) {
+  clustering <- NULL
+  data <- NULL
+
+
+  # --- net_clustering (from build_clusters) ---
+  if (inherits(x, "net_clustering")) {
+    data <- x$data
+    if (is.null(group)) group <- x$assignments
+    clustering <- x
+  }
+  # --- net_mmm (from build_mmm) ---
+  else if (inherits(x, "net_mmm")) {
+    data <- x$data %||% x$models[[1L]]$data
+    if (is.null(group)) group <- x$assignments
+    # No distance matrix in MMM; clustering info for reference only
+    clustering <- list(assignments = x$assignments, k = x$k)
+  }
+  # --- netobject_group (from cluster_network / build_network on clustering) ---
+  else if (inherits(x, "netobject_group")) {
+    cl <- attr(x, "clustering")
+    # Prefer the full N-row data carried by the clustering attribute --
+    # cluster_network() splits per-cluster $data subsets into each member,
+    # so x[[1L]]$data has only n1 rows whereas $assignments has all N.
+    # cluster_mmm() now stashes the same full data to make this invariant.
+    if (!is.null(cl) && !is.null(cl$data)) {
+      data <- cl$data
+      if (is.null(group)) group <- cl$assignments
+      clustering <- cl
+    } else {
+      # Fallback: no clustering attribute (plain group_col split). Rebuild
+      # the full sequence frame from per-group subsets and label rows by
+      # their group membership.
+      parts <- lapply(seq_along(x), function(i) x[[i]]$data)
+      if (any(vapply(parts, is.null, logical(1L)))) {
+        stop("netobject_group members have no $data; rebuild with ",
+             "build_network() carrying data, or pass the original ",
+             "clustering object instead.", call. = FALSE)
+      }
+      part_nrow <- vapply(parts, NROW, integer(1L))
+      data <- do.call(rbind, parts)
+      if (is.null(group)) {
+        labs  <- if (!is.null(names(x))) names(x) else as.character(seq_along(x))
+        group <- factor(rep(labs, part_nrow), levels = labs)
+      }
+    }
+  }
+  # --- netobject (single network) ---
+  else if (inherits(x, "netobject") || inherits(x, "cograph_network")) {
+    if (is.null(x$data)) {
+      stop("netobject has no $data. Pass the original sequence data.",
+           call. = FALSE)
+    }
+    data <- x$data
+  }
+  # --- tna model ---
+  else if (inherits(x, "tna")) {
+    if (is.null(x$data) || is.null(x$labels)) {
+      stop("tna object missing $data or $labels.", call. = FALSE)
+    }
+    # Decode integer matrix back to state names
+    decoded <- matrix(x$labels[x$data], nrow = nrow(x$data),
+                      ncol = ncol(x$data))
+    colnames(decoded) <- colnames(x$data)
+    data <- as.data.frame(decoded, stringsAsFactors = FALSE)
+  }
+  # --- data.frame or matrix (pass through) ---
+  else if (is.data.frame(x) || is.matrix(x)) {
+    data <- x
+  }
+  else {
+    stop("Unsupported input type: ", paste(class(x), collapse = ", "),
+         ". Expected data.frame, matrix, netobject, netobject_group, ",
+         "net_clustering, net_mmm, or tna.", call. = FALSE)
+  }
+
+  list(data = data, group = group, clustering = clustering)
+}
+
 #' Sequence Plot (heatmap, index, or distribution)
 #'
 #' Single entry point for three categorical-sequence visualisations.
@@ -19,9 +104,21 @@
 #'     \code{\link{distribution_plot}}.
 #' }
 #'
-#' @param x Wide-format sequence data (\code{data.frame} or \code{matrix})
-#'   or a \code{net_clustering}. One row per sequence, one column per
-#'   time point.
+#' @param x Wide-format sequence data. Accepts:
+#'   \describe{
+#'     \item{data.frame / matrix}{Rows = sequences, columns = time points.}
+#'     \item{netobject}{Extracts \code{$data}.}
+#'     \item{net_clustering}{From \code{\link{build_clusters}}. Uses
+#'       \code{$data}, \code{$assignments} for grouping, and \code{$distance}
+#'       for dendrogram.}
+#'     \item{netobject_group}{From \code{\link{cluster_network}} or
+#'       \code{\link{build_network}} on a clustering. Extracts data and
+#'       assignments from \code{attr(, "clustering")}.
+#'     }
+#'     \item{net_mmm}{From \code{\link{build_mmm}}. Uses \code{$models[[1]]$data}
+#'       and \code{$assignments}.}
+#'     \item{tna}{From the tna package. Decodes integer-encoded sequences.}
+#'   }
 #' @param type One of \code{"heatmap"} (default), \code{"index"}, or
 #'   \code{"distribution"}.
 #' @param sort Row-ordering strategy for heatmap / within-panel for index.
@@ -62,6 +159,13 @@
 #' @param y_label,ylab Y-axis label (distribution only). \code{ylab} alias.
 #' @param tick Show every Nth x-axis label. \code{NULL} = auto.
 #' @param ncol,nrow Facet grid dimensions (index + distribution).
+#'   Ignored when \code{combined = FALSE}.
+#' @param combined Index and distribution types only. When \code{TRUE}
+#'   (default), groups are arranged on one figure via
+#'   \code{graphics::layout()}. When \code{FALSE}, each group is drawn
+#'   on its own page (one full-size figure per group, with its own
+#'   legend). Single-group calls (\code{G == 1}) ignore this argument.
+#'   Heatmap is always single-figure.
 #' @param legend Legend position: \code{"bottom"}, \code{"right"}, or
 #'   \code{"none"}. Default varies by type.
 #' @param legend_size Legend text size. \code{NULL} (default) auto-scales
@@ -115,6 +219,7 @@ sequence_plot <- function(x,
                           tick             = NULL,
                           ncol             = NULL,
                           nrow             = NULL,
+                          combined         = TRUE,
                           legend           = NULL,
                           legend_size      = NULL,
                           legend_title     = NULL,
@@ -124,6 +229,7 @@ sequence_plot <- function(x,
 
   type <- match.arg(type)
   sort <- match.arg(sort)
+  stopifnot(is.logical(combined), length(combined) == 1L)
   if (is.null(legend)) legend <- "right"
   legend <- match.arg(legend, c("bottom", "right", "none"))
   if (!is.null(xlab)) time_label <- xlab
@@ -149,7 +255,7 @@ sequence_plot <- function(x,
       frame = frame,
       main = main, show_n = show_n,
       time_label = time_label, y_label = y_label, ylab = ylab,
-      tick = tick, ncol = ncol, nrow = nrow,
+      tick = tick, ncol = ncol, nrow = nrow, combined = combined,
       legend = legend, legend_size = legend_size,
       legend_title = legend_title, legend_ncol = legend_ncol,
       legend_border = legend_border, legend_bty = legend_bty))
@@ -167,7 +273,7 @@ sequence_plot <- function(x,
   .sequence_plot_index(
     x, sort, group, row_gap,
     state_colors, na_color, cell_border, frame,
-    main, show_n, time_label, tick, ncol, nrow,
+    main, show_n, time_label, tick, ncol, nrow, combined,
     legend, legend_size, legend_title, legend_ncol,
     legend_border, legend_bty)
 }
@@ -181,20 +287,24 @@ sequence_plot <- function(x,
                                    legend, legend_size, legend_title,
                                    legend_ncol, legend_border, legend_bty) {
 
-  if (inherits(x, "net_clustering")) {
-    if (is.null(tree)) {
-      hc_method <- if (x$method %in% c("ward.D", "ward.D2", "single",
-                                       "complete", "average", "mcquitty",
-                                       "median", "centroid")) {
-        x$method
-      } else "ward.D2"
-      tree <- stats::hclust(stats::as.dist(x$distance), method = hc_method)
-    }
-    x <- x$data
+  # Extract data from various input types
+  extracted <- .extract_seqplot_input(x)
+  clustering <- extracted$clustering
+  sort_used <- sort
+
+  # Build dendrogram from clustering distance matrix if available
+  if (!is.null(clustering) && is.null(tree) && !is.null(clustering$distance)) {
+    hc_method <- if (!is.null(clustering$method) &&
+                     clustering$method %in% c("ward.D", "ward.D2", "single",
+                                              "complete", "average", "mcquitty",
+                                              "median", "centroid")) {
+      clustering$method
+    } else "ward.D2"
+    tree <- stats::hclust(stats::as.dist(clustering$distance), method = hc_method)
     sort_used <- "net_clustering"
-  } else {
-    sort_used <- sort
   }
+
+  x <- extracted$data
 
   enc        <- .encode_states(x)
   codes      <- enc$codes
@@ -294,16 +404,18 @@ sequence_plot <- function(x,
 .sequence_plot_index <- function(x, sort, group, row_gap,
                                  state_colors, na_color, cell_border, frame,
                                  main, show_n, time_label, tick, ncol, nrow,
+                                 combined,
                                  legend, legend_size, legend_title,
                                  legend_ncol, legend_border, legend_bty) {
 
   stopifnot(is.numeric(row_gap), length(row_gap) == 1L,
             row_gap >= 0, row_gap < 1)
 
-  if (inherits(x, "net_clustering")) {
-    group <- x$assignments
-    x <- x$data
-  }
+  # Extract data and group from various input types
+  extracted <- .extract_seqplot_input(x, group)
+  x <- extracted$data
+  group <- extracted$group
+
   if (!is.null(group)) {
     stopifnot(length(group) == nrow(x))
     group <- as.factor(group)
@@ -343,7 +455,8 @@ sequence_plot <- function(x,
   graphics::par(oma = c(if (legend == "bottom") oma[["oma_b"]] else 0.3,
                         0.3, 0.3,
                         if (legend == "right")  oma[["oma_r"]] else 0.3))
-  if (nrow * ncol > 1L) {
+  use_layout <- combined && nrow * ncol > 1L
+  if (use_layout) {
     lm <- matrix(c(seq_len(G), integer(nrow * ncol - G)),
                  nrow = nrow, ncol = ncol, byrow = TRUE)
     graphics::layout(lm)
@@ -359,6 +472,11 @@ sequence_plot <- function(x,
     sub  <- codes[ord, , drop = FALSE]
     nN   <- nrow(sub)
 
+    if (!combined && g_idx > 1L) {
+      graphics::par(oma = c(if (legend == "bottom") oma[["oma_b"]] else 0.3,
+                            0.3, 0.3,
+                            if (legend == "right")  oma[["oma_r"]] else 0.3))
+    }
     graphics::par(mar = c(mar_bottom, 2, mar_top, 1))
     graphics::plot.new()
     graphics::plot.window(xlim = c(0.5, n_cols + 0.5),
@@ -397,13 +515,17 @@ sequence_plot <- function(x,
       graphics::mtext(panel_title, side = 3, line = 0.5, font = 2,
                       cex = if (G > 1L) 0.9 else 1)
     }
+    if (!combined && legend != "none") {
+      .draw_legend_in_oma(levels_all, palette, legend, legend_size,
+                          legend_ncol, legend_title, legend_border, legend_bty)
+    }
   }))
-  if (G > 1L && !is.null(main)) {
+  if (combined && G > 1L && !is.null(main)) {
     graphics::mtext(main, side = 3, line = 1.5, font = 2,
                     outer = TRUE, cex = 1)
   }
 
-  if (legend != "none") {
+  if (combined && legend != "none") {
     .draw_legend_in_oma(levels_all, palette, legend, legend_size,
                         legend_ncol, legend_title, legend_border, legend_bty)
   }

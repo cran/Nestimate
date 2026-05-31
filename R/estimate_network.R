@@ -171,8 +171,10 @@ build_glasso <- function(data, ...) {
 #' @seealso \code{\link{build_network}}
 #' @examples
 #' \donttest{
-#' bin_data <- data.frame(matrix(rbinom(200, 1, 0.5), ncol = 5))
-#' net <- build_ising(bin_data)
+#' if (requireNamespace("glmnet", quietly = TRUE)) {
+#'   bin_data <- data.frame(matrix(rbinom(200, 1, 0.5), ncol = 5))
+#'   net <- build_ising(bin_data)
+#' }
 #' }
 #' @export
 build_ising <- function(data, ...) {
@@ -220,18 +222,30 @@ build_ising <- function(data, ...) {
 
 #' Apply scaling transformations to a network matrix
 #' @noRd
-.apply_scaling <- function(mat, scaling) {
+.apply_scaling <- function(mat, scaling, include_zeros = FALSE) {
   for (s in scaling) {
     mat <- switch(s,
       minmax = {
-        vals <- mat[mat != 0]
+        vals <- if (isTRUE(include_zeros)) as.vector(mat) else mat[mat != 0]
         if (length(vals) == 0) {
           mat
         } else {
-          rng <- range(vals)
+          rng <- range(vals, na.rm = TRUE)
           if (rng[1] == rng[2]) mat
           else {
-            mat[mat != 0] <- (mat[mat != 0] - rng[1]) / (rng[2] - rng[1])
+            if (isTRUE(include_zeros)) {
+              mat[] <- (mat - rng[1]) / (rng[2] - rng[1])
+            } else {
+              # Structure-preserving min-max for association networks: the
+              # smallest genuine edge must not collide with the structural-
+              # zero value (which would drop a real edge and corrupt
+              # n_edges). Map the non-zero block into the strictly positive
+              # interval (eps, 1] so the block minimum becomes eps, not 0.
+              eps <- sqrt(.Machine$double.eps)
+              nz <- mat != 0
+              mat[nz] <- eps + (1 - eps) *
+                (mat[nz] - rng[1]) / (rng[2] - rng[1])
+            }
             mat
           }
         }
@@ -241,9 +255,13 @@ build_ising <- function(data, ...) {
         if (max_abs > 0) mat / max_abs else mat # nocov
       },
       rank = {
+        # Rank scaling always preserves structural zeros: a non-edge must
+        # remain a non-edge after scaling. include_zeros = TRUE only affects
+        # min-max / range scalings; for ranks it would promote absent
+        # transitions to positive weights and densify the network.
         nz <- mat != 0
         if (any(nz)) {
-          mat[nz] <- rank(mat[nz])
+          mat[nz] <- rank(mat[nz], ties.method = "average")
           mat
         } else {
           mat
@@ -272,9 +290,12 @@ build_ising <- function(data, ...) {
 #' @noRd
 .extract_edges_from_matrix <- function(mat, directed = FALSE) {
   if (directed) {
-    idx <- which(mat != 0 & row(mat) != col(mat), arr.ind = TRUE)
+    # Keep self-loops too: every non-zero entry is a real edge.
+    idx <- which(mat != 0, arr.ind = TRUE)
   } else {
-    idx <- which(upper.tri(mat) & mat != 0, arr.ind = TRUE)
+    # row <= col keeps the upper triangle PLUS the diagonal (one row
+    # per self-loop, no double-count for undirected networks).
+    idx <- which(mat != 0 & row(mat) <= col(mat), arr.ind = TRUE)
   }
 
   if (nrow(idx) == 0) {

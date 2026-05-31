@@ -6,7 +6,7 @@ knitr::opts_chunk$set(
   fig.height = 5,
   fig.align = "center",
   out.width = "100%",
-  dpi = 96,
+  dpi = 300,
   message = FALSE,
   warning = FALSE
 )
@@ -15,18 +15,14 @@ set.seed(20260413)
 
 ## ----load---------------------------------------------------------------------
 data(human_long, package = "Nestimate")
-dat <- as.data.frame(human_long)
-cat("rows:", nrow(dat),
-    "| sessions:", length(unique(dat$session_id)),
-    "| projects:", length(unique(dat$project)), "\n\n")
-print(table(dat$cluster))
+head(human_long)
 
 ## ----split--------------------------------------------------------------------
-dat <- dat[order(dat$session_id, dat$order_in_session), ]
+dat <- human_long[order(human_long$session_id, human_long$order_in_session), ]
 n_per <- ave(dat$order_in_session, dat$session_id, FUN = length)
 pos   <- ave(dat$order_in_session, dat$session_id, FUN = seq_along)
 dat$half <- ifelse(pos <= n_per %/% 2, "early", "late")
-print(table(dat$half))
+table(dat$half)
 
 ## ----build--------------------------------------------------------------------
 net <- build_network(
@@ -39,13 +35,7 @@ net <- build_network(
 net
 
 ## ----compare------------------------------------------------------------------
-res <- sequence_compare(
-  net,
-  sub      = 3:5,
-  min_freq = 25L,
-  test     = "chisq",
-  adjust   = "fdr"
-)
+res <- sequence_compare(net, min_freq = 25L, test = "chisq")
 res
 
 ## ----top-table----------------------------------------------------------------

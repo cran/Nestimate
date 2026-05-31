@@ -53,9 +53,6 @@
 nct <- function(data1, data2, iter = 1000L, gamma = 0.5,
                  paired = FALSE, abs = TRUE, weighted = TRUE,
                  p_adjust = "none") {
-  if (!requireNamespace("qgraph", quietly = TRUE)) {
-    stop("nct() requires the 'qgraph' package.", call. = FALSE)
-  }
   if (!requireNamespace("Matrix", quietly = TRUE)) {
     stop("nct() requires the 'Matrix' package.", call. = FALSE)
   }
@@ -74,15 +71,19 @@ nct <- function(data1, data2, iter = 1000L, gamma = 0.5,
   p  <- ncol(data1)
   dataall <- rbind(data1, data2)
 
-  # Estimator: nearPD symmetrization + qgraph::EBICglasso
-  # (matches NetworkComparisonTest::NCT_estimator_GGM exactly)
+  # Estimator: nearPD symmetrization + EBIC-glasso using the package's
+  # internal lambda-path + EBIC selector (matches qgraph::EBICglasso to
+  # numerical tolerance; verified in local_testing_and_equivalence/).
   est <- function(x) {
     cor_x <- stats::cor(x)
     cor_x <- as.matrix(Matrix::nearPD(cor_x, corr = TRUE)$mat)
     cor_x <- (cor_x + t(cor_x)) / 2
-    suppressWarnings(suppressMessages(
-      qgraph::EBICglasso(cor_x, n = nrow(x), gamma = gamma, verbose = FALSE)
-    ))
+    lambda_path <- .compute_lambda_path(cor_x, nlambda = 100L,
+                                          lambda.min.ratio = 0.01)
+    selected <- .select_ebic(cor_x, lambda_path,
+                              n = nrow(x), gamma = gamma,
+                              penalize_diagonal = FALSE)
+    .wi2net(selected$wi)
   }
 
   nw1 <- est(data1)
@@ -197,4 +198,44 @@ print.net_nct <- function(x, ...) {
   }
   cat("\n")
   invisible(x)
+}
+
+
+#' Summary Method for net_nct
+#'
+#' @description
+#' Returns a tidy data frame with one row per edge test. The global M
+#' (strength) and S (structure) statistics are attached as attributes.
+#'
+#' @param object A \code{net_nct} object.
+#' @param ... Ignored.
+#' @return A data frame with columns \code{from}, \code{to},
+#'   \code{diff_observed}, \code{p_value}, \code{significant}. Attributes
+#'   \code{m_stat} and \code{s_stat} each hold a one-row data frame with
+#'   \code{observed} and \code{p_value}.
+#' @inherit nct examples
+#' @export
+summary.net_nct <- function(object, ...) {
+  ed <- object$E$edge_names
+  n  <- length(object$E$observed)
+  if (is.null(ed) || nrow(ed) != n) {
+    from <- paste0("edge_", seq_len(n))
+    to   <- rep(NA_character_, n)
+  } else {
+    # edge_names is an expand.grid() result with Var1/Var2
+    from <- as.character(ed$Var1)
+    to   <- as.character(ed$Var2)
+  }
+  df <- data.frame(
+    from          = from,
+    to            = to,
+    diff_observed = as.numeric(object$E$observed),
+    p_value       = as.numeric(object$E$p_value),
+    stringsAsFactors = FALSE,
+    row.names     = NULL
+  )
+  df$significant <- !is.na(df$p_value) & df$p_value < 0.05
+  m_df <- data.frame(observed = object$M$observed, p_value = object$M$p_value)
+  s_df <- data.frame(observed = object$S$observed, p_value = object$S$p_value)
+  structure(df, m_stat = m_df, s_stat = s_df)
 }

@@ -10,7 +10,7 @@ prepare_onehot(
   actor = NULL,
   session = NULL,
   interval = NULL,
-  window_size = 1L,
+  window_size = 3L,
   window_type = c("non-overlapping", "overlapping"),
   aggregate = FALSE
 )
@@ -30,8 +30,9 @@ sub-grouping within actors. Default: NULL.}
 output. If NULL, all rows become a single time point group.
 Default: NULL.}
 
-\item{window_size}{Integer. Number of consecutive rows to aggregate
-into each window. Default: 1 (no windowing).}
+\item{window_size}{Integer (>= 1). Number of consecutive rows to aggregate
+into each window. Default: 3. Set \code{window_size = 1} for no
+windowing (each row is its own time point).}
 
 \item{window_type}{Character. \code{"non-overlapping"} (fixed, separate
 windows) or \code{"overlapping"} (rolling, step = 1).
@@ -51,6 +52,11 @@ Converts binary indicator (one-hot) data into the wide sequence format
 expected by \code{\link{build_network}} and \code{tna::tna()}. Each binary
 column represents a state; rows where the value is 1 are marked with the
 column name. Supports optional windowed aggregation.
+
+Simultaneous active states are preserved using the same window-span
+representation as \code{tna::import_onehot()}: each input row/window is
+expanded to one sequence slot per code and transition counting occurs between
+windows, not between simultaneous states inside the same row.
 }
 \examples{
 # Simple binary data

@@ -10,6 +10,8 @@ build_simplicial(
   threshold = 0,
   max_dim = 10L,
   max_pathways = NULL,
+  anomaly = c("all", "over", "under"),
+  max_scale = NULL,
   ...
 )
 }
@@ -17,39 +19,57 @@ build_simplicial(
 \item{x}{A square matrix, \code{tna}, \code{netobject},
 \code{net_hon}, \code{net_hypa}, or \code{net_mogen}.}
 
-\item{type}{Construction type: \code{"clique"} (default),
-\code{"pathway"}, or \code{"vr"}.}
+\item{type}{Construction type: \code{"clique"} (default), \code{"pathway"},
+or \code{"vr"} (alias \code{"rips"}).}
 
-\item{threshold}{Minimum absolute edge weight to include an edge
-(default 0). Edges below this are ignored.}
+\item{threshold}{For \code{type = "clique"}: minimum non-zero absolute
+edge weight to include an edge (default 0). Edges below this are
+ignored; zero-weight non-edges are never included. Ignored for
+\code{type = "vr"} — use \code{max_scale} instead.}
 
-\item{max_dim}{Maximum simplex dimension (default 10). A k-simplex
-has k+1 nodes.}
+\item{max_dim}{Maximum simplex dimension (default 10). Must be a single
+non-negative integer. A k-simplex has k+1 nodes.}
 
 \item{max_pathways}{For \code{type = "pathway"}: maximum number of
 pathways to include, ranked by count (HON) or ratio (HYPA).
 \code{NULL} includes all. Default \code{NULL}.}
 
+\item{anomaly}{For HYPA pathway complexes, which anomaly direction to
+include: \code{"all"} (default), \code{"over"}, or \code{"under"}.
+Under-represented HYPA paths are ranked by smallest observed/expected
+ratio; over-represented paths are ranked by largest ratio.}
+
+\item{max_scale}{For \code{type = "vr"}: maximum edge length to include
+in the filtration. \code{NULL} (default) uses \code{max(d)}.}
+
 \item{...}{Additional arguments passed to \code{build_hon()} when
 \code{x} is a \code{tna}/\code{netobject} with \code{type = "pathway"}.}
 }
 \value{
-A \code{simplicial_complex} object.
+A \code{simplicial_complex} object. For \code{type = "vr"} an
+additional \code{$filtration} numeric vector is attached (parallel to
+\code{$simplices}).
 }
 \description{
 Constructs a simplicial complex from a network or higher-order pathway
-object. Three construction methods are available:
+object. Two construction methods are available:
 
 \itemize{
 \item \strong{Clique complex} (\code{"clique"}): every clique in the
-thresholded graph becomes a simplex. The standard bridge from graph
-theory to algebraic topology.
+thresholded non-zero graph becomes a simplex. Edges with absolute
+weight \eqn{\geq} \code{threshold} are retained. The standard bridge
+from graph theory to algebraic topology.
 \item \strong{Pathway complex} (\code{"pathway"}): each higher-order
 pathway from a \code{net_hon} or \code{net_hypa} becomes a simplex.
-\item \strong{Vietoris-Rips} (\code{"vr"}): nodes with edge weight
-\eqn{\geq} \code{threshold} are connected; all cliques in the
-resulting graph become simplices.
 }
+
+For \code{type = "vr"} (or alias \code{"rips"}), the input is treated as
+a non-negative distance / dissimilarity matrix and a Vietoris-Rips
+filtration is constructed: each k-simplex \eqn{\sigma} enters at
+\eqn{\max_{(i,j) \in \sigma} d(i,j)}. Use \code{max_scale} to cap the
+filtration diameter; edges with \code{d(i,j) > max_scale} are excluded.
+Filtration values are attached as \code{$filtration} on the returned
+object so \code{persistent_homology()} can read them directly.
 }
 \examples{
 mat <- matrix(c(0,.6,.5,.6,0,.4,.5,.4,0), 3, 3)
@@ -57,6 +77,11 @@ colnames(mat) <- rownames(mat) <- c("A","B","C")
 sc <- build_simplicial(mat, threshold = 0.3)
 print(sc)
 betti_numbers(sc)
+
+# Vietoris-Rips on a distance matrix:
+d <- 1 - mat
+diag(d) <- 0
+sc_vr <- build_simplicial(d, type = "vr", max_scale = 0.6)
 
 }
 \seealso{

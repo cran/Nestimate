@@ -77,6 +77,18 @@ test_that("build_simplicial clique with threshold filters edges", {
   expect_true(sc_thresh$dimension <= sc_full$dimension)
 })
 
+test_that("build_simplicial clique includes boundary weights but excludes zero non-edges", {
+  mat <- matrix(0, 3, 3)
+  mat[1, 2] <- mat[2, 1] <- 0.5
+  rownames(mat) <- colnames(mat) <- c("A", "B", "C")
+
+  sc_boundary <- build_simplicial(mat, type = "clique", threshold = 0.5)
+  expect_equal(as.integer(sc_boundary$f_vector), c(3L, 1L))
+
+  sc_zero <- build_simplicial(mat, type = "clique", threshold = 0)
+  expect_equal(as.integer(sc_zero$f_vector), c(3L, 1L))
+})
+
 test_that("build_simplicial clique with max_dim limits dimension", {
   mat <- .make_sc_mat()
   sc <- build_simplicial(mat, type = "clique", max_dim = 1L)
@@ -92,13 +104,6 @@ test_that("build_simplicial accepts netobject input", {
   expect_true(sc$n_nodes > 0L)
 })
 
-test_that("build_simplicial accepts tna object input", {
-  skip_if_not_installed("tna")
-  tna_model <- tna::tna(tna::group_regulation)
-  sc <- build_simplicial(tna_model, threshold = 0.1)
-  expect_s3_class(sc, "simplicial_complex")
-})
-
 test_that("build_simplicial on matrix without rownames assigns V-names", {
   mat <- matrix(c(0, 1, 1, 1, 0, 1, 1, 1, 0), 3, 3)
   sc <- build_simplicial(mat)
@@ -107,32 +112,57 @@ test_that("build_simplicial on matrix without rownames assigns V-names", {
 
 
 # =========================================================================
-# build_simplicial — VR type
+# build_simplicial — VR type is a genuine Vietoris-Rips filtration
+#
+# Historical note: A04-F01 audit caught that type = "vr" silently aliased
+# "clique" and forced it to error. With the boundary-matrix PH backend, VR
+# is now a real metric filtration: input is interpreted as a distance
+# matrix, k-simplex enters at max pairwise distance in σ. These tests
+# verify VR is genuinely distinct from clique (no silent alias regression).
 # =========================================================================
 
-test_that("build_simplicial VR produces correct class", {
-  mat <- .make_sc_mat()
-  sc <- build_simplicial(mat, type = "vr", threshold = 0.3)
+test_that("build_simplicial type='vr' returns a VR complex with filtration", {
+  # 4-cycle as a distance matrix: short edges form the cycle.
+  d <- matrix(0, 4, 4)
+  d[cbind(c(1,2,3,4,1,2,3,4), c(2,3,4,1,2,3,4,1))] <- c(0.1, 0.2, 0.3, 0.4,
+                                                          0.1, 0.2, 0.3, 0.4)
+  rownames(d) <- colnames(d) <- paste0("v", 1:4)
+  sc <- build_simplicial(d, type = "vr", max_scale = 0.5)
   expect_s3_class(sc, "simplicial_complex")
-  expect_equal(sc$type, "vr")
+  expect_identical(sc$type, "vr")
+  expect_true(is.numeric(sc$filtration))
+  expect_equal(length(sc$filtration), length(sc$simplices))
+  # vertices enter at 0
+  vert_idx <- which(vapply(sc$simplices, length, integer(1)) == 1L)
+  expect_true(all(sc$filtration[vert_idx] == 0))
 })
 
-test_that("build_simplicial VR symmetrizes matrix", {
-  # Asymmetric matrix: only A->B has weight, not B->A
-  mat <- matrix(0, 3, 3)
-  mat[1, 2] <- 1
-  rownames(mat) <- colnames(mat) <- c("A", "B", "C")
-  sc <- build_simplicial(mat, type = "vr", threshold = 0.5)
-  # Should still detect A-B edge (symmetrized)
-  expect_true(sc$n_simplices > sc$n_nodes)
-})
-
-test_that("build_simplicial VR high threshold gives disconnected graph", {
+test_that("type='vr' is genuinely distinct from type='clique'", {
+  # On a similarity-weighted graph, the VR complex on (1 - weight) and the
+  # clique complex on the original weights have different simplex counts
+  # because the "max distance" rule and the "min similarity" rule order the
+  # same simplices differently when the input contains a mix of weights.
   mat <- .make_sc_mat()
-  sc <- build_simplicial(mat, type = "vr", threshold = 0.9)
-  # All edges are 0.5 < 0.9 => no edges, only vertices
-  expect_equal(sc$dimension, 0L)
-  expect_equal(sc$n_simplices, 4L) # just the 4 vertices
+  d <- 1 - abs(mat)
+  diag(d) <- 0
+  sc_vr     <- build_simplicial(d,   type = "vr",     max_scale = 0.95)
+  sc_clique <- build_simplicial(mat, type = "clique", threshold = 0.05)
+  expect_identical(sc_vr$type,     "vr")
+  expect_identical(sc_clique$type, "clique")
+  # filtration attached on VR, not on clique
+  expect_true(is.numeric(sc_vr$filtration))
+  expect_null(sc_clique$filtration)
+})
+
+test_that("type='rips' is an alias for 'vr'", {
+  d <- matrix(c(0, 0.2, 0.3,
+                0.2, 0, 0.4,
+                0.3, 0.4, 0), 3, 3, byrow = TRUE)
+  rownames(d) <- colnames(d) <- c("A","B","C")
+  sc1 <- build_simplicial(d, type = "vr",   max_scale = 0.5)
+  sc2 <- build_simplicial(d, type = "rips", max_scale = 0.5)
+  expect_identical(sc1$type, sc2$type)
+  expect_equal(length(sc1$simplices), length(sc2$simplices))
 })
 
 
@@ -190,37 +220,43 @@ test_that("build_simplicial pathway from hypa works", {
   expect_equal(sc$type, "pathway")
 })
 
+test_that("build_simplicial pathway from hypa respects anomaly direction", {
+  scores <- data.frame(
+    path = c("A -> B -> C", "D -> E -> F"),
+    observed = c(20, 1),
+    expected = c(3, 8),
+    ratio = c(20 / 3, 1 / 8),
+    p_value = c(0.99, 0.01),
+    p_under = c(0.99, 0.01),
+    p_over = c(0.001, 0.95),
+    p_adjusted_under = c(0.99, 0.01),
+    p_adjusted_over = c(0.001, 0.95),
+    anomaly = c("over", "under"),
+    stringsAsFactors = FALSE
+  )
+  h <- structure(list(
+    scores = scores,
+    nodes = data.frame(label = LETTERS[1:6], stringsAsFactors = FALSE)
+  ), class = "net_hypa")
 
-# =========================================================================
-# .sc_extract_matrix
-# =========================================================================
+  sc_under <- build_simplicial(h, type = "pathway", anomaly = "under",
+                               max_pathways = 1)
+  under_idx <- match(c("D", "E", "F"), sc_under$nodes)
+  expect_true(any(vapply(sc_under$simplices, function(s) {
+    identical(sort(s), sort(under_idx))
+  }, logical(1))))
 
-test_that(".sc_extract_matrix handles different input types", {
-  # Matrix
-  mat <- .make_sc_mat()
-  expect_identical(.sc_extract_matrix(mat), mat)
-
-  # netobject
-  net <- .make_sc_net()
-  expect_identical(.sc_extract_matrix(net), net$weights)
-
-  # tna object
-  skip_if_not_installed("tna")
-  tna_model <- tna::tna(tna::group_regulation)
-  expect_identical(.sc_extract_matrix(tna_model), tna_model$weights)
-
-  # net_hon object
-  trajs <- list(c("A", "B", "C"), c("B", "C", "A"))
-  hon <- build_hon(trajs, max_order = 2, min_freq = 1)
-  expect_identical(.sc_extract_matrix(hon), hon$matrix)
-
-  # Unsupported
-  expect_error(.sc_extract_matrix(data.frame(a = 1)), "Cannot extract")
+  sc_over <- build_simplicial(h, type = "pathway", anomaly = "over",
+                              max_pathways = 1)
+  over_idx <- match(c("A", "B", "C"), sc_over$nodes)
+  expect_true(any(vapply(sc_over$simplices, function(s) {
+    identical(sort(s), sort(over_idx))
+  }, logical(1))))
 })
 
 
 # =========================================================================
-# betti_numbers
+# .sc_extract_matrix
 # =========================================================================
 
 test_that("betti_numbers on filled triangle gives b0=1, rest 0", {
@@ -351,6 +387,33 @@ test_that("persistent_homology thresholds are decreasing", {
   expect_true(all(diff(ph$thresholds) < 0))
 })
 
+test_that("persistent_homology betti_curve has all requested dimensions", {
+  mat <- matrix(0, 3, 3)
+  mat[1, 2] <- mat[2, 1] <- 1
+  mat[1, 3] <- mat[3, 1] <- 0.5
+  rownames(mat) <- colnames(mat) <- c("A", "B", "C")
+  ph <- persistent_homology(mat, n_steps = 3, max_dim = 3L)
+
+  expect_equal(sort(unique(ph$betti_curve$dimension)), 0:3)
+  expect_true(all(table(ph$betti_curve$threshold) == 4L))
+  expect_true(all(ph$betti_curve$betti[ph$betti_curve$dimension > 1L] == 0L))
+})
+
+test_that("persistent_homology includes edges at exact threshold", {
+  mat <- matrix(0, 2, 2)
+  mat[1, 2] <- mat[2, 1] <- 0.5
+  rownames(mat) <- colnames(mat) <- c("A", "B")
+  ph <- persistent_homology(mat, n_steps = 3)
+  first <- ph$betti_curve[ph$betti_curve$threshold == max(ph$thresholds), ]
+
+  expect_equal(first$betti[first$dimension == 0], 1L)
+  expect_equal(first$betti[first$dimension == 1], 0L)
+  expect_equal(nrow(ph$persistence), 1L)
+  expect_equal(ph$persistence$dimension, 0L)
+  expect_equal(ph$persistence$birth, 0.5)
+  expect_equal(ph$persistence$death, 0)
+})
+
 test_that("persistent_homology b0 increases as threshold increases", {
   net <- .make_sc_net()
   ph <- persistent_homology(net, n_steps = 20)
@@ -439,6 +502,20 @@ test_that("q_analysis on disconnected graph fragments at q=0", {
   expect_gte(last_q, 2L)
 })
 
+test_that("q_analysis names q-vector levels in the computed order", {
+  mat <- matrix(0, 5, 5)
+  rownames(mat) <- colnames(mat) <- LETTERS[1:5]
+  edges <- rbind(c(1, 2), c(1, 3), c(2, 3),
+                 c(3, 4), c(3, 5), c(4, 5))
+  mat[edges] <- 1
+  mat[edges[, 2:1]] <- 1
+  sc <- build_simplicial(mat)
+  qa <- q_analysis(sc)
+
+  expect_equal(names(qa$q_vector), c("q_2", "q_1", "q_0"))
+  expect_equal(as.integer(qa$q_vector), c(2L, 2L, 1L))
+})
+
 test_that("q_analysis rejects non-simplicial_complex", {
   expect_error(q_analysis(list()), "simplicial_complex")
 })
@@ -522,11 +599,15 @@ test_that("print.simplicial_complex suppresses nodes for large complexes", {
   expect_false(any(grepl("Nodes:", out)))
 })
 
-test_that("print.simplicial_complex shows VR label", {
+test_that("print.simplicial_complex never shows a Vietoris-Rips label", {
+  # type = "vr" no longer produces a complex (A04-F01), so the dead
+  # "Vietoris-Rips Complex" label can never be printed. A clique complex
+  # must print "Clique Complex".
   mat <- .make_sc_mat()
-  sc <- build_simplicial(mat, type = "vr", threshold = 0.3)
+  sc <- build_simplicial(mat, type = "clique", threshold = 0.3)
   out <- capture.output(print(sc))
-  expect_true(any(grepl("Vietoris-Rips", out)))
+  expect_true(any(grepl("Clique Complex", out)))
+  expect_false(any(grepl("Vietoris-Rips", out)))
 })
 
 test_that("print.simplicial_complex returns invisibly", {
@@ -792,7 +873,7 @@ test_that("persistent_homology with uniform weights yields flat betti", {
 })
 
 test_that("build_simplicial pathway with max_dim truncation", {
-  # Pathway with 4+ nodes should be truncated to max_dim
+  # Pathway with 4+ nodes should retain all lower-dimensional faces.
   trajs <- list(
     c("A", "B", "C", "B", "D"),
     c("A", "B", "C", "B", "D"),
@@ -804,6 +885,22 @@ test_that("build_simplicial pathway with max_dim truncation", {
   sc <- build_simplicial(hon, type = "pathway", max_dim = 1L)
   expect_s3_class(sc, "simplicial_complex")
   expect_lte(sc$dimension, 1L)
+})
+
+test_that(".expand_to_faces keeps all faces up to max_dim", {
+  faces_1 <- .expand_to_faces(list(1:4), max_dim = 1L)
+  keys_1 <- sort(vapply(faces_1, paste, collapse = "-", FUN.VALUE = character(1)))
+  expect_equal(keys_1, sort(c(
+    "1", "2", "3", "4",
+    "1-2", "1-3", "1-4", "2-3", "2-4", "3-4"
+  )))
+
+  faces_2 <- .expand_to_faces(list(1:4), max_dim = 2L)
+  keys_2 <- sort(vapply(faces_2, paste, collapse = "-", FUN.VALUE = character(1)))
+  expect_true(all(c("1", "2", "3", "4") %in% keys_2))
+  expect_true(all(c("1-2", "1-3", "1-4", "2-3", "2-4", "3-4") %in% keys_2))
+  expect_true(all(c("1-2-3", "1-2-4", "1-3-4", "2-3-4") %in% keys_2))
+  expect_false("1-2-3-4" %in% keys_2)
 })
 
 

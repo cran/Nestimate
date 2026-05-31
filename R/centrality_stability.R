@@ -19,7 +19,11 @@
 #' @param measures Character vector. Centrality measures to assess.
 #'   Built-in: \code{"InStrength"}, \code{"OutStrength"}, \code{"Betweenness"},
 #'   \code{"InCloseness"}, \code{"OutCloseness"}, \code{"Closeness"}.
-#'   Custom measures beyond these require \code{centrality_fn}.
+#'   \code{"Closeness"} is defined only for undirected networks;
+#'   \code{"InCloseness"}/\code{"OutCloseness"} only for directed
+#'   networks (requesting the wrong one for the network's directedness
+#'   is an error). Custom measures beyond these are valid only when a
+#'   \code{centrality_fn} is supplied to resolve them.
 #'   Default: \code{c("InStrength", "OutStrength", "Betweenness")}.
 #' @param iter Integer. Number of bootstrap iterations per drop
 #'   proportion (default: 1000).
@@ -33,11 +37,14 @@
 #'   \code{"spearman"}, or \code{"kendall"} (default: \code{"pearson"}).
 #' @param centrality_fn Optional function. A custom centrality function
 #'   that takes a weight matrix and returns a named list of centrality
-#'   vectors. When \code{NULL} (default), only \code{"InStrength"} and
-#'   \code{"OutStrength"} are computed via \code{colSums}/\code{rowSums}.
-#'   When provided, the function is called as \code{centrality_fn(mat)}
-#'   and should return a named list (e.g.,
-#'   \code{list(Betweenness = ..., Closeness = ...)}).
+#'   vectors. When \code{NULL} (default), all built-in measures are
+#'   computed internally: \code{"InStrength"}/\code{"OutStrength"} via
+#'   \code{colSums}/\code{rowSums}, and \code{"Betweenness"}/
+#'   \code{"InCloseness"}/\code{"OutCloseness"}/\code{"Closeness"} via an
+#'   internal Floyd-Warshall shortest-path routine. When provided, the
+#'   function is called as \code{centrality_fn(mat)} and is used only for
+#'   requested measures that are not one of the six built-ins; it should
+#'   return a named list (e.g., \code{list(my_metric = ...)}).
 #' @param loops Logical. If \code{FALSE} (default), self-loops (diagonal)
 #'   are excluded from centrality computation. This does not modify the
 #'   stored matrix.
@@ -91,13 +98,15 @@ centrality_stability <- function(x,
   if (inherits(x, "mcml")) x <- as_tna(x)
   if (inherits(x, "cograph_network")) x <- .as_netobject(x)
   if (inherits(x, "netobject_group")) {
-    return(lapply(x, function(net) {
+    out <- lapply(x, function(net) {
       centrality_stability(net, measures = measures, iter = iter,
                            drop_prop = drop_prop, threshold = threshold,
                            certainty = certainty, method = method,
                            centrality_fn = centrality_fn, loops = loops,
                            seed = seed)
-    }))
+    })
+    class(out) <- c("net_stability_group", "list")
+    return(out)
   }
   if (!inherits(x, "netobject")) {
     stop("'x' must be a netobject from build_network().", call. = FALSE)
@@ -124,9 +133,14 @@ centrality_stability <- function(x,
   valid_measures <- c("InStrength", "OutStrength", "Betweenness",
                        "Closeness", "InCloseness", "OutCloseness")
   bad <- setdiff(measures, valid_measures)
-  if (length(bad) > 0L) {
+  # A custom centrality_fn resolves non-builtin measure names (mirrors
+  # net_centrality, which has no whitelist). Only reject unknown names
+  # when no centrality_fn is supplied; otherwise .compute_centralities
+  # routes them through centrality_fn.
+  if (length(bad) > 0L && is.null(centrality_fn)) {
     stop("Unknown measures: ", paste(bad, collapse = ", "),
          ". Options: ", paste(valid_measures, collapse = ", "),
+         ". Custom measures require centrality_fn.",
          call. = FALSE)
   }
 
@@ -182,7 +196,7 @@ centrality_stability <- function(x,
     estimator <- get_estimator(net_method)
     params <- x$params
     level <- x$level
-    id_col <- params$id %||% params$id_col
+    id_col <- .param_get(params, "id") %||% .param_get(params, "id_col")
   }
 
   # ---- Build matrix from subset (transition fast path) ----
@@ -308,6 +322,22 @@ centrality_stability <- function(x,
   if (!loops) diag(mat) <- 0
   result <- list()
 
+  # .closeness() is documented to return a single "Closeness" only for
+  # UNDIRECTED networks and "InCloseness"/"OutCloseness" only for DIRECTED
+  # networks. Requesting the wrong one for the network's directedness
+  # would otherwise silently produce no column (or crash a downstream
+  # sd() check). Error cleanly with the correct measure name instead.
+  if (directed && "Closeness" %in% measures) {
+    stop("'Closeness' is defined only for undirected networks. ",
+         "For directed networks use 'InCloseness' and/or 'OutCloseness'.",
+         call. = FALSE)
+  }
+  if (!directed && any(c("InCloseness", "OutCloseness") %in% measures)) {
+    stop("'InCloseness'/'OutCloseness' are defined only for directed ",
+         "networks. For undirected networks use 'Closeness'.",
+         call. = FALSE)
+  }
+
   # Built-in matrix-based centralities (no dependencies)
   builtin <- c("InStrength", "OutStrength",
                "Betweenness", "InCloseness", "OutCloseness", "Closeness")
@@ -405,6 +435,43 @@ print.net_stability <- function(x, ...) {
     cat(sprintf("    %-15s  %.2f\n", m, x$cs[m]))
   }
   invisible(x)
+}
+
+#' Print Method for net_stability_group
+#'
+#' @param x A `net_stability_group` (returned by `centrality_stability()`
+#'   when called on a `netobject_group` or an `mcml`).
+#' @param ... Additional arguments (ignored).
+#' @return The input `x` invisibly.
+#' @export
+print.net_stability_group <- function(x, ...) {
+  measures <- unique(unlist(lapply(x, function(e) names(e$cs))))
+  cs_mat <- sapply(x, function(e) e$cs[measures])
+  rownames(cs_mat) <- measures
+  cat(sprintf("Centrality Stability (%d networks, threshold = %.2f)\n",
+              length(x), x[[1]]$threshold))
+  print(round(t(cs_mat), 2))
+  invisible(x)
+}
+
+
+#' Summary Method for net_stability_group
+#'
+#' @description
+#' Per-network stability as a tidy data frame. Stacks \code{summary()}
+#' results for each network with a \code{group} column.
+#'
+#' @param object A \code{net_stability_group} object.
+#' @param ... Additional arguments (ignored).
+#' @return A data frame with columns \code{group}, \code{measure},
+#'   \code{drop_prop}, \code{mean_cor}, \code{sd_cor}, \code{prop_above}.
+#' @export
+summary.net_stability_group <- function(object, ...) {
+  do.call(rbind, lapply(names(object), function(nm) {
+    df <- summary(object[[nm]])
+    df$group <- nm
+    df[c("group", setdiff(names(df), "group"))]
+  }))
 }
 
 
@@ -520,7 +587,7 @@ plot.net_stability <- function(x, ...) {
       title = "Centrality Stability",
       color = "Measure", fill = "Measure"
     ) +
-    ggplot2::theme_minimal() +
+    ggplot2::theme_minimal(base_size = 12) +
     ggplot2::theme(legend.position = "bottom")
 
   print(p)

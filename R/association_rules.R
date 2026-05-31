@@ -558,13 +558,8 @@ print.net_association_rules <- function(x, ...) {
 #' @export
 summary.net_association_rules <- function(object, ...) {
   r <- object$rules
-  if (nrow(r) == 0) {
-    cat("No rules found.\n")
-    return(invisible(data.frame()))
-  }
-
-  print(r, row.names = FALSE)
-  invisible(r)
+  row.names(r) <- NULL
+  r
 }
 
 
@@ -610,7 +605,7 @@ plot.net_association_rules <- function(x, ...) {
     ggplot2::labs(x = "Support", y = "Confidence",
                   title = sprintf("Association Rules (%d rules)", nrow(r)),
                   size = "Lift", color = "Lift") +
-    ggplot2::theme_minimal()
+    ggplot2::theme_minimal(base_size = 12)
 
   print(p)
   invisible(p)

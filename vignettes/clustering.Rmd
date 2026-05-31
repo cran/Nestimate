@@ -1,5 +1,15 @@
 ---
 title: "Sequence Clustering"
+author:
+  - name: Mohammed Saqr
+    url: https://saqr.me
+    affiliation: University of Eastern Finland
+  - name: Sonsoles López-Pernas
+    url: https://sonsoles.me
+    affiliation: University of Eastern Finland
+  - name: Kamila Misiejuk
+    url: https://kamilamisiejuk.com
+    affiliation: FernUniversität in Hagen, Germany
 output: rmarkdown::html_vignette
 vignette: >
   %\VignetteIndexEntry{Sequence Clustering}
@@ -26,21 +36,16 @@ Clusters represent subgroups within the data that share similar patterns. Such p
 To illustrate clustering, we will use the `human_long` dataset, which contains 10,796 coded human interactions from 429 human-AI pair programming sessions across 34 projects. Each row represents a single interaction event with a timestamp, session identifier, and action label.
 
 ```{r data}
+library(cograph)
 library(Nestimate)
 data("human_long")
-
-# Subsample for vignette speed (CRAN build-time limit)
-set.seed(1)
-keep <- sample(unique(human_long$session_id), 80)
-human_sub <- human_long[human_long$session_id %in% keep, ]
-
-head(human_sub)
+head(human_long)
 ```
 
 We can build a transition network using this dataset using `build_network`. We need to determine the `actor` (`session_id`), the `action` (`cluster`), and the `time` (`timestamp`). We will use the overall network object as the starting point to find subgroups since it structures the raw data into the appropriate units of analysis to perform clustering.
 
 ```{r}
-net <- build_network(human_sub,
+net <- build_network(human_long,
                      method = "tna",
                      action = "cluster",
                      actor  = "session_id",
@@ -156,47 +161,62 @@ clust_complete$silhouette
 ```
 
 
-### Choosing k (Number of Clusters)
+### Choosing k, dissimilarity, and method
 
-To choose the right clustering solution and method, we need to compare the silhouette scores across different k values and clustering methods (and also distance metrics if we want):
+`cluster_choice()` sweeps any combination of `k`, `dissimilarity`, and `method` in a single call and returns one row per configuration with silhouette, mean within-cluster distance, and cluster-size balance. Pass a vector to any axis to sweep it; `dissimilarity = "all"` and `method = "all"` expand to every supported option.
 
 ```{r choose-k}
-methods <- c("pam", "ward.D2", "complete", "average")
-
-silhouettes <- lapply(methods, function(m) {
-  sapply(2:4, function(k) {
-    build_clusters(net, k = k, method = m, seed = 42)$silhouette
-  })
-})
-
-names(silhouettes) <- methods
-
-silhouettes
+ch <- cluster_choice(net, k = 2:4,
+                      method = c("pam", "ward.D2", "complete", "average"))
+ch
 ```
 
-```{r choose-k-plot, fig.alt = "Silhouette scores across different k values"}
-methods <- names(silhouettes)
-colors <- rainbow(length(methods))
+`plot()` accepts an explicit `type =` so you can pick the chart that suits the sweep shape (`"lines"`, `"bars"`, `"heatmap"`, `"tradeoff"`, `"facet"`, or the default `"auto"`).
 
-plot(2:4, silhouettes[[1]], type = "b", pch = 19, col = colors[1],
-     xlab = "Number of clusters (k)",
-     ylab = "Average silhouette width",
-     ylim = c(0, 1),
-     main = "Choosing k")
-
-for (i in 2:length(methods)) {
-  lines(2:4, silhouettes[[i]], type = "b", pch = 19, col = colors[i])
-}
-
-legend("topright", legend = methods, col = colors, lty = 1, pch = 19)
+```{r choose-k-plot, fig.alt = "Silhouette across k for each clustering method"}
+plot(ch, type = "lines")
 ```
 
-Higher silhouette scores indicate better-defined clusters. Look for an "elbow" or maximum. Here we select `ward.D2` with 2 clusters, which yields a reasonable silhouette width.
+To compare several dissimilarities at a fixed `k`, pass a vector and use the `bars` plot type. `dissimilarity = "all"` expands to every supported metric (`hamming`, `osa`, `lv`, `dl`, `lcs`, `qgram`, `cosine`, `jaccard`, `jw`); some metrics require denser sequences than others, so for this short-sequence sample we name a curated subset directly. `abbrev = TRUE` shortens the metric names on the tick labels.
+
+```{r choose-d}
+ch_d <- cluster_choice(net, k = 2,
+                        dissimilarity = c("hamming", "lv", "lcs"),
+                        method = "ward.D2")
+ch_d
+```
+
+```{r choose-d-plot, fig.alt = "Silhouette per dissimilarity at k = 2"}
+plot(ch_d, type = "bars", abbrev = TRUE)
+```
+
+A high silhouette can come from one big cluster and a tiny outlier cluster. The `tradeoff` type plots silhouette against the cluster-size ratio so you can see both axes at once.
+
+```{r choose-tradeoff, fig.alt = "Quality vs cluster-size balance"}
+plot(ch_d, type = "tradeoff", abbrev = TRUE)
+```
+
+Higher silhouette indicates better-defined clusters. The `<-- best` marker in the printed table is the silhouette-max row; `summary(ch)$best` returns it programmatically. We select `ward.D2` with 2 clusters here.
+
 ```{r}
 clust <- build_clusters(net, k = 2, method = "ward.D2", seed = 42)
-
 summary(clust)
 ```
+
+### Validating the choice with `cluster_diagnostics()`
+
+Once a clustering is fit, `cluster_diagnostics()` returns a uniform diagnostic surface that works for both distance-based fits (`net_clustering`) and model-based fits (`net_mmm`, `net_mmm_clustering`). The print method shows per-cluster size, mean within-distance, and silhouette for distance-based fits; AvePP, mixing share, and per-cluster classification error for MMM fits.
+
+```{r cluster-diagnostics}
+diag <- cluster_diagnostics(clust)
+diag
+```
+
+```{r cluster-diagnostics-plot, fig.alt = "Per-observation silhouette by cluster"}
+plot(diag, type = "silhouette")
+```
+
+`as.data.frame(diag)` returns the per-cluster table for downstream use.
 
 
 
@@ -205,25 +225,140 @@ summary(clust)
 
 Instead of clustering sequences based on how similar they are to one another, we can cluster them together based on their transition dynamics. Mixture Markov models (MMM) fit separate Markov models, and sequences are assigned to the cluster whose transition structure best matches their observed behavior.
 
-To implement MMM, we can use the `build_mmm` provided by `Nestimate`, and we pass the sequence data or network estimated and the number of clusters (`k`, by default 2)
+To implement MMM, we can use `build_mmm()`, which returns a `net_mmm` object with full model details:
 ```{r}
-mmm_default <- build_mmm(net)
+mmm_fit <- build_mmm(net, k = 2)
+summary(mmm_fit)
 ```
-We can inspect the results using `summary` and obtain the cluster assignment from the results using `mmm_default$assignments`.
-```{r}
-summary(mmm_default)
-head(mmm_default$assignments,10)
+
+The `net_mmm` object contains posterior probabilities, model fit statistics (BIC, AIC, ICL), and per-cluster transition matrices in `$models`. `cluster_diagnostics()` works on it too, with MMM-specific columns (mixing share, average posterior probability, per-cluster classification error):
+
+```{r mmm-diagnostics}
+diag_mmm <- cluster_diagnostics(mmm_fit)
+diag_mmm
 ```
+
+The `posterior` plot type shows the distribution of each sequence's max posterior probability, faceted by cluster. Tight distributions near 1 indicate clean assignment; spread-out distributions indicate fuzzy clusters.
+
+```{r mmm-diagnostics-plot, fig.alt = "Posterior certainty per MMM cluster"}
+plot(diag_mmm, type = "posterior")
+```
+
 ## Building Networks per Cluster
 
-Once sequences are clustered, we can create separate networks by cluster. We need to pass the clustering result to `build_network` and use the `group` argument to indicate that we want to group by cluster assignment. 
+Once sequences are grouped, the goal is usually to compare *how
+transitions behave within each group*. A single transition network
+estimated on all sequences averages across the groups and hides the
+contrast. Estimating one network per cluster preserves each group's
+distinct dynamics — same nodes, different edge weights.
+
+The result is a `netobject_group`: a list of `netobject`s sharing the
+same node set, one per cluster. Every group network supports the same
+downstream operations as a single `netobject` — plotting via `plot()`,
+resampling via `bootstrap_network()`, group-level edge comparison via
+`permutation()`.
+
+Two paths produce the same `netobject_group`:
+
+1. **Manual** — fit clustering with `build_clusters()`, then pass the
+   result to `build_network()` to build one network per cluster.
+2. **Shortcut** — `cluster_network()` and `cluster_mmm()` collapse both
+   steps into one call.
+
+The distance-based shortcut (`cluster_network()`) groups sessions by
+sequence similarity. The model-based shortcut (`cluster_mmm()`) groups
+them by which Markov model best explains each sequence's transitions.
+
+| Function | Clustering method | Returns |
+|----------|------------------|---------|
+| `cluster_network()` | Distance-based (Hamming, LCS, etc.) | `netobject_group` |
+| `cluster_mmm()` | Model-based (MMM) | `netobject_group` |
+
+### From `build_clusters()` to per-cluster networks
+
+`build_clusters()` returns clustering only; pass it to `build_network()`
+to get one network per cluster as a `netobject_group` (group networks).
+The shortcut `cluster_network()` (below) does both steps in one call.
 
 ```{r cluster-networks}
+clust <- build_clusters(net, k = 2, method = "ward.D2")
 cluster_net <- build_network(clust)
+cluster_net
 ```
 
+```{r cluster-networks-plot, fig.alt = "Per-cluster transition networks"}
+plot(cluster_net)
+```
 
-We may also compare which transition probabilities differ significantly among clusters using permutation testing:
+### Shortcut: `cluster_network()` (distance-based)
+
+Combines `build_clusters()` + `build_network()` into one call.
+
+```{r cluster-network-shortcut}
+## `cograph::cluster_network()` also exists with a different signature
+## (matrix aggregation); qualify with `Nestimate::` to avoid masking.
+grp_dist <- Nestimate::cluster_network(net, k = 2, cluster_by = "ward.D2")
+grp_dist
+```
+
+### Shortcut: `cluster_mmm()` (model-based)
+
+Model-based equivalent: fits a mixture of Markov models and returns per-cluster networks.
+
+```{r cluster-mmm}
+grp_mmm <- cluster_mmm(net, k = 2)
+grp_mmm
+```
+
+Both return a `netobject_group` — a list of `netobject`s with clustering info accessible via `attr(, "clustering")`:
+
 ```{r}
-comparison <- permutation(cluster_net, iter = 100)
+# Access cluster assignments
+attr(grp_dist, "clustering")$assignments[1:10]
+attr(grp_mmm, "clustering")$assignments[1:10]
+
+# Access individual cluster networks
+grp_dist[[1]]$weights[1:3, 1:3]
+```
+
+### Comparing Clusters
+
+We can compare which transition probabilities differ significantly among clusters using permutation testing:
+```{r}
+comparison <- permutation(grp_dist, iter = 100)
+```
+
+## Workflow Summary
+
+The end-to-end path from raw sequence data to validated per-cluster networks:
+
+```{r workflow, eval = FALSE}
+# 1. Build the network from long-format data
+net <- build_network(human_long, method = "tna",
+                     actor = "session_id",
+                     action = "cluster",
+                     time   = "timestamp")
+
+# 2. Sweep the parameter space
+ch <- cluster_choice(net, k = 2:5,
+                     dissimilarity = c("hamming", "lcs", "cosine"),
+                     method = c("pam", "ward.D2"))
+plot(ch, type = "facet", abbrev = TRUE)
+
+# 3. Pick a configuration and fit
+clust <- build_clusters(net, k = 2,
+                         dissimilarity = "hamming",
+                         method = "ward.D2")
+
+# 4. Validate
+diag <- cluster_diagnostics(clust)
+diag
+plot(diag, type = "silhouette")
+
+# 5. Build per-cluster networks
+grp <- build_network(clust)
+
+# 6. Optional: model-based second opinion
+mmm <- build_mmm(net, k = 2)
+plot(cluster_diagnostics(mmm), type = "posterior")
 ```

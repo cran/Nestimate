@@ -1,9 +1,10 @@
 Package: Nestimate
 Title: Network Estimation, Bootstrap, and Higher-Order Analysis
-Version: 0.4.3
+Version: 0.6.0
 Authors@R: c(
     person("Mohammed", "Saqr", email = "saqr@saqr.me", role = c("aut", "cre", "cph")),
-    person("Sonsoles", "López-Pernas", email = "sonsoles.lopez@uef.fi", role = "aut")
+    person("Sonsoles", "López-Pernas", email = "sonsoles.lopez@uef.fi", role = "aut"),
+    person("Kamila", "Misiejuk", email = "kamila.misiejuk@fernuni-hagen.de", role = "aut")
     )
 Description: Estimate, compare, and analyze dynamic and psychological networks
     using a unified interface. Provides transition network analysis
@@ -18,25 +19,24 @@ Description: Estimate, compare, and analyze dynamic and psychological networks
     split-half reliability, centrality stability analysis, mixed Markov
     models, multi-cluster multi-layer networks and clustering.
 License: MIT + file LICENSE
-URL: https://github.com/mohsaqr/Nestimate
+URL: https://github.com/mohsaqr/Nestimate, https://saqr.me/Nestimate/
 BugReports: https://github.com/mohsaqr/Nestimate/issues
 Language: en-US
 Encoding: UTF-8
 RoxygenNote: 7.3.3
-Imports: ggplot2, glasso, data.table, cluster, scales
-Suggests: testthat (>= 3.0.0), markovchain, tna, cograph, igraph,
-        glmnet, lavaan, stringdist, nnet, IsingFit, bootnet, gimme,
-        qgraph, reticulate, gridExtra, lme4, corpcor, mlVAR, mgm,
-        Matrix, NetworkComparisonTest, arules, jsonlite, knitr,
-        rmarkdown, pkgdown
+Imports: ggplot2, glasso, data.table, cluster, scales, brglm2, nnet
+Suggests: testthat (>= 3.0.0), igraph, glmnet, lavaan, stringdist,
+        gridExtra, lme4, corpcor, Matrix, cograph, ggfittext, knitr,
+        rmarkdown, tna
 Config/testthat/edition: 3
 Depends: R (>= 4.1.0)
 LazyData: true
 VignetteBuilder: knitr
 NeedsCompilation: no
-Packaged: 2026-04-19 20:15:29 UTC; mohammedsaqr
+Packaged: 2026-05-31 06:12:26 UTC; mohammedsaqr
 Author: Mohammed Saqr [aut, cre, cph],
-  Sonsoles López-Pernas [aut]
+  Sonsoles López-Pernas [aut],
+  Kamila Misiejuk [aut]
 Maintainer: Mohammed Saqr <saqr@saqr.me>
 Repository: CRAN
-Date/Publication: 2026-04-20 14:40:02 UTC
+Date/Publication: 2026-05-31 07:00:03 UTC

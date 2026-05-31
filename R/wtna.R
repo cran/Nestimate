@@ -11,10 +11,16 @@
 #'   two networks). Default: \code{"transition"}.
 #' @param type Character. Output type: \code{"frequency"} (raw counts) or
 #'   \code{"relative"} (row-normalized probabilities). Default: \code{"frequency"}.
+#'   Note that \code{type = "relative"} applied to \code{method = "cooccurrence"}
+#'   produces an asymmetric matrix (conditional co-occurrence given row state),
+#'   not a symmetric undirected weight matrix — use \code{type = "frequency"}
+#'   if symmetric co-occurrence counts are required.
 #' @param codes Character vector or NULL. Names of the one-hot columns to use.
 #'   If NULL, auto-detects binary columns. Default: NULL.
-#' @param window_size Integer. Number of consecutive rows to aggregate per
-#'   window. Default: 1 (no windowing).
+#' @param window_size Integer (>= 1). Number of consecutive rows to aggregate
+#'   per window. Default: 3 (windowed pairwise between-window counting). Set
+#'   \code{window_size = 1} for ordinary consecutive (t -> t+1) transitions
+#'   with no windowing.
 #' @param mode Character. Window mode: \code{"non-overlapping"} (fixed, separate
 #'   windows) or \code{"overlapping"} (rolling, step = 1).
 #'   Default: \code{"non-overlapping"}.
@@ -76,12 +82,19 @@ wtna <- function(data,
                  method = c("transition", "cooccurrence", "both"),
                  type = c("frequency", "relative"),
                  codes = NULL,
-                 window_size = 1L,
+                 window_size = 3L,
                  mode = c("non-overlapping", "overlapping"),
                  actor = NULL) {
   method <- match.arg(method)
   type <- match.arg(type)
   mode <- match.arg(mode)
+  # Mirror prepare_onehot()'s window_size guard so an invalid value (non-
+  # integer, zero, negative) errors cleanly instead of producing a distinct
+  # garbage matrix (2.7) or silently falling to the non-windowed branch (0/-5).
+  stopifnot(length(window_size) == 1L, is.numeric(window_size),
+            !is.na(window_size), window_size == as.integer(window_size))
+  window_size <- as.integer(window_size)
+  stopifnot(window_size >= 1L)
 
   df <- as.data.frame(data)
   codes <- .resolve_codes(df, codes, exclude = actor)
@@ -89,8 +102,7 @@ wtna <- function(data,
   stopifnot(length(codes) >= 2L)
 
   if (is.null(actor)) {
-    X_raw <- as.matrix(df[, codes, drop = FALSE])
-    storage.mode(X_raw) <- "integer"
+    X_raw <- .wtna_code_matrix(df, codes)
     weights <- .wtna_compute_weights(X_raw, method, window_size, mode)
   } else {
     stopifnot(all(actor %in% names(df)))
@@ -121,6 +133,18 @@ wtna <- function(data,
 
 # ---- Private helpers ----
 
+#' Prepare one-hot code matrix
+#'
+#' Missing one-hot indicators are treated as inactive cells. This keeps sparse
+#' indicator exports from propagating NA through cross-product counts.
+#' @noRd
+.wtna_code_matrix <- function(df, codes) {
+  X <- as.matrix(df[, codes, drop = FALSE])
+  X[is.na(X)] <- 0L
+  storage.mode(X) <- "integer"
+  X
+}
+
 
 #' Compute transition counts
 #'
@@ -129,7 +153,7 @@ wtna <- function(data,
 #' windowed algorithm — every position in window_i paired with every position
 #' in window_{i+1}.
 #' @noRd
-.wtna_transitions <- function(X, window_size = 1L, mode = "non-overlapping") {
+.wtna_transitions <- function(X, window_size = 3L, mode = "non-overlapping") {
   n <- nrow(X)
   k <- ncol(X)
   if (n < 2L) return(matrix(0, k, k))
@@ -176,7 +200,7 @@ wtna <- function(data,
 #' windowed algorithm — every position in a window paired with every other
 #' position in the same window.
 #' @noRd
-.wtna_cooccurrence <- function(X, window_size = 1L, mode = "non-overlapping") {
+.wtna_cooccurrence <- function(X, window_size = 3L, mode = "non-overlapping") {
   n <- nrow(X)
   k <- ncol(X)
 
@@ -212,7 +236,7 @@ wtna <- function(data,
 #'   directly with pairwise between-window counting. Co-occurrence collapses
 #'   windows first via \code{.wtna_to_matrix}.
 #' @noRd
-.wtna_compute_weights <- function(X_raw, method, window_size = 1L,
+.wtna_compute_weights <- function(X_raw, method, window_size = 3L,
                                    mode = "non-overlapping") {
   switch(method,
     transition = .wtna_transitions(X_raw, window_size, mode),
@@ -238,8 +262,7 @@ wtna <- function(data,
   }
 
   matrices <- lapply(groups, function(g) {
-    X_raw <- as.matrix(g[, codes, drop = FALSE])
-    storage.mode(X_raw) <- "integer"
+    X_raw <- .wtna_code_matrix(g, codes)
     .wtna_compute_weights(X_raw, method, window_size, mode)
   })
 
@@ -326,8 +349,7 @@ wtna <- function(data,
 #' to 1. This handles binary data where multiple states can be active at once.
 #' @noRd
 .wtna_initial_probs <- function(df, codes, actor) {
-  X <- as.matrix(df[, codes, drop = FALSE])
-  storage.mode(X) <- "integer"
+  X <- .wtna_code_matrix(df, codes)
 
   .first_row_probs <- function(mat) {
     active_rows <- which(rowSums(mat) > 0L)
@@ -364,7 +386,7 @@ wtna <- function(data,
 #' Finalize: row-normalize and build netobject
 #' @noRd
 .wtna_finalize <- function(weights, type, codes, data, method, initial = NULL,
-                            window_size = 1L, mode = "non-overlapping",
+                            window_size = 3L, mode = "non-overlapping",
                             actor = NULL) {
   if (type == "relative") {
     rs <- rowSums(weights)
@@ -421,14 +443,14 @@ wtna <- function(data,
 #'
 #' @param data Data frame with one-hot columns.
 #' @param codes Character vector or NULL. One-hot column names.
-#' @param window_size Integer. Window size. Default: 1.
+#' @param window_size Integer (>= 1). Window size. Default: 3.
 #' @param mode Character. "non-overlapping" or "overlapping".
 #' @param actor Character or NULL. Actor grouping column.
 #' @param wtna_method Character. "transition" or "cooccurrence".
 #' @param ... Ignored.
 #' @return Standard estimator list (matrix, nodes, directed, cleaned_data).
 #' @noRd
-.estimator_wtna_core <- function(data, codes = NULL, window_size = 1L,
+.estimator_wtna_core <- function(data, codes = NULL, window_size = 3L,
                                   mode = "non-overlapping", actor = NULL,
                                   wtna_method = "transition",
                                   type = "frequency", ...) {
@@ -440,8 +462,7 @@ wtna <- function(data,
   window_size <- as.integer(window_size)
 
   if (is.null(actor)) {
-    X_raw <- as.matrix(df[, codes, drop = FALSE])
-    storage.mode(X_raw) <- "integer"
+    X_raw <- .wtna_code_matrix(df, codes)
     weights <- .wtna_compute_weights(X_raw, wtna_method, window_size, mode)
   } else {
     stopifnot(all(actor %in% names(df)))
@@ -479,7 +500,7 @@ wtna <- function(data,
                              time = "Time",
                              cols = NULL,
                              codes = NULL,
-                             window_size = 1L,
+                             window_size = 3L,
                              mode = "non-overlapping",
                              actor = NULL,
                              ...) {
@@ -548,6 +569,3 @@ print.wtna_mixed <- function(x, ...) {
   cat(sprintf("  Nodes: %d  |  Edges: %d\n", co$n_nodes, co$n_edges))
   invisible(x)
 }
-
-
-

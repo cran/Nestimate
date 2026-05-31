@@ -34,6 +34,7 @@ sequence_plot(
   tick = NULL,
   ncol = NULL,
   nrow = NULL,
+  combined = TRUE,
   legend = NULL,
   legend_size = NULL,
   legend_title = NULL,
@@ -43,9 +44,21 @@ sequence_plot(
 )
 }
 \arguments{
-\item{x}{Wide-format sequence data (\code{data.frame} or \code{matrix})
-or a \code{net_clustering}. One row per sequence, one column per
-time point.}
+\item{x}{Wide-format sequence data. Accepts:
+\describe{
+\item{data.frame / matrix}{Rows = sequences, columns = time points.}
+\item{netobject}{Extracts \code{$data}.}
+\item{net_clustering}{From \code{\link{build_clusters}}. Uses
+\code{$data}, \code{$assignments} for grouping, and \code{$distance}
+for dendrogram.}
+\item{netobject_group}{From \code{\link{cluster_network}} or
+\code{\link{build_network}} on a clustering. Extracts data and
+assignments from \code{attr(, "clustering")}.
+}
+\item{net_mmm}{From \code{\link{build_mmm}}. Uses \code{$models[[1]]$data}
+and \code{$assignments}.}
+\item{tna}{From the tna package. Decodes integer-encoded sequences.}
+}}
 
 \item{type}{One of \code{"heatmap"} (default), \code{"index"}, or
 \code{"distribution"}.}
@@ -106,7 +119,15 @@ instead.}
 
 \item{tick}{Show every Nth x-axis label. \code{NULL} = auto.}
 
-\item{ncol, nrow}{Facet grid dimensions (index + distribution).}
+\item{ncol, nrow}{Facet grid dimensions (index + distribution).
+Ignored when \code{combined = FALSE}.}
+
+\item{combined}{Index and distribution types only. When \code{TRUE}
+(default), groups are arranged on one figure via
+\code{graphics::layout()}. When \code{FALSE}, each group is drawn
+on its own page (one full-size figure per group, with its own
+legend). Single-group calls (\code{G == 1}) ignore this argument.
+Heatmap is always single-figure.}
 
 \item{legend}{Legend position: \code{"bottom"}, \code{"right"}, or
 \code{"none"}. Default varies by type.}

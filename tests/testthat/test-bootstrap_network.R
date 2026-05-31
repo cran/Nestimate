@@ -52,6 +52,47 @@ test_that("bootstrap_network works with method='frequency'", {
   expect_true(all(boot$mean >= 0))
 })
 
+test_that("bootstrap_network warns for one-sequence transition networks", {
+  long <- data.frame(action = c("A", "B", "C", "A"),
+                     stringsAsFactors = FALSE)
+  net <- suppressWarnings(build_tna(long, action = "action"))
+
+  expect_warning(
+    boot <- bootstrap_network(net, iter = 2L, seed = 1),
+    "one long sequence is not recommended"
+  )
+  expect_s3_class(boot, "net_bootstrap")
+})
+
+test_that("bootstrap_network onehot frequency uses wtna per-sequence counts", {
+  df <- data.frame(
+    actor = rep(c("s1", "s2", "s3"), each = 4),
+    A = c(1L, 0L, 1L, 0L, 0L, 1L, 0L, 1L, 1L, 0L, 0L, 1L),
+    B = c(0L, 1L, 0L, 1L, 1L, 0L, 1L, 0L, 0L, 1L, 1L, 0L),
+    C = c(0L, 0L, 1L, 0L, 0L, 1L, 0L, 0L, 1L, 0L, 0L, 1L)
+  )
+  codes <- c("A", "B", "C")
+  net <- suppressWarnings(build_network(
+    df, method = "frequency", format = "onehot", codes = codes,
+    actor = "actor", window_size = 1L
+  ))
+
+  resampling_data <- Nestimate:::.resampling_transition_data(
+    net$data, net$metadata, net$params
+  )
+  pre <- Nestimate:::.precompute_per_sequence(
+    resampling_data, net$method, net$params, net$nodes$label
+  )
+  counts <- matrix(colSums(pre), nrow = 3L, byrow = TRUE,
+                   dimnames = list(codes, codes))
+  boot <- bootstrap_network(net, iter = 20L, seed = 1)
+
+  expect_equal(counts, net$weights)
+  expect_s3_class(boot, "net_bootstrap")
+  expect_equal(boot$method, "frequency")
+  expect_true(any(boot$mean > 0))
+})
+
 test_that("bootstrap_network works with method='co_occurrence'", {
   wide <- .make_boot_wide()
   boot <- bootstrap_network(build_network(wide, method = "co_occurrence"),
@@ -292,23 +333,6 @@ test_that("scaling is applied to bootstrap replicates", {
 
 # ---- netobject_group dispatch (L84-90) ----
 
-test_that("bootstrap_network dispatches over netobject_group", {
-  skip_if_not_installed("tna")
-  df <- tna::group_regulation
-  df$grp <- rep(c("A", "B"), length.out = nrow(df))
-  group_net <- build_network(df, method = "relative", group = "grp")
-  expect_s3_class(group_net, "netobject_group")
-
-  results <- bootstrap_network(group_net, iter = 20L, seed = 1)
-  expect_true(is.list(results))
-  expect_equal(length(results), 2L)
-  expect_s3_class(results[[1]], "net_bootstrap")
-  expect_s3_class(results[[2]], "net_bootstrap")
-})
-
-
-# ---- cograph_network input (L96) ----
-
 test_that("bootstrap_network accepts cograph_network input", {
   wide <- .make_boot_wide()
   net <- build_network(wide, method = "relative")
@@ -406,56 +430,6 @@ test_that("print shows generic label for unknown method", {
 
 
 # ---- Cross-validation against tna::bootstrap ----
-
-test_that("bootstrap_network matches tna::bootstrap numerically", {
-  skip_if_not_installed("tna")
-  df <- tna::group_regulation
-  iter <- 1000L
-  seed <- 42
-
-  # tna approach
-  tna_model <- tna::tna(df)
-  set.seed(seed)
-  tna_boot <- tna::bootstrap(tna_model, iter = iter)
-
-  # Nestimate approach
-  nest_net <- build_network(df, method = "relative")
-  nest_boot <- bootstrap_network(nest_net, iter = iter, seed = seed)
-
-  # 1. Original weights must be identical
-  expect_equal(nest_boot$original$weights, tna_model$weights,
-               tolerance = 1e-12)
-
-  # 2. Bootstrap means must match to machine precision
-  expect_equal(nest_boot$mean, tna_boot$weights_mean, tolerance = 1e-10)
-
-  # 3. Bootstrap SDs must match
-  expect_equal(nest_boot$sd, tna_boot$weights_sd, tolerance = 1e-10)
-
-  # 4. CI bounds must match
-  expect_equal(nest_boot$ci_lower, tna_boot$ci_lower, tolerance = 1e-10)
-  expect_equal(nest_boot$ci_upper, tna_boot$ci_upper, tolerance = 1e-10)
-
-  # 5. CR bounds must match
-  expect_equal(nest_boot$cr_lower, tna_boot$cr_lower, tolerance = 1e-10)
-  expect_equal(nest_boot$cr_upper, tna_boot$cr_upper, tolerance = 1e-10)
-
-  # 6. P-values: RNG consumption patterns may differ slightly between
-  #    tna and Nestimate bootstrap implementations. With 1000 iterations,
-  #    p-values should correlate > 0.9999 and max diff < 0.01.
-  #    Zero-weight edges excluded (tna sets p=1, Nestimate computes actual).
-  non_zero <- nest_boot$original$weights != 0
-  expect_gt(cor(as.vector(nest_boot$p_values[non_zero]),
-                as.vector(tna_boot$p_values[non_zero])), 0.9999)
-  expect_lt(max(abs(nest_boot$p_values[non_zero] -
-                    tna_boot$p_values[non_zero])), 0.01)
-
-  # 7. Significant edges must match
-  expect_equal(nest_boot$significant, tna_boot$weights_sig, tolerance = 1e-10)
-})
-
-
-# ---- Group and mixed dispatches ----
 
 test_that("bootstrap_network dispatches for wtna_mixed (L83-95)", {
   set.seed(1)
@@ -580,4 +554,99 @@ test_that("bootstrap_network works with mcml objects", {
   for (nm in cluster_boots) {
     expect_s3_class(boot[[nm]], "net_bootstrap")
   }
+})
+
+test_that("bootstrap_network mcml dispatch matches explicit as_tna group dispatch", {
+  set.seed(42)
+  seqs <- data.frame(
+    T1 = sample(LETTERS[1:6], 30, TRUE),
+    T2 = sample(LETTERS[1:6], 30, TRUE),
+    T3 = sample(LETTERS[1:6], 30, TRUE),
+    T4 = sample(LETTERS[1:6], 30, TRUE),
+    stringsAsFactors = FALSE
+  )
+  clusters <- list(G1 = c("A", "B", "C"), G2 = c("D", "E", "F"))
+  cs <- build_mcml(seqs, clusters, type = "tna")
+
+  boot_mc <- bootstrap_network(cs, iter = 10, seed = 1)
+  boot_grp <- bootstrap_network(as_tna(cs), iter = 10, seed = 1)
+
+  expect_identical(class(boot_mc), class(boot_grp))
+  expect_identical(names(boot_mc), names(boot_grp))
+  expect_identical(
+    vapply(boot_mc, function(x) class(x)[1L], character(1L)),
+    vapply(boot_grp, function(x) class(x)[1L], character(1L))
+  )
+  expect_identical(boot_mc$macro$iter, boot_grp$macro$iter)
+  expect_equal(boot_mc$macro$summary, boot_grp$macro$summary,
+               tolerance = 1e-12)
+})
+
+# ---- Branch-matrix coverage (task #17) ----
+# Crosses inference x input-class x edge_threshold. Each cell asserts the
+# returned object has the expected class and no NA/NaN leaks into the edge
+# summary frame. Iter is kept tiny (15) so the full matrix runs in seconds.
+
+test_that("bootstrap_network branch matrix: all combinations produce valid output", {
+  set.seed(17)
+  wide <- .make_boot_wide(n = 40, t = 8)
+  net_tran <- build_network(wide, method = "relative")
+  net_freq <- build_network(wide, method = "frequency")
+  net_grp  <- {
+    wg <- wide
+    wg$grp <- rep(c("x", "y"), each = 20)
+    build_network(wg, method = "relative", group = "grp")
+  }
+
+  grid <- expand.grid(
+    inference      = c("stability", "threshold"),
+    input          = c("transition", "frequency", "group"),
+    edge_threshold = c(NA_real_, 0.05),
+    stringsAsFactors = FALSE
+  )
+
+  for (i in seq_len(nrow(grid))) {
+    cfg <- grid[i, ]
+    obj <- switch(cfg$input,
+                  transition = net_tran,
+                  frequency  = net_freq,
+                  group      = net_grp)
+    et  <- if (is.na(cfg$edge_threshold)) NULL else cfg$edge_threshold
+    info <- sprintf("inference=%s input=%s edge_threshold=%s",
+                    cfg$inference, cfg$input,
+                    if (is.null(et)) "NULL" else sprintf("%.2f", et))
+
+    boot <- bootstrap_network(
+      obj, iter = 15L, inference = cfg$inference,
+      edge_threshold = et, seed = 17L
+    )
+
+    if (cfg$input == "group") {
+      expect_true(inherits(boot, "net_bootstrap_group"), info = info)
+      for (sub in boot) {
+        expect_true(inherits(sub, "net_bootstrap"), info = info)
+      }
+    } else {
+      expect_true(inherits(boot, "net_bootstrap"), info = info)
+      # Structural guarantees on summary frame + stat matrices
+      expect_true(is.data.frame(boot$summary), info = info)
+      expect_true(is.matrix(boot$mean),       info = info)
+      expect_false(any(is.nan(boot$mean)),    info = paste0(info, " [mean NaN]"))
+      expect_false(any(is.nan(boot$sd)),      info = paste0(info, " [sd NaN]"))
+      # CI bounds must be ordered lower <= upper elementwise
+      expect_true(all(boot$ci_lower <= boot$ci_upper),
+                  info = paste0(info, " [ci order]"))
+    }
+  }
+})
+
+test_that("bootstrap_network reproducibility: same seed -> identical stats", {
+  set.seed(1)
+  net  <- build_network(.make_boot_wide(n = 30, t = 6), method = "relative")
+  b1   <- bootstrap_network(net, iter = 20L, inference = "stability", seed = 42L)
+  b2   <- bootstrap_network(net, iter = 20L, inference = "stability", seed = 42L)
+  # Summary frames + mean matrices must match bit-for-bit under identical seeds
+  expect_equal(b1$summary, b2$summary)
+  expect_equal(b1$mean,    b2$mean)
+  expect_equal(b1$sd,      b2$sd)
 })

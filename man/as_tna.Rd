@@ -13,11 +13,9 @@ as_tna(x)
 \method{as_tna}{default}(x)
 }
 \arguments{
-\item{x}{A \code{cluster_summary} object created by \code{\link{cluster_summary}}.
-The cluster_summary should typically be created with \code{type = "tna"} to
-ensure row-normalized transition probabilities. If created with
-\code{type = "raw"}, the raw counts will be passed to \code{tna::tna()}
-which will normalize them.}
+\item{x}{A \code{cluster_summary} object created by
+\code{\link{cluster_summary}}. The aggregated weights are passed to
+\code{tna::tna()}, which row-normalises them as needed.}
 }
 \value{
 A \code{cluster_tna} object (S3 class) containing:
@@ -60,7 +58,7 @@ an error with installation instructions.
 # Full MCML workflow
 net <- build_network(data, method = "relative")
 net$nodes$clusters <- group_assignments
-cs <- cluster_summary(net, type = "tna")
+cs <- cluster_summary(net)
 tna_models <- as_tna(cs)
 
 # Now use tna package functions
@@ -76,21 +74,27 @@ tna::centralities(tna_models$clusters$ClusterA)
 
 \subsection{Excluded Clusters}{
 
-A within-cluster tna cannot be created when:
-\itemize{
-\item The cluster has only 1 node (no internal transitions possible)
-\item Some nodes in the cluster have no outgoing edges (row sums to 0)
-}
+A within-cluster network is dropped only when row-normalisation would
+fail. Specifically, when the recorded \code{net_method} is
+\code{"relative"} (row-stochastic transitions) and any node in the
+cluster has zero outgoing weight, that cluster is excluded from
+\code{$clusters} and a \code{warning()} is emitted listing the dropped
+cluster names. For \code{net_method = "frequency"} (raw counts), a
+zero-row node is a legitimate sink and the cluster is retained.
+The macro / between-cluster network always includes every cluster
+regardless of the per-cluster drop decisions.
 
-These clusters are silently excluded from \code{$clusters}. The between-cluster
-model still includes all clusters.
+If a cluster you expect to see is missing from the returned
+\code{$clusters}, check the warning output and consider building with
+\code{type = "raw"} (which carries through to a frequency-method
+netobject and skips the drop) or inspect \code{rowSums(x$clusters[[cl]]$weights)}.
 }
 }
 \examples{
 mat <- matrix(runif(36), 6, 6)
 rownames(mat) <- colnames(mat) <- LETTERS[1:6]
 clusters <- list(G1 = c("A", "B"), G2 = c("C", "D"), G3 = c("E", "F"))
-cs <- cluster_summary(mat, clusters, type = "tna")
+cs <- cluster_summary(mat, clusters)
 tna_models <- as_tna(cs)
 tna_models
 tna_models$macro$weights

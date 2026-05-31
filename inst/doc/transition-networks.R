@@ -7,50 +7,27 @@ knitr::opts_chunk$set(
   fig.height = 5,
   dpi = 96,
   warning = FALSE,
-  message = FALSE,
-  output.lines = 40
+  message = FALSE
 )
-local({
-  hook_output <- knitr::knit_hooks$get("output")
-  knitr::knit_hooks$set(output = function(x, options) {
-    n <- options$output.lines
-    if (!is.null(n)) {
-      lines <- strsplit(x, "\n", fixed = TRUE)[[1]]
-      if (length(lines) > n) {
-        x <- paste(c(utils::head(lines, n),
-                     sprintf("#> [... %d more lines ...]", length(lines) - n)),
-                   collapse = "\n")
-      }
-    }
-    hook_output(x, options)
-  })
-})
-options(max.print = 100)
 
 ## ----data---------------------------------------------------------------------
 library(Nestimate)
-
-# Subsample for vignette speed (CRAN build-time limit)
-set.seed(1)
-keep <- sample(unique(human_long$session_id), 100)
-human_sub <- human_long[human_long$session_id %in% keep, ]
-
-head(human_sub)
+head(human_long)
 
 ## ----tna----------------------------------------------------------------------
-net_tna <- build_network(human_sub, method = "tna",
+net_tna <- build_network(human_long, method = "tna",
                          action = "code", actor = "session_id",
                          time = "timestamp")
 print(net_tna)
 
 ## ----ftna---------------------------------------------------------------------
-net_ftna <- build_network(human_sub, method = "ftna",
+net_ftna <- build_network(human_long, method = "ftna",
                           action = "code", actor = "session_id",
                           time = "timestamp")
 print(net_ftna)
 
 ## ----atna---------------------------------------------------------------------
-net_atna <- build_network(human_sub, method = "atna",
+net_atna <- build_network(human_long, method = "atna",
                           action = "code", actor = "session_id",
                           time = "timestamp")
 print(net_atna)
@@ -100,11 +77,15 @@ net_GR <- build_network(group_regulation_long, method = "tna",
                         action = "Action", actor = "Actor",
                         time = "Time")
 
-## ----posthoc------------------------------------------------------------------
+## ----posthoc, eval = requireNamespace("nnet", quietly = TRUE)-----------------
+# Default estimator = "auto" inspects the cluster x covariate cross-tab
+# and picks firth (brglm2, bias-reduced) only when rare cells signal
+# separation risk; otherwise it uses the much faster nnet::multinom.
+# With Achiever balanced 50/50, multinom is selected (~0.5 s vs ~85 s).
 Post <- build_clusters(net_GR, k = 2, covariates = c("Achiever"))
 summary(Post)
 
-## ----posthoc-networks---------------------------------------------------------
+## ----posthoc-networks, eval = requireNamespace("nnet", quietly = TRUE)--------
 Postgr <- build_network(Post)
 Postgr
 

@@ -18,48 +18,17 @@ dim(trajectories)
 table(as.vector(trajectories), useNA = "always")
 
 ## -----------------------------------------------------------------------------
-df <- as.data.frame(trajectories)
-active_count  <- rowSums(df == "Active", na.rm = TRUE)
-mostly_active <- active_count > ncol(df) / 2
-cat(sum(mostly_active), "of", nrow(df), "learners qualify\n")
-sub <- df[mostly_active, ]
+sub <- trajectories[rowSums(trajectories == "Active", na.rm = TRUE) > 7, ]
+nrow(sub)
 
 ## ----fig.height=7-------------------------------------------------------------
-state_pal <- c(Active = "#1a7a1a", Average = "#E69F00", Disengaged = "#CC79A7")
-
-sequence_plot(
-  df,
-  type         = "heatmap",
-  sort         = "lcs",
-  k            = 3,
-  k_color      = "white",
-  k_line_width = 2,
-  state_colors = state_pal,
-  na_color     = "grey88",
-  main         = "Full sample - all 138 learners",
-  time_label   = "Time-step",
-  y_label      = "Learner",
-  legend       = "bottom"
-)
+sequence_plot(trajectories, type = "heatmap")
 
 ## ----fig.height=5-------------------------------------------------------------
-sequence_plot(
-  sub,
-  type         = "heatmap",
-  sort         = "lcs",
-  k            = 2,
-  k_color      = "white",
-  k_line_width = 2,
-  state_colors = state_pal,
-  na_color     = "grey88",
-  main         = "Mostly-active learners - Active > 7 of 15 steps (n = 42)",
-  time_label   = "Time-step",
-  y_label      = "Learner",
-  legend       = "bottom"
-)
+sequence_plot(sub, type = "heatmap")
 
 ## -----------------------------------------------------------------------------
-net_all <- build_network(df,  method = "relative")
+net_all <- build_network(trajectories, method = "relative")
 net_sub <- build_network(sub, method = "relative")
 
 round(net_all$weights, 3)

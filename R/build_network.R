@@ -10,18 +10,36 @@
 #'   square symmetric matrix (correlation or covariance).
 #' @param method Character. Required. Name of a registered estimator.
 #'   Built-in methods: \code{"relative"}, \code{"frequency"},
-#'   \code{"co_occurrence"}, \code{"cor"}, \code{"pcor"}, \code{"glasso"}.
+#'   \code{"co_occurrence"}, \code{"cor"}, \code{"pcor"}, \code{"glasso"},
+#'   \code{"ising"}, \code{"mgm"}, \code{"attention"}, \code{"wtna"},
+#'   \code{"wtna_cooccurrence"}.
 #'   Aliases: \code{"tna"} and \code{"transition"} map to \code{"relative"};
 #'   \code{"ftna"} and \code{"counts"} map to \code{"frequency"};
-#'   \code{"cna"} maps to \code{"co_occurrence"};
+#'   \code{"cna"} and \code{"wcna"} map to \code{"co_occurrence"};
 #'   \code{"corr"} and \code{"correlation"} map to \code{"cor"};
 #'   \code{"partial"} maps to \code{"pcor"};
-#'   \code{"ebicglasso"} and \code{"regularized"} map to \code{"glasso"}.
+#'   \code{"ebicglasso"} and \code{"regularized"} map to \code{"glasso"};
+#'   \code{"isingfit"} maps to \code{"ising"};
+#'   \code{"atna"} maps to \code{"attention"};
+#'   \code{"mixed"} and \code{"mixed_graphical"} map to \code{"mgm"};
+#'   \code{"wtna_transition"} maps to \code{"wtna"}.
 #' @param params Named list. Method-specific parameters passed to the estimator
 #'   function (e.g. \code{list(gamma = 0.5)} for glasso, or
 #'   \code{list(format = "wide")} for transition methods). This is the key
 #'   composability feature: downstream functions like bootstrap or grid search
 #'   can store and replay the full params list without knowing method internals.
+#'   Transition estimators accept tna-style sequence options such as
+#'   \code{weighted}, \code{begin_state}, \code{end_state}, and \code{concat}.
+#'   Column-like entries in \code{params} (\code{action}, \code{id},
+#'   \code{id_col}, \code{time}, \code{session}, \code{order}, \code{codes},
+#'   and \code{group}) are resolved before format detection and must name
+#'   existing columns. If the same column role is supplied both directly and
+#'   through \code{params}, the names must agree.
+#' @param labels Optional name -> label remap applied after construction.
+#'   Accepts a 2-column data.frame \code{(name, label)}, a named character
+#'   vector \code{c(name = "label")}, or a named list. Rewrites
+#'   \code{$nodes$label} and \code{dimnames(weights)}. Unmapped names pass
+#'   through unchanged.
 #' @param scaling Character vector or NULL. Post-estimation scaling to apply
 #'   (in order). Options: \code{"minmax"}, \code{"max"}, \code{"rank"},
 #'   \code{"normalize"}. Can combine: \code{c("rank", "minmax")}.
@@ -48,14 +66,28 @@
 #'   \code{"long"}, or \code{"onehot"}. Default: \code{"auto"}.
 #' @param window_size Integer. Window size for one-hot windowing.
 #'   Default: \code{3L}.
-#' @param mode Character. Windowing mode: \code{"non-overlapping"} or
-#'   \code{"overlapping"}. Default: \code{"non-overlapping"}.
+#' @param mode Character. Windowing mode for one-hot input only:
+#'   \code{"non-overlapping"} or \code{"overlapping"}. Has no effect on
+#'   wide or long sequence data (only the one-hot/wtna path reads it).
+#'   Default: \code{"non-overlapping"}.
 #' @param time_threshold Numeric. Maximum time gap (seconds) for long format
 #'   session splitting. Default: \code{900}.
 #' @param predictability Logical. If \code{TRUE} (default), compute and store
 #'   node predictability (R-squared) for undirected association methods
 #'   (glasso, pcor, cor). Stored in \code{$predictability} and auto-displayed
 #'   as donuts by \code{cograph::splot()}.
+#' @param state_cols Character vector or \code{NULL}. Explicit names of columns
+#'   to classify as state columns in the returned netobject's \code{$data}
+#'   slot. When provided, all other columns of the cleaned input go to
+#'   \code{$metadata}. Auto-detection (values-in-nodes heuristic) is bypassed.
+#'   Use this when a metadata column happens to contain values that overlap
+#'   with node names (e.g. condition labels \code{"A","B","C"} and nodes
+#'   \code{"A","B","C"}) and auto-detection would misclassify it. Default:
+#'   \code{NULL} (auto-detect).
+#' @param metadata_cols Character vector or \code{NULL}. Explicit names of
+#'   columns to force into the \code{$metadata} slot. The remaining columns
+#'   are auto-detected as state via the values-in-nodes rule. Cannot overlap
+#'   with \code{state_cols}. Default: \code{NULL}.
 #' @param ... Additional arguments passed to the estimator function.
 #'
 #' @return An object of class \code{c("netobject", "cograph_network")} containing:
@@ -93,6 +125,7 @@
 #' The function works as follows:
 #' \enumerate{
 #'   \item Resolves method aliases to canonical names.
+#'   \item Validates explicit column arguments before any format guessing.
 #'   \item Retrieves the estimator function from the global registry.
 #'   \item For association methods with \code{level} specified, decomposes
 #'     the data (between-person means or within-person centering).
@@ -100,6 +133,12 @@
 #'   \item Applies scaling and thresholding to the result matrix.
 #'   \item Extracts edges and constructs the \code{netobject}.
 #' }
+#'
+#' For long-format transition data, supplying \code{action} without
+#' \code{actor} is allowed and treats all rows as one sequence in row/time
+#' order. The function warns because a one-sequence transition network is not
+#' recommended and cannot be validated by bootstrap or other confirmatory
+#' tests.
 #'
 #' @examples
 #' seqs <- data.frame(V1 = c("A","B","C","A"), V2 = c("B","C","A","B"))
@@ -147,8 +186,18 @@ build_network <- function(data,
                           level = NULL,
                           time_threshold = 900,
                           predictability = TRUE,
+                          state_cols = NULL,
+                          metadata_cols = NULL,
                           params = list(),
+                          labels = NULL,
                           ...) {
+  # --- Coerce sequence matrices (character / logical / integer) to data.frame ---
+  # Numeric square matrices are left alone — they may already be transition
+  # matrices for downstream estimators that accept them.
+  if (is.matrix(data) && !is.numeric(data)) {
+    data <- as.data.frame(data, stringsAsFactors = FALSE)
+  }
+
   # --- Early dispatch for net_clustering objects ---
   if (inherits(data, "net_clustering")) {
     if (missing(method)) method <- data$network_method %||% "relative"
@@ -159,13 +208,13 @@ build_network <- function(data,
   if (inherits(data, "net_mmm")) {
     if (missing(method)) method <- data$network_method %||% "relative"
     resolved <- .resolve_method_alias(method)
+    dots <- list(...)
     if (resolved != "relative") {
       # Re-build per-component networks from hard assignments using requested method
-      raw_data    <- data$models[[1L]]$data
+      raw_data    <- data$data %||% data$models[[1L]]$data
       assignments <- data$assignments
       k_comp      <- data$k
       # Merge stored build_args with caller's ...; caller takes precedence
-      dots      <- list(...)
       call_args <- if (!is.null(data$build_args)) modifyList(data$build_args, dots) else dots
       nets <- lapply(seq_len(k_comp), function(m) {
         sub <- raw_data[assignments == m, , drop = FALSE]
@@ -177,22 +226,117 @@ build_network <- function(data,
         net
       })
       names(nets) <- paste0("Cluster ", seq_len(k_comp))
-      attr(nets, "group_col") <- "component"
       class(nets) <- "netobject_group"
-      return(nets)
+      return(.attach_mmm_clustering(nets, data, full_data = raw_data))
+    }
+    if (length(dots)) {
+      stop(
+        "Unsupported argument(s) for build_network(net_mmm) with the ",
+        "pre-built relative MMM networks: ",
+        paste(names(dots), collapse = ", "), ". ",
+        "Use a non-relative `method` to rebuild per-cluster networks, or ",
+        "set these options before fitting the MMM.",
+        call. = FALSE
+      )
     }
     # Default: wrap pre-built "relative" models (retain $initial from EM)
     nets <- data$models
     if (is.null(names(nets))) names(nets) <- paste0("Cluster ", seq_along(nets))
-    attr(nets, "group_col") <- "component"
     class(nets) <- "netobject_group"
-    return(nets)
+    return(.attach_mmm_clustering(nets, data,
+                                  full_data = data$data %||% data$models[[1L]]$data))
   }
 
   stopifnot(is.character(method), length(method) == 1)
   stopifnot(is.list(params))
+
+  # ---- mgm's `level`/`threshold` collide with build_network's own
+  # same-named formals. build_network's `level` is the "between"/"within"/
+  # "both" multilevel-decomposition enum; its `threshold` is a numeric
+  # edge-weight cutoff. mgm instead documents an integer `level` vector and
+  # a "LW"/"none" `threshold` enum. Route mgm's variants into `params`
+  # (the estimator's own argument channel) so the documented mgm values are
+  # reachable via build_network(method = "mgm", ...) directly, and error
+  # clearly for invalid values. Other methods keep build_network's
+  # numeric-`threshold` / enum-`level` semantics unchanged.
+  resolved_method <- .resolve_method_alias(method)
+  if (identical(resolved_method, "mgm")) {
+    if (!is.numeric(threshold)) {
+      if (length(threshold) == 1L && threshold %in% c("LW", "none")) {
+        if (is.null(.param_get(params, "threshold"))) {
+          params$threshold <- threshold
+        }
+        threshold <- 0
+      } else {
+        stop(
+          "For method = \"mgm\", `threshold` must be \"LW\" or \"none\" ",
+          "(coefficient thresholding rule); got: ",
+          paste(threshold, collapse = ", "), ".",
+          call. = FALSE
+        )
+      }
+    }
+    if (!is.null(level) && is.numeric(level)) {
+      # mgm `level` is one entry per MODELED variable. When `group=` is set
+      # the grouping column(s) are dropped before estimation (the group
+      # dispatch below recurses on data minus `group`), so validate against
+      # the modeled-variable count -- not raw ncol -- otherwise a correct
+      # `level` is rejected here, or a group-padded one is forwarded too
+      # long to .estimator_mgm() in the per-group call.
+      df0 <- as.data.frame(data)
+      group_cols <- if (is.null(group)) character(0) else
+        intersect(group, names(df0))
+      n_modeled <- ncol(df0) - length(group_cols)
+      if (length(level) == n_modeled) {
+        if (is.null(.param_get(params, "level"))) {
+          params$level <- level
+        }
+        level <- NULL
+      } else {
+        stop(
+          "For method = \"mgm\", numeric `level` must be an integer vector ",
+          "of length ", n_modeled, " (one level per modeled variable, 1 ",
+          "for continuous; any `group` column is excluded). To trigger ",
+          "build_network's between-/within-person decomposition instead, ",
+          "pass level = \"between\"/\"within\"/\"both\".",
+          call. = FALSE
+        )
+      }
+    }
+  }
+
   stopifnot(is.numeric(threshold), length(threshold) == 1, threshold >= 0)
   mode <- match.arg(mode)
+
+  if (!is.null(state_cols)) {
+    stopifnot(is.character(state_cols))
+  }
+  if (!is.null(metadata_cols)) {
+    stopifnot(is.character(metadata_cols))
+  }
+  if (!is.null(state_cols) && !is.null(metadata_cols)) {
+    overlap <- intersect(state_cols, metadata_cols)
+    if (length(overlap)) {
+      stop(
+        "state_cols and metadata_cols overlap: ",
+        paste(overlap, collapse = ", "), ". A column must be either state ",
+        "or metadata, not both.",
+        call. = FALSE
+      )
+    }
+  }
+  if (is.data.frame(data)) {
+    missing_state <- setdiff(state_cols,    names(data))
+    missing_meta  <- setdiff(metadata_cols, names(data))
+    if (length(missing_state)) {
+      stop("state_cols not found in data: ",
+           paste(missing_state, collapse = ", "), call. = FALSE)
+    }
+    if (length(missing_meta)) {
+      stop("metadata_cols not found in data: ",
+           paste(missing_meta, collapse = ", "), call. = FALSE)
+    }
+  }
 
   # Merge ... into params (... takes precedence)
   dots <- list(...)
@@ -203,36 +347,30 @@ build_network <- function(data,
   # Resolve method aliases early (needed for format detection)
   method <- .resolve_method_alias(method)
 
-  # ---- Group dispatch: per-group networks ----
-  if (!is.null(group)) {
-    stopifnot(is.character(group), all(group %in% names(data)))
-    if (length(group) == 1L) {
-      grp_key <- data[[group]]
-    } else {
-      grp_key <- interaction(data[, group, drop = FALSE], sep = "-",
-                             drop = TRUE)
-    }
-    grp_levels <- unique(grp_key)
-    # Drop group column(s) from sub-data so they don't become state cols
-    drop_cols <- intersect(group, names(data))
-    nets <- lapply(grp_levels, function(g) {
-      sub <- data[grp_key == g, , drop = FALSE]
-      if (length(drop_cols) > 0L) {
-        sub <- sub[, setdiff(names(sub), drop_cols), drop = FALSE]
-      }
-      build_network(
-        sub, method = method, actor = actor, action = action,
-        time = time, session = session, order = order, codes = codes,
-        group = NULL, format = format, window_size = window_size,
-        mode = mode, scaling = scaling, threshold = threshold,
-        level = level, time_threshold = time_threshold,
-        predictability = predictability, params = params, ...
-      )
-    })
-    names(nets) <- as.character(grp_levels)
-    attr(nets, "group_col") <- group
-    class(nets) <- "netobject_group"
-    return(nets)
+  if (is.data.frame(data)) {
+    canonical <- .canonicalize_build_network_params(
+      params,
+      actor = actor, action = action, time = time, session = session,
+      order = order, codes = codes, group = group, format = format
+    )
+    actor <- canonical$actor
+    action <- canonical$action
+    time <- canonical$time
+    session <- canonical$session
+    order <- canonical$order
+    codes <- canonical$codes
+    group <- canonical$group
+    format <- canonical$format
+
+    .validate_build_network_columns(
+      data,
+      actor = actor, action = action, time = time, session = session,
+      order = order, codes = codes, group = group,
+      state_cols = state_cols, metadata_cols = metadata_cols
+    )
+    .validate_build_network_params(data, params, actor = actor,
+                                   action = action, time = time,
+                                   codes = codes)
   }
 
   # ---- Auto-match standard column names (case-insensitive) ----
@@ -247,8 +385,63 @@ build_network <- function(data,
     if (is.null(session)) session <- .match1("session") %||% .match1("session_id")
   }
 
+  # ---- Group dispatch: per-group networks ----
+  if (!is.null(group)) {
+    stopifnot(is.character(group))
+    transition_methods <- c("relative", "frequency", "co_occurrence", "attention")
+    if (method %in% transition_methods && is.data.frame(data) &&
+        is.null(.param_get(params, "alphabet"))) {
+      if (!is.null(action) && action %in% names(data)) {
+        vals <- .clean_states(as.character(data[[action]]))
+      } else {
+        exclude <- c(group, actor, session)
+        state_names <- setdiff(names(data), exclude)
+        vals <- .clean_states(as.character(unlist(data[, state_names, drop = FALSE])))
+      }
+      params$alphabet <- sort(unique(c(
+        vals[!is.na(vals)],
+        .param_get(params, "begin_state"),
+        .param_get(params, "end_state")
+      )))
+    }
+    if (length(group) == 1L) {
+      grp_key <- data[[group]]
+    } else {
+      grp_key <- interaction(data[, group, drop = FALSE], sep = "-",
+                             drop = TRUE)
+    }
+    grp_levels <- unique(grp_key)
+    # Drop group column(s) from sub-data so they don't become state cols
+    drop_cols <- intersect(group, names(data))
+    # Strip group from params so the recursive per-group call does not
+    # try to re-canonicalize a `group` column that has been dropped from
+    # `sub`. The parent call already consumed it.
+    child_params <- if (is.list(params)) params[setdiff(names(params), "group")] else params
+    nets <- lapply(grp_levels, function(g) {
+      sub <- data[grp_key == g, , drop = FALSE]
+      if (length(drop_cols) > 0L) {
+        sub <- sub[, setdiff(names(sub), drop_cols), drop = FALSE]
+      }
+      build_network(
+        sub, method = method, actor = actor, action = action,
+        time = time, session = session, order = order, codes = codes,
+        group = NULL, format = format, window_size = window_size,
+        mode = mode, scaling = scaling, threshold = threshold,
+        level = level, time_threshold = time_threshold,
+        predictability = predictability,
+        state_cols = state_cols, metadata_cols = metadata_cols,
+        params = child_params, ...
+      )
+    })
+    names(nets) <- as.character(grp_levels)
+    attr(nets, "group_col") <- group
+    class(nets) <- "netobject_group"
+    return(nets)
+  }
+
   # ---- Auto-detect input format ----
   is_onehot <- FALSE
+  onehot_codes <- NULL
   if (format == "auto" && is.data.frame(data)) {
     if (!is.null(codes)) {
       # Explicit codes = one-hot
@@ -277,6 +470,13 @@ build_network <- function(data,
   # ---- Long format: prepare event log data ----
   if (format == "long" && !is.null(action) && is.data.frame(data) &&
       action %in% names(data)) {
+    if (is.null(actor)) {
+      warning(
+        "A network with one long sequence is not recommended and can't be ",
+        "validated using bootstrap and other confirmatory testings.",
+        call. = FALSE
+      )
+    }
     prep_args <- list(data = data, action = action)
     if (!is.null(actor)) prep_args$actor <- actor
     if (!is.null(time)) prep_args$time <- time
@@ -316,6 +516,7 @@ build_network <- function(data,
     }
 
     params$codes <- resolved_codes
+    onehot_codes <- resolved_codes
     params$window_size <- window_size
     params$mode <- mode
     if (!is.null(grp_col)) params$actor <- grp_col
@@ -350,7 +551,8 @@ build_network <- function(data,
   }
 
   # ---- Multilevel decomposition ----
-  id_col <- params$id %||% actor
+  id_col <- .param_get(params, "id") %||% .param_get(params, "id_col") %||%
+    actor
 
   # Validate level parameter
   if (!is.null(level)) {
@@ -377,6 +579,21 @@ build_network <- function(data,
 
   # Get estimator from registry
   estimator <- get_estimator(method)
+
+  # Multilevel decomposition is only defined for undirected association
+  # methods. For directed transition estimators the decomposition is a
+  # numeric no-op, so accepting `level` silently produced a pooled network
+  # falsely labelled "[between-person]" (and a fake netobject_ml with
+  # byte-identical between/within). Error clearly instead of mislabelling.
+  if (!is.null(level) && isTRUE(estimator$directed)) {
+    stop(
+      "'level' (multilevel decomposition) is only supported for undirected ",
+      "association methods (cor, pcor, glasso). Method '", method,
+      "' is a directed estimator and has no between-/within-person ",
+      "decomposition.",
+      call. = FALSE
+    )
+  }
 
   # level = "both": recursive dispatch
   if (identical(level, "both")) {
@@ -419,7 +636,11 @@ build_network <- function(data,
 
   # Apply scaling
   if (!is.null(scaling)) {
-    net_matrix <- .apply_scaling(net_matrix, scaling)
+    net_matrix <- .apply_scaling(
+      net_matrix, scaling,
+      include_zeros = method %in% c("relative", "frequency", "co_occurrence",
+                                    "attention")
+    )
   }
 
   # Apply threshold
@@ -442,16 +663,37 @@ build_network <- function(data,
     if (ncol(md) > 0L) metadata <- md
   }
   if (is.data.frame(raw_data)) {
-    is_state_col <- vapply(raw_data, function(col) {
-      vals <- .clean_states(as.character(col))
-      vals <- vals[!is.na(vals)]
-      length(vals) > 0L && all(vals %in% nodes)
-    }, logical(1))
-    state_cols <- names(raw_data)[is_state_col]
-    extra_cols <- names(raw_data)[!is_state_col]
-    if (length(extra_cols) > 0L) {
-      if (is.null(metadata)) metadata <- raw_data[, extra_cols, drop = FALSE]
-      raw_data <- raw_data[, state_cols, drop = FALSE]
+    # If the user passed explicit overrides that name columns present in
+    # raw_data, those take priority over the values-in-nodes heuristic.
+    auto_onehot_state <- if (is.null(state_cols)) {
+      intersect(onehot_codes, names(raw_data))
+    } else {
+      character(0)
+    }
+    user_state <- union(intersect(state_cols, names(raw_data)),
+                        auto_onehot_state)
+    user_meta  <- intersect(metadata_cols, names(raw_data))
+
+    if (length(user_state) > 0L) {
+      # Explicit state_cols: those ARE state; rest of raw_data goes to metadata.
+      resolved_state <- user_state
+      resolved_extra <- setdiff(names(raw_data), user_state)
+    } else {
+      is_state_col <- vapply(raw_data, function(col) {
+        vals <- .clean_states(as.character(col))
+        vals <- vals[!is.na(vals)]
+        length(vals) > 0L && all(vals %in% nodes)
+      }, logical(1))
+      # Honor metadata_cols by forcing those FALSE in the auto-detection.
+      if (length(user_meta) > 0L) is_state_col[user_meta] <- FALSE
+      resolved_state <- names(raw_data)[is_state_col]
+      resolved_extra <- names(raw_data)[!is_state_col]
+    }
+
+    if (length(resolved_extra) > 0L) {
+      extra_df <- raw_data[, resolved_extra, drop = FALSE]
+      metadata <- if (is.null(metadata)) extra_df else cbind(metadata, extra_df)
+      raw_data <- raw_data[, resolved_state, drop = FALSE]
     }
     # Clean void/missing markers in character/factor state columns
     if (is.data.frame(raw_data)) {
@@ -507,17 +749,192 @@ build_network <- function(data,
     result[[key]] <- est_result[[key]]
   }
 
-  # Auto-compute predictability (R²) for undirected association methods
+  # Auto-compute predictability (R²) for undirected association methods.
+  # Stored as a named numeric vector for backward compatibility with downstream
+  # consumers (e.g. cograph::splot pie ring). Users calling predictability()
+  # directly get the full tidy data.frame with R2 + RMSE.
   if (isTRUE(predictability) && !directed) {
-    # Temporarily assign class so predictability() dispatches correctly
     class(result) <- c("netobject", "cograph_network")
-    result$predictability <- tryCatch(
-      predictability(result),
-      error = function(e) NULL
+    pred_df <- tryCatch(predictability(result), error = function(e) NULL)
+    if (!is.null(pred_df)) {
+      vec <- pred_df$R2
+      names(vec) <- pred_df$node
+      result$predictability <- vec
+    }
+  }
+
+  result <- structure(result, class = c("netobject", "cograph_network"))
+  if (!is.null(labels)) result <- .apply_node_labels(result, labels)
+  result
+}
+
+
+#' @noRd
+.canonicalize_build_network_params <- function(params,
+                                               actor = NULL,
+                                               action = NULL,
+                                               time = NULL,
+                                               session = NULL,
+                                               order = NULL,
+                                               codes = NULL,
+                                               group = NULL,
+                                               format = "auto") {
+  .take_param <- function(current, param_name, formal_name = param_name) {
+    value <- .param_get(params, param_name)
+    if (is.null(value)) {
+      return(current)
+    }
+    if (is.null(current)) {
+      return(value)
+    }
+    if (!identical(as.character(current), as.character(value))) {
+      stop(
+        "'", formal_name, "' and 'params$", param_name,
+        "' specify different columns: ",
+        paste(as.character(current), collapse = ", "), " vs ",
+        paste(as.character(value), collapse = ", "),
+        call. = FALSE
+      )
+    }
+    current
+  }
+
+  params_format <- .param_get(params, "format")
+  if (!is.null(params_format)) {
+    if (!is.character(params_format) || length(params_format) != 1L) {
+      stop("'params$format' must be a single character value.", call. = FALSE)
+    }
+    params_format <- match.arg(params_format, c("auto", "wide", "long", "onehot"))
+    if (!identical(format, "auto") && !identical(format, params_format)) {
+      stop(
+        "'format' and 'params$format' specify different values: ",
+        format, " vs ", params_format,
+        call. = FALSE
+      )
+    }
+    if (identical(format, "auto")) {
+      format <- params_format
+    }
+  }
+
+  list(
+    actor = .take_param(.take_param(actor, "id", formal_name = "actor"),
+                        "actor"),
+    action = .take_param(action, "action"),
+    time = .take_param(time, "time"),
+    session = .take_param(session, "session"),
+    order = .take_param(order, "order"),
+    codes = .take_param(codes, "codes"),
+    group = .take_param(group, "group"),
+    format = format
+  )
+}
+
+
+#' @noRd
+.param_get <- function(params, name, default = NULL) {
+  if (!is.list(params) || !name %in% names(params)) {
+    return(default)
+  }
+  params[[name]]
+}
+
+
+#' @noRd
+.validate_build_network_columns <- function(data, ...) {
+  args <- list(...)
+  cols <- names(data)
+
+  missing_by_arg <- lapply(names(args), function(arg) {
+    value <- args[[arg]]
+    if (is.null(value)) {
+      return(character(0))
+    }
+    if (!is.character(value)) {
+      stop("'", arg, "' must be a character vector of column name(s).",
+           call. = FALSE)
+    }
+    setdiff(value, cols)
+  })
+  names(missing_by_arg) <- names(args)
+
+  missing_by_arg <- missing_by_arg[lengths(missing_by_arg) > 0L]
+  if (length(missing_by_arg) == 0L) {
+    return(invisible(TRUE))
+  }
+
+  first_arg <- names(missing_by_arg)[1L]
+  missing_cols <- missing_by_arg[[1L]]
+  available <- paste(cols, collapse = ", ")
+  stop(
+    "'", first_arg, "' column",
+    if (length(missing_cols) == 1L) " " else "s ",
+    "not found in data: ", paste(missing_cols, collapse = ", "),
+    ". Available columns: ", available,
+    call. = FALSE
+  )
+}
+
+
+#' @noRd
+.validate_build_network_params <- function(data, params,
+                                           actor = NULL,
+                                           action = NULL,
+                                           time = NULL,
+                                           codes = NULL) {
+  column_params <- intersect(
+    names(params),
+    c("action", "id", "time", "cols", "codes", "actor", "id_col",
+      "session", "order", "group")
+  )
+  missing_by_arg <- lapply(column_params, function(arg) {
+    value <- params[[arg]]
+    if (is.null(value)) {
+      return(character(0))
+    }
+    if (!is.character(value)) {
+      stop("'params$", arg, "' must be a character vector of column name(s).",
+           call. = FALSE)
+    }
+    setdiff(value, names(data))
+  })
+  names(missing_by_arg) <- column_params
+  missing_by_arg <- missing_by_arg[lengths(missing_by_arg) > 0L]
+  if (length(missing_by_arg) > 0L) {
+    first_arg <- names(missing_by_arg)[1L]
+    missing_cols <- missing_by_arg[[1L]]
+    stop(
+      "'params$", first_arg, "' column",
+      if (length(missing_cols) == 1L) " " else "s ",
+      "not found in data: ", paste(missing_cols, collapse = ", "),
+      ". Available columns: ", paste(names(data), collapse = ", "),
+      call. = FALSE
     )
   }
 
-  structure(result, class = c("netobject", "cograph_network"))
+  .check_param_conflict <- function(formal_value, param_name,
+                                    formal_name = param_name) {
+    if (is.null(formal_value) || is.null(params[[param_name]])) {
+      return(invisible(TRUE))
+    }
+    if (!identical(as.character(formal_value), as.character(params[[param_name]]))) {
+      stop(
+        "'", formal_name, "' and 'params$", param_name,
+        "' specify different columns: ",
+        paste(as.character(formal_value), collapse = ", "), " vs ",
+        paste(as.character(params[[param_name]]), collapse = ", "),
+        call. = FALSE
+      )
+    }
+    invisible(TRUE)
+  }
+
+  .check_param_conflict(action, "action")
+  .check_param_conflict(time, "time")
+  .check_param_conflict(codes, "codes")
+  .check_param_conflict(actor, "actor")
+  .check_param_conflict(actor, "id", formal_name = "actor")
+  .check_param_conflict(actor, "id_col", formal_name = "actor")
 }
 
 
@@ -572,9 +989,9 @@ print.netobject <- function(x, ...) {
   # ---- Weight summary (one line) ----
   mat <- x$weights
   if (x$directed) {
-    nz <- mat[mat != 0 & row(mat) != col(mat)]
+    nz <- mat[mat != 0]
   } else {
-    nz <- mat[upper.tri(mat) & mat != 0]
+    nz <- mat[mat != 0 & row(mat) <= col(mat)]
   }
   if (length(nz) > 0) {
     is_assoc <- x$method %in% c("cor", "pcor", "glasso", "ising")
@@ -610,7 +1027,7 @@ print.netobject <- function(x, ...) {
     }, character(1L))
   }
 
-  # ---- Predictability (R²) ----
+  # ---- Predictability (R\u00b2) ----
   if (!is.null(x$predictability) && length(x$predictability) > 0) {
     cat("\n  Predictability (R\u00b2):\n")
     pred <- x$predictability
@@ -644,7 +1061,18 @@ print.netobject <- function(x, ...) {
 
 #' Print Method for Group Network Object
 #'
+#' Compact summary of a \code{netobject_group}. Header surfaces the source
+#' (a clustering attached by \code{\link{cluster_network}} or
+#' \code{\link{cluster_mmm}}, or a plain split by \code{group_col}). The
+#' per-group table carries node and edge counts, weight range, and -- when
+#' a clustering attribute is present -- N and percentage of sequences per
+#' cluster (matching the layout used by \code{\link{print.net_clustering}}
+#' and \code{\link{print.net_mmm}}).
+#'
 #' @param x A \code{netobject_group}.
+#' @param digits Integer. Decimal places for the weight summary. Default
+#'   \code{3}. Non-breaking: \code{print(x)} keeps the same shape as
+#'   before, with the addition of a weight-range column.
 #' @param ... Additional arguments (ignored).
 #'
 #' @return The input object, invisibly.
@@ -666,13 +1094,79 @@ print.netobject <- function(x, ...) {
 #' }
 #'
 #' @export
-print.netobject_group <- function(x, ...) {
-  grps <- names(x)
-  cat(sprintf("Group Networks (%d groups)\n", length(grps)))
-  for (g in grps) {
-    net <- x[[g]]
-    cat(sprintf("  %s: %d nodes, %d edges\n", g, net$n_nodes, net$n_edges))
+print.netobject_group <- function(x, digits = 3L, ...) {
+  digits <- as.integer(digits)
+  grps   <- names(x)
+  if (is.null(grps) || any(grps == "")) {
+    grps <- paste0("Group ", seq_along(x))
   }
+  k <- length(grps)
+  cl <- attr(x, "clustering")
+
+  # ---- Header --------------------------------------------------------
+  if (inherits(cl, "net_mmm_clustering")) {
+    cat(sprintf("Group Networks (%d clusters from MMM)\n", k))
+  } else if (inherits(cl, "net_clustering")) {
+    cat(sprintf("Group Networks (%d clusters via %s / %s)\n",
+                k, cl$method, cl$dissimilarity))
+  } else {
+    group_col <- attr(x, "group_col")
+    if (!is.null(group_col)) {
+      cat(sprintf("Group Networks (%d groups, group_col: %s)\n",
+                  k, group_col))
+    } else {
+      cat(sprintf("Group Networks (%d groups)\n", k))
+    }
+  }
+
+  # ---- Per-group table ----------------------------------------------
+  nodes_v <- integer(k)
+  edges_v <- integer(k)
+  wmin_v  <- numeric(k)
+  wmax_v  <- numeric(k)
+  for (i in seq_len(k)) {
+    net <- x[[i]]
+    nodes_v[i] <- as.integer(net$n_nodes %||% 0L)
+    edges_v[i] <- as.integer(net$n_edges %||% 0L)
+    mat <- net$weights
+    if (!is.null(mat)) {
+      nz <- if (isTRUE(net$directed)) mat[mat != 0] else
+        mat[mat != 0 & row(mat) <= col(mat)]
+      if (length(nz) > 0L) {
+        wmin_v[i] <- min(nz); wmax_v[i] <- max(nz)
+      } else {
+        wmin_v[i] <- NA_real_; wmax_v[i] <- NA_real_
+      }
+    } else {
+      wmin_v[i] <- NA_real_; wmax_v[i] <- NA_real_
+    }
+  }
+
+  weights_str <- ifelse(
+    is.na(wmin_v),
+    "--",
+    sprintf(paste0("[%.", digits, "f, %.", digits, "f]"), wmin_v, wmax_v)
+  )
+
+  cat("\n")
+  cols <- list(
+    Group   = grps,
+    Nodes   = sprintf("%d", nodes_v),
+    Edges   = sprintf("%d", edges_v),
+    Weights = weights_str
+  )
+
+  # If a clustering attribute provides assignments, append N + %.
+  if (!is.null(cl) && !is.null(cl$assignments)) {
+    sizes <- as.integer(tabulate(cl$assignments, nbins = k))
+    n_total <- sum(sizes)
+    if (n_total > 0L) {
+      cols[["N"]] <- .fmt_size_pct(sizes, n_total)
+    }
+  }
+
+  cat(paste(.cluster_table_lines(cols), collapse = "\n"), "\n", sep = "")
+
   invisible(x)
 }
 
@@ -739,6 +1233,10 @@ print.netobject_ml <- function(x, ...) {
 #' regressing each node on its network neighbors (nodes with non-zero edges).
 #'
 #' @param object A \code{netobject} or \code{netobject_ml} object.
+#' @param data Optional data frame of the original variables used to estimate
+#'   the network. Required for \code{method = "cor"} (multiple-R\eqn{^2} regression
+#'   of each node on its neighbours); ignored for the precision-matrix path used
+#'   by \code{glasso}/\code{pcor}, which has no need of the raw data.
 #' @param ... Additional arguments (ignored).
 #'
 #' @return For \code{netobject}: a named numeric vector of R\eqn{^2} values
@@ -769,26 +1267,25 @@ predictability <- function(object, ...) {
 #' @rdname predictability
 #' @return A named numeric vector of predictability values per node.
 #' @export
-predictability.netobject <- function(object, ...) {
+predictability.netobject <- function(object, data = NULL, ...) {
+  labels <- object$nodes$label
+  p <- length(labels)
+
+  # ---- R² ----
   if (!is.null(object$precision_matrix)) {
-    # glasso / pcor: analytical R²_j = 1 - 1/Omega_jj
     omega_diag <- diag(object$precision_matrix)
     r2 <- 1 - 1 / omega_diag
   } else if (!is.null(object$cor_matrix)) {
-    # cor method: multiple R² from correlation matrix
-    S <- object$cor_matrix
+    S   <- object$cor_matrix
     net <- object$weights
-    p <- ncol(net)
     r2 <- vapply(seq_len(p), function(j) {
       neighbors <- which(net[j, ] != 0)
       if (length(neighbors) == 0L) return(0)
       if (length(neighbors) == 1L) return(S[neighbors, j]^2)
       r_vec <- S[neighbors, j]
-      R_nn <- S[neighbors, neighbors]
-      tryCatch(
-        as.numeric(crossprod(r_vec, solve(R_nn, r_vec))),
-        error = function(e) 0
-      )
+      R_nn  <- S[neighbors, neighbors]
+      tryCatch(as.numeric(crossprod(r_vec, solve(R_nn, r_vec))),
+               error = function(e) 0)
     }, numeric(1))
   } else {
     stop("predictability() requires a precision or correlation matrix ",
@@ -796,8 +1293,47 @@ predictability.netobject <- function(object, ...) {
          "' does not support predictability.", call. = FALSE)
   }
   r2 <- pmin(pmax(r2, 0), 1)
-  names(r2) <- object$nodes$label
-  r2
+
+  # ---- RMSE ----
+  if (is.null(data)) data <- object$data
+  rmse <- rep(NA_real_, p)
+
+  if (is.data.frame(data) || is.matrix(data)) {
+    X <- tryCatch(as.matrix(data[, labels, drop = FALSE]),
+                  error = function(e) NULL)
+    if (!is.null(X) && is.numeric(X)) {
+      X  <- X[complete.cases(X), , drop = FALSE]
+      mu <- colMeans(X)
+      sd <- apply(X, 2, stats::sd)
+      Z  <- scale(X, center = mu, scale = sd)
+
+      if (!is.null(object$precision_matrix)) {
+        Omega <- object$precision_matrix
+        rmse <- vapply(seq_len(p), function(j) {
+          beta_z <- -Omega[-j, j] / Omega[j, j]
+          z_hat  <- Z[, -j, drop = FALSE] %*% beta_z
+          y_hat  <- mu[j] + sd[j] * z_hat
+          sqrt(mean((X[, j] - y_hat)^2))
+        }, numeric(1))
+      } else {
+        S   <- object$cor_matrix
+        net <- object$weights
+        rmse <- vapply(seq_len(p), function(j) {
+          nbrs <- which(net[j, ] != 0)
+          if (length(nbrs) == 0L) return(sd[j])
+          beta_z <- tryCatch(solve(S[nbrs, nbrs, drop = FALSE], S[nbrs, j]),
+                             error = function(e) NULL)
+          if (is.null(beta_z)) return(NA_real_)
+          z_hat <- Z[, nbrs, drop = FALSE] %*% beta_z
+          y_hat <- mu[j] + sd[j] * z_hat
+          sqrt(mean((X[, j] - y_hat)^2))
+        }, numeric(1))
+      }
+    }
+  }
+
+  data.frame(node = labels, R2 = r2, RMSE = rmse,
+             stringsAsFactors = FALSE, row.names = NULL)
 }
 
 

@@ -12,60 +12,103 @@ cluster_mmm(
   tol = 1e-06,
   smooth = 0.01,
   seed = NULL,
-  covariates = NULL
+  covariates = NULL,
+  estimator = c("auto", "firth", "multinom", "chisq"),
+  cluster_by = "mmm",
+  ...
 )
 }
 \arguments{
 \item{data}{A data.frame (wide format), \code{netobject}, or
 \code{tna} model. For tna objects, extracts the stored data.}
 
-\item{k}{Integer. Number of mixture components. Default: 2.}
+\item{k}{Integer. Whole finite number of mixture components, >= 2.
+Default: 2.}
 
-\item{n_starts}{Integer. Number of random restarts. Default: 50.}
+\item{n_starts}{Integer. Positive whole finite number of random restarts.
+Default: 50.}
 
-\item{max_iter}{Integer. Maximum EM iterations per start. Default: 200.}
+\item{max_iter}{Integer. Positive whole finite maximum EM iterations per
+start. Default: 200.}
 
-\item{tol}{Numeric. Convergence tolerance. Default: 1e-6.}
+\item{tol}{Numeric. Finite positive convergence tolerance. Default: 1e-6.}
 
-\item{smooth}{Numeric. Laplace smoothing constant. Default: 0.01.}
+\item{smooth}{Numeric. Finite non-negative Laplace smoothing constant.
+Default: 0.01.}
 
 \item{seed}{Integer or NULL. Random seed.}
 
 \item{covariates}{Optional. Covariates integrated into the EM algorithm
-to model covariate-dependent mixing proportions. Accepts formula,
-character vector, string, or data.frame (same forms as
-\code{\link{build_clusters}}). Unlike the post-hoc analysis in
-\code{build_clusters()}, these covariates directly influence cluster
-membership during estimation. Requires the \pkg{nnet} package.}
+to model covariate-dependent mixing proportions. Accepts a string,
+character vector, formula, or data.frame (same forms as
+\code{\link{build_clusters}}). For \code{netobject} or
+\code{cograph_network} input, names are resolved against
+\code{$metadata} first, so a typical call is
+\code{build_mmm(net, k = 3, covariates = "session_label")}.
+Unlike the post-hoc analysis in \code{build_clusters()}, these
+covariates directly influence cluster membership during EM
+estimation.}
+
+\item{estimator}{Multinomial fitter for the post-hoc covariate
+analysis (does not affect EM): \code{"firth"} (default, via
+\code{brglm2::brmultinom}; finite under separation),
+\code{"multinom"} (\code{nnet::multinom}; warns about separation
+risk), or \code{"chisq"} (descriptive tests, no logit). See
+\code{\link{build_clusters}} for full details.}
+
+\item{cluster_by}{Character. Accepted only as \code{"mmm"} (the
+default). Present so \code{cluster_mmm()} and \code{cluster_network()}
+share the same call shape; any other value raises an error pointing
+at \code{\link{cluster_network}}.}
+
+\item{...}{Unsupported. Supplying unused arguments raises an error.}
 }
 \value{
-A \code{net_mmm} object. See \code{\link{build_mmm}} for details.
+A \code{netobject_group} (list of \code{netobject}s, one per
+cluster). MMM-specific information is stored in
+\code{attr(, "clustering")} (class \code{"net_mmm_clustering"}):
+\describe{
+\item{assignments}{Integer vector of cluster assignments.}
+\item{k}{Number of clusters.}
+\item{posterior}{N x k matrix of posterior probabilities.}
+\item{mixing}{Mixing proportions.}
+\item{quality}{List with AvePP, entropy, classification error.}
+\item{BIC, AIC, ICL}{Model fit statistics.}
+\item{data}{The full N-row sequence frame, matching
+\code{$assignments} -- so \code{\link{sequence_plot}} and
+\code{\link{distribution_plot}} can recover both.}
+}
 }
 \description{
-Convenience alias for \code{\link{build_mmm}}. Fits a mixture of Markov
-chains to sequence data and returns per-component transition networks with
-EM-fitted initial state probabilities.
+Fits a mixture of Markov chains to sequence data and returns a
+\code{netobject_group} containing per-cluster transition networks.
+This is the MMM equivalent of \code{\link{cluster_network}} (which uses
+distance-based clustering); both functions share the
+\code{cluster_by = ...} surface argument so the call shape stays
+uniform across clustering families.
 }
 \details{
-Use \code{\link{build_network}} on the result to extract per-cluster
-networks with any estimation method, or use \code{\link{cluster_network}}
-for a one-shot clustering + network call.
+For the full \code{net_mmm} object with posterior probabilities, model
+fit statistics, and S3 methods, use \code{\link{build_mmm}} instead.
 }
 \examples{
 seqs <- data.frame(V1 = sample(c("A","B","C"), 30, TRUE),
                    V2 = sample(c("A","B","C"), 30, TRUE))
-mmm <- cluster_mmm(seqs, k = 2, n_starts = 1, max_iter = 10, seed = 1)
-mmm
+grp <- cluster_mmm(seqs, k = 2, n_starts = 1, max_iter = 10, seed = 1)
+grp[[1]]$weights
+attr(grp, "clustering")$assignments
 \donttest{
+# Visualise with sequence_plot
 seqs <- data.frame(
   V1 = sample(LETTERS[1:3], 40, TRUE),
   V2 = sample(LETTERS[1:3], 40, TRUE),
   V3 = sample(LETTERS[1:3], 40, TRUE)
 )
-mmm <- cluster_mmm(seqs, k = 2)
-print(mmm)
+grp <- cluster_mmm(seqs, k = 2)
+sequence_plot(grp, type = "index")
 }
 }
 \seealso{
-\code{\link{build_mmm}}, \code{\link{cluster_network}}
+\code{\link{build_mmm}} for the full MMM object,
+\code{\link{cluster_network}} for distance-based clustering
 }

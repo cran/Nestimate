@@ -1,3 +1,189 @@
+# Nestimate 0.6.0
+
+## New features
+
+* `magnitude_difference()` compares the frequency (FTNA) and probability
+  (TNA) views of a transition network and quantifies the per-edge
+  discrepancy on a common scale, with five metrics, four scalings, and two
+  polar `plot()` portraits (stacked and circular).
+* Full persistent homology with a Vietoris-Rips filtration
+  (`persistent_homology()`, `build_simplicial(type = "vr")`) plus diagram
+  tools `bottleneck_distance()` and `persistence_landscape()`.
+* Network comparison: `compare_model()` (with `netobject_group` dispatch),
+  `summary.netobject()`, `plot.net_comparison()`, and `rename_models()` for
+  relabelling grouped network objects.
+
+## Documentation
+
+* The pkgdown reference index now lists every exported function;
+  `magnitude_difference()`, `casedrop_reliability()`, `build_hypergraph()`,
+  `hypergraph_measures()`, and `cluster_data()` were previously absent.
+
+## Packaging
+
+* Removed the `Remotes:` field; `cograph` and `tna` are available from CRAN,
+  so no non-CRAN source pin is needed.
+
+# Nestimate 0.5.1
+
+## Audit follow-up (clustering + MCML)
+Followed `codex_docs/audit_clustering` and `codex_docs/audit_mcml`
+recommendations across two modules. Eleven of thirteen findings
+addressed; two deferred pending design decisions on numeric semantics
+(`directed = FALSE` raw-data MCML, MMM first-non-NA initial state).
+
+### Bug fixes
+* `cluster_network()` now forwards distance-clustering arguments
+  (`na_syms`, `weighted`, `lambda`, `seed`, `q`, `p`, `covariates`)
+  to `build_clusters()` instead of silently passing them to
+  `build_network()`. The split runs on caller `...` only — netobject
+  `build_args` continue to flow only to the `build_network()` step,
+  protecting attention-method (`atna`) network history from being
+  re-routed to weighted Hamming. (audit_clustering #1)
+* `.auto_detect_clusters()` (used by `build_mcml()` and
+  `cluster_summary()`) now requires `node_groups` to carry a node
+  identifier column when shaped as a data.frame, or be a named atomic
+  vector keyed by node label. Previously, a bare `cluster`-only
+  data.frame was read positionally — silently mis-assigning nodes
+  whenever `node_groups` rows were in a different order than `x$nodes`.
+  (audit_mcml #1)
+* `build_clusters()` now rejects all-missing input early with a clear
+  message instead of failing indirectly downstream in pam/hclust.
+  (audit_clustering #4)
+
+### New parameters
+* `compare_mmm(return_fits = FALSE)` — when `TRUE`, the fitted
+  `net_mmm` models are attached as `attr(result, "fits")` keyed by
+  `k`, so users can pick the chosen model without re-running EM.
+  Default behaviour unchanged. (audit_clustering #6)
+
+### Improvements
+* `build_clusters()` validation messages now name the offending
+  argument (`"'k' must be at least 2 (got k = 1)"`) rather than
+  dumping the failing predicate. Top-level type checks switched to
+  named-condition `stopifnot()` for the same reason.
+  (audit_clustering #2)
+
+### Documentation
+* `summary.mcml()` roxygen corrected — was claiming a printing side
+  effect that doesn't exist. (audit_mcml #5)
+* `build_mcml()` `clusters = "<col>"` mode now documents its narrow
+  contract: assigns each row's group label to both endpoints, so it
+  only makes sense for within-group edge lists. (audit_mcml #2)
+* `build_mcml()` `method` parameter doc now steers raw sequence /
+  event-log inputs to `"sum"`, since the function counts observed
+  transitions. Other methods are for weighted edge lists or
+  pre-existing matrices. (audit_mcml #4)
+* `as_tna.mcml()` "Excluded Clusters" section corrected — drop emits
+  a `warning()` (was claimed silent) and only fires for `relative`
+  method (was claimed unconditional). (audit_mcml #6)
+* `build_clusters()` `na_syms` doc adds an explicit "Missing-value
+  distance rule" subsection: NA becomes a comparable sentinel state,
+  not pairwise deletion. (audit_clustering #3)
+* `build_mmm()` adds an "Initial states" section explaining
+  first-column-verbatim init and that build_mmm does NOT honor
+  build_clusters-style `na_syms` — only actual `NA` cells become NA
+  inits. (audit_clustering #5, doc-only path)
+
+### Tests
+* +12 new tests pinning the corrected contracts and the documented
+  edge cases (misordered `node_groups` alignment, label propagation
+  through `state_distribution()`, `as_tna.mcml()` drop-warning
+  fixture, MMM first-column NA behaviour, and the four-way
+  `cluster_network()` arg-routing contract). Full sweep:
+  1628 / 1628 pass, 0 fail.
+
+# Nestimate 0.5.0
+
+## Bug fixes
+* `.extract_edges_from_matrix()` no longer drops the diagonal. Netobjects
+  built via `.wrap_netobject()` (and therefore everything from
+  `build_network()`, `build_mcml()`, `bootstrap_network()`, `build_mmm()`,
+  `wtna()`, `as_tna()`) now have `$edges` containing every non-zero
+  matrix entry, including self-loops. Previously `$weights` and `$edges`
+  were silently inconsistent on any matrix with a non-zero diagonal,
+  causing downstream consumers (e.g. `cograph::centrality()` on an
+  MCML macro) to under-count node degree by 2.
+
+## New features
+* `plot_state_frequencies()` — native S3 generic for state-frequency
+  plots across `netobject`, `netobject_group`, `mcml`, and `htna`.
+  Defaults to a marimekko (mosaic) layout where column widths reflect
+  per-group totals and segment heights reflect within-group state
+  proportions; also supports a colored-bars style and a per-group
+  faceted marimekko. Uses the package Okabe-Ito palette throughout.
+* `plot_mosaic()` — exported low-level marimekko primitive built on
+  `geom_rect()` with cumulative-width / cumulative-height geometry.
+  Reusable for any tidy `data.frame(group, state, weight)` input.
+
+# Nestimate 0.4.4
+
+## Bug fixes
+* `passage_time()` and `markov_stability()` now raise an explicit error
+  naming the dead state when a transition-matrix row sums to zero,
+  instead of silently propagating `NaN` through `eigen`/`solve`. Zero
+  rows mean the chain is not ergodic; mean first passage times are
+  undefined. Shared helper `.mpt_normalize_rows()` factored out of both
+  entry points.
+* `.prepare_association_input()` no longer hard-rejects non-square
+  numeric matrices. For association methods (glasso, pcor, cor) the
+  netobject's `$data` slot is a numeric matrix (not a data.frame). Any
+  downstream caller that row-subsetted `$data` and re-invoked the
+  estimator (`centrality_stability()`, `bootstrap_network()`,
+  `reliability()`) was silently producing NULL centralities caught by
+  `tryCatch`, which surfaced as an "all centrality measures have zero
+  variance" warning or all-`NaN` correlations. The matrix branch now
+  recognises non-square input as raw observation data and recursively
+  re-enters through the data-frame branch. Square symmetric matrices
+  (pre-computed correlation / covariance) still go through the
+  symmetric-matrix path with the symmetry check intact.
+
+## New parameters
+* `build_network()` gains `state_cols` and `metadata_cols` parameters
+  (both default `NULL`). Explicit overrides for the state-vs-metadata
+  column classifier, which previously used a "values-in-nodes"
+  heuristic that silently misclassifies metadata columns whose values
+  coincide with node labels (e.g. a `condition` column with levels
+  `"A","B","C"` when nodes are `"A","B","C"`). Validation: error on
+  overlap between the two vectors, error on column names not present
+  in the input data. Forwarded through the `group = ...` recursive
+  dispatch so per-group calls honour the override.
+
+## Removed
+* `plot.net_link_prediction()` and `plot.mcml()` removed. Nestimate is
+  a computation engine — visualization is the user's concern.
+  Previously both methods called `cograph::` directly, violating the
+  stated dependency invariant (Nestimate -> cograph direction
+  forbidden). Users call `cograph::splot(net)` or
+  `cograph::plot_mcml(fit)` directly.
+
+## Documentation
+* `wtna()` `@param type` now flags that `type = "relative"` combined
+  with `method = "cooccurrence"` produces an asymmetric matrix
+  (conditional co-occurrence given row state), not a symmetric
+  undirected weight matrix. Use `type = "frequency"` if symmetric
+  counts are required.
+
+## Testing infrastructure
+* New numerical-equivalence tests (gated by `NESTIMATE_EQUIV_TESTS=true`):
+  `test-equiv-permutation.R` (vs. `stats::p.adjust` + hand-coded base-R
+  permutation loop), `test-equiv-mlvar.R` (vs. `mlVAR::mlVAR` at
+  machine precision), `test-equiv-association-rules.R` (vs.
+  `arules::apriori`), `test-equiv-link-prediction.R` (vs. clean-room
+  matrix algebra + `igraph::similarity`), `test-equiv-centrality-stability.R`
+  (vs. `bootnet::corStability`). Total ~162k per-value comparisons;
+  all within machine precision except centrality-stability which uses
+  a documented drop-grid tolerance because bootnet uses `igraph`
+  path-based centrality and Nestimate uses Floyd-Warshall.
+* New HON-family equivalence tests under `local_testing_and_equivalence/`
+  validating HON, HONEM, HYPA, MOGen, and hypergraph against pathpy
+  2.2.0 (via reticulate), `BiasedUrn`, `RSpectra`, and `HyperG`. Not
+  shipped in the R-package `tests/` directory; added to `.Rbuildignore`.
+* Branch-matrix coverage added for the four many-mode APIs (`wtna`,
+  `bootstrap_network`, `build_clusters`, `sequence_plot`) — systematic
+  cross-product tests over all combinations of mode parameters to
+  catch regressions where one branch silently diverges.
+
 # Nestimate 0.4.3
 
 ## CRAN resubmission (addresses incoming-check NOTEs on 0.4.2)

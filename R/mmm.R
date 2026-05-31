@@ -27,29 +27,25 @@
   # Initialize posterior (N x M)
   if (is.null(init_posterior)) {
     post <- matrix(runif(N * n_comp), nrow = N, ncol = n_comp)
-    post <- post / rowSums(post)
+    post <- post / .rowSums(post, N, n_comp)
   } else {
     post <- init_posterior
   }
 
-  # Pre-compute from-state indicator: K^2 x K binary matrix
-  # from_ind[j, k] = 1 if pair j has from-state = k
-  # j = (from-1)*K + to, so from = (j-1) %/% K + 1
-  if (is.null(from_ind)) {
-    from_idx <- rep(seq_len(K), each = K)
-    from_ind <- matrix(0, K2, K)
-    from_ind[cbind(seq_len(K2), from_idx)] <- 1
-  }
-  from_ind_t <- t(from_ind)  # K x K^2
+  # Index of "from" state for each K^2 pair (K^2-length integer vector).
+  # pair j = (from-1)*K + to, so from = (j-1) %/% K + 1.
+  from_idx <- rep(seq_len(K), each = K)
 
-  # Initial state indicator: N x K binary matrix
+  # Initial state indicator (N x K, sparse: one 1 per row).
+  # Used in the M-step only — the E-step indexes log(init_all) directly.
   init_ind <- matrix(0, N, K)
   valid_init <- !is.na(init_state)
   init_ind[cbind(which(valid_init), init_state[valid_init])] <- 1
+  init_state_safe <- init_state
+  init_state_safe[!valid_init] <- 1L
 
   ll_prev <- -Inf
   converged <- FALSE
-  cov_fit <- NULL
   cov_beta <- NULL
 
   # Pre-compute design matrix for covariates (once)
@@ -58,20 +54,30 @@
     X_cov <- stats::model.matrix(~ ., data = cov_df)
   }
 
+  log_lik <- matrix(0, N, n_comp)
+
   for (iter in seq_len(max_iter)) {
     # ---- M-step ----
-    # Transition probabilities: weighted counts grouped by from-state
-    weighted_smooth <- crossprod(post, counts) + smooth  # M x K^2
-    from_sums <- weighted_smooth %*% from_ind  # M x K
-    from_sums[from_sums == 0] <- 1
-    divisor <- from_sums %*% from_ind_t  # M x K^2
-    P_all <- t(weighted_smooth / divisor)  # K^2 x M
+    # Compute transition table directly in K^2 x M shape so the E-step
+    # can use it without a transpose. Pure-R BLAS one-shot:
+    #   counts is N x K^2, post is N x M, so crossprod(counts, post)
+    #   = t(counts) %*% post is K^2 x M.
+    P_unnorm <- crossprod(counts, post) + smooth        # K^2 x M
+    # Sum over from-state groups via 3D array view. P_unnorm has columns
+    # indexed by j = (f-1)*K + t (column-major), so reshaping to
+    # (K_to, K_from, M) and colSums-ing over the to-axis gives K_from x M.
+    dim(P_unnorm) <- c(K, K, n_comp)
+    from_sums_t <- colSums(P_unnorm)                    # K x M
+    dim(P_unnorm) <- c(K2, n_comp)
+    from_sums_t[from_sums_t == 0] <- 1
+    # Expand K x M to K^2 x M by repeating each row K times in place.
+    P_all <- P_unnorm / from_sums_t[from_idx, , drop = FALSE]   # K^2 x M
 
-    # Initial state probabilities: weighted first-state counts
-    init_weighted <- crossprod(post, init_ind) + smooth  # M x K
-    init_sums <- rowSums(init_weighted)
+    # Initial state probabilities: K x M directly (skip the t() at the end).
+    init_unnorm <- crossprod(init_ind, post) + smooth     # K x M
+    init_sums <- .colSums(init_unnorm, K, n_comp)         # M
     init_sums[init_sums == 0] <- 1
-    init_all <- t(init_weighted / init_sums)  # K x M
+    init_all <- init_unnorm / rep(init_sums, each = K)    # K x M
 
     # Mixing proportions
     if (is.null(cov_df)) {
@@ -82,33 +88,41 @@
                                       n_steps = 3L)
       log_pi_mat <- sm$log_pi_mat
       cov_beta <- sm$beta
-      pi_mix <- colMeans(exp(log_pi_mat))
+      pi_mix <- .colMeans(exp(log_pi_mat), N, n_comp)
     }
 
     # ---- E-step ----
-    # Transition log-likelihood: N x M
-    log_lik <- counts %*% log(P_all + 1e-300)
-    # Initial state log-likelihood: N x M
-    log_lik <- log_lik + init_ind %*% log(init_all + 1e-300)
-    # Mixing proportions
+    # log_P: K^2 x M. log_init: K x M. log_pi: M (or N x M with covariates).
+    log_P <- log(P_all + 1e-300)
+    log_init <- log(init_all + 1e-300)
+
+    # Transition log-likelihood: N x M = (N x K^2) %*% (K^2 x M)
+    log_lik <- counts %*% log_P
+    # Initial-state log-likelihood: each row i needs log_init[init_state[i], ].
+    # init_ind %*% log_init reduces to indexed extraction.
+    log_lik <- log_lik + log_init[init_state_safe, , drop = FALSE]
+    # Mixing
     if (is.null(cov_df)) {
       log_lik <- log_lik + rep(log_pi, each = N)
     } else {
       log_lik <- log_lik + log_pi_mat
     }
 
-    # Log-sum-exp with vectorized row max
+    # Log-sum-exp row max: pmax.int is variadic, so a single C call covers
+    # any n_comp. Special-cased only because column extraction is unrolled.
     if (n_comp == 2L) {
-      log_max <- pmax(log_lik[, 1L], log_lik[, 2L])
+      log_max <- pmax.int(log_lik[, 1L], log_lik[, 2L])
+    } else if (n_comp == 3L) {
+      log_max <- pmax.int(log_lik[, 1L], log_lik[, 2L], log_lik[, 3L])
+    } else if (n_comp == 4L) {
+      log_max <- pmax.int(log_lik[, 1L], log_lik[, 2L], log_lik[, 3L], log_lik[, 4L])
     } else {
-      log_max <- log_lik[, 1L]
-      for (m in 2:n_comp) log_max <- pmax(log_max, log_lik[, m])
+      log_max <- do.call(pmax.int, lapply(seq_len(n_comp), function(m) log_lik[, m]))
     }
-    log_lik <- log_lik - log_max
-    post <- exp(log_lik)
-    row_sums <- rowSums(post)
+    exp_lik <- exp(log_lik - log_max)
+    row_sums <- .rowSums(exp_lik, N, n_comp)
     row_sums[row_sums == 0] <- 1e-300
-    post <- post / row_sums
+    post <- exp_lik / row_sums
 
     ll <- sum(log_max + log(row_sums))
 
@@ -183,8 +197,17 @@
     mean(posterior[idx, m])
   }, numeric(1))
 
-  # Max posterior per sequence (computed once, reused)
-  max_post <- do.call(pmax, as.data.frame(posterior))
+  # Max posterior per sequence — direct pmax.int beats `do.call(pmax,
+  # as.data.frame(posterior))` which copies the matrix into a list.
+  max_post <- if (M == 2L) {
+    pmax.int(posterior[, 1L], posterior[, 2L])
+  } else if (M == 3L) {
+    pmax.int(posterior[, 1L], posterior[, 2L], posterior[, 3L])
+  } else if (M == 4L) {
+    pmax.int(posterior[, 1L], posterior[, 2L], posterior[, 3L], posterior[, 4L])
+  } else {
+    do.call(pmax.int, lapply(seq_len(M), function(m) posterior[, m]))
+  }
 
   # Overall AvePP (mean of max posteriors)
   avepp_overall <- mean(max_post)
@@ -210,6 +233,46 @@
     class_entropy = class_ent
   )
 }
+
+
+#' @noRd
+.mmm_component_warnings <- function(models, assignments, k,
+                                    tol = sqrt(.Machine$double.eps)) {
+  sizes <- tabulate(assignments, nbins = k)
+  empty <- which(sizes == 0L)
+  if (length(empty) > 0L) {
+    warning(
+      "MMM produced empty hard-assignment cluster",
+      if (length(empty) == 1L) " " else "s ",
+      paste(empty, collapse = ", "),
+      ". The fitted mixture components should be treated as unstable; ",
+      "try fewer clusters, more starts, a fixed seed, or stronger sequence ",
+      "signal.",
+      call. = FALSE
+    )
+  }
+
+  pairs <- utils::combn(seq_len(k), 2L, simplify = FALSE)
+  duplicated <- vapply(pairs, function(pair) {
+    max(abs(models[[pair[1L]]]$weights - models[[pair[2L]]]$weights),
+        na.rm = TRUE) <= tol
+  }, logical(1L))
+  if (any(duplicated)) {
+    dup_labels <- vapply(pairs[duplicated], function(pair) {
+      paste(pair, collapse = "-")
+    }, character(1L))
+    warning(
+      "MMM produced effectively identical transition components: ",
+      paste(dup_labels, collapse = ", "),
+      ". The requested k is not supported by the observed transition ",
+      "structure in this fit.",
+      call. = FALSE
+    )
+  }
+
+  invisible(list(empty = empty, duplicated = pairs[duplicated]))
+}
+
 
 # ---------------------------------------------------------------------------
 # Covariate M-step helpers
@@ -312,22 +375,40 @@
 #'
 #' @param data A data.frame (wide format), \code{netobject}, or
 #'   \code{tna} model. For tna objects, extracts the stored data.
-#' @param k Integer. Number of mixture components. Default: 2.
-#' @param n_starts Integer. Number of random restarts. Default: 50.
-#' @param max_iter Integer. Maximum EM iterations per start. Default: 200.
-#' @param tol Numeric. Convergence tolerance. Default: 1e-6.
-#' @param smooth Numeric. Laplace smoothing constant. Default: 0.01.
+#' @param k Integer. Whole finite number of mixture components, >= 2.
+#'   Default: 2.
+#' @param n_starts Integer. Positive whole finite number of random restarts.
+#'   Default: 50.
+#' @param max_iter Integer. Positive whole finite maximum EM iterations per
+#'   start. Default: 200.
+#' @param tol Numeric. Finite positive convergence tolerance. Default: 1e-6.
+#' @param smooth Numeric. Finite non-negative Laplace smoothing constant.
+#'   Default: 0.01.
 #' @param seed Integer or NULL. Random seed.
 #' @param covariates Optional. Covariates integrated into the EM algorithm
-#'   to model covariate-dependent mixing proportions. Accepts formula,
-#'   character vector, string, or data.frame (same forms as
-#'   \code{\link{build_clusters}}). Unlike the post-hoc analysis in
-#'   \code{build_clusters()}, these covariates directly influence cluster
-#'   membership during estimation. Requires the \pkg{nnet} package.
+#'   to model covariate-dependent mixing proportions. Accepts a string,
+#'   character vector, formula, or data.frame (same forms as
+#'   \code{\link{build_clusters}}). For \code{netobject} or
+#'   \code{cograph_network} input, names are resolved against
+#'   \code{$metadata} first, so a typical call is
+#'   \code{build_mmm(net, k = 3, covariates = "session_label")}.
+#'   Unlike the post-hoc analysis in \code{build_clusters()}, these
+#'   covariates directly influence cluster membership during EM
+#'   estimation.
+#' @param estimator Multinomial fitter for the post-hoc covariate
+#'   analysis (does not affect EM): \code{"firth"} (default, via
+#'   \code{brglm2::brmultinom}; finite under separation),
+#'   \code{"multinom"} (\code{nnet::multinom}; warns about separation
+#'   risk), or \code{"chisq"} (descriptive tests, no logit). See
+#'   \code{\link{build_clusters}} for full details.
 #'
 #' @return An object of class \code{net_mmm} with components:
 #'   \describe{
-#'     \item{models}{List of \code{netobject}s, one per component.}
+#'     \item{data}{The full N-row sequence frame used for estimation.}
+#'     \item{models}{List of \code{netobject}s, one per component. Each
+#'       component carries the rows assigned to that component in its
+#'       \code{$data} slot, while its transition matrix is the EM-estimated
+#'       component transition matrix.}
 #'     \item{k}{Number of components.}
 #'     \item{mixing}{Numeric vector of mixing proportions.}
 #'     \item{posterior}{N x k matrix of posterior probabilities.}
@@ -354,6 +435,23 @@
 #' summary(mmm)
 #' }
 #'
+#' @section Initial states:
+#' The first sequence column has special status: it is read directly as
+#' the per-sequence initial state (\code{init_state[i] <-
+#' match(raw_data[i, state_cols[1L]], states)}). The function does
+#' \strong{not} scan forward to the first non-missing position, and it
+#' does not apply any \code{na_syms}-style symbol conversion (unlike
+#' \code{\link{build_clusters}}). The state vocabulary is built from the
+#' unique non-\code{NA} values across all columns, so if your data uses
+#' a sentinel character such as \code{"*"} or \code{"\%"} for missing
+#' cells, that sentinel becomes a real state and the first column reads
+#' it as a valid initial state. If you want padded leading missings to
+#' be treated as missing, recode them to \code{NA} before calling
+#' \code{build_mmm()} (then \code{match()} returns \code{NA}, which the
+#' EM treats as an uninformative initial distribution), or left-trim the
+#' leading missings so each sequence's first column carries an observed
+#' state.
+#'
 #' @seealso \code{\link{compare_mmm}}, \code{\link{build_network}}
 #'
 #' @export
@@ -364,18 +462,43 @@ build_mmm <- function(data,
                       tol = 1e-6,
                       smooth = 0.01,
                       seed = NULL,
-                      covariates = NULL) {
+                      covariates = NULL,
+                      estimator = c("auto", "firth", "multinom", "chisq")) {
 
+  estimator <- match.arg(estimator)
+  stopifnot(
+    "'k' must be a single numeric value" = is.numeric(k) && length(k) == 1L,
+    "'n_starts' must be a single numeric value" =
+      is.numeric(n_starts) && length(n_starts) == 1L,
+    "'max_iter' must be a single numeric value" =
+      is.numeric(max_iter) && length(max_iter) == 1L,
+    "'tol' must be a single numeric value" =
+      is.numeric(tol) && length(tol) == 1L,
+    "'smooth' must be a single numeric value" =
+      is.numeric(smooth) && length(smooth) == 1L
+  )
+  if (!is.finite(k) || k != floor(k) || k < 2L) {
+    stop("'k' must be a whole finite number >= 2.", call. = FALSE)
+  }
+  if (!is.finite(n_starts) || n_starts != floor(n_starts) ||
+      n_starts < 1L) {
+    stop("'n_starts' must be a positive whole finite number.",
+         call. = FALSE)
+  }
+  if (!is.finite(max_iter) || max_iter != floor(max_iter) ||
+      max_iter < 1L) {
+    stop("'max_iter' must be a positive whole finite number.",
+         call. = FALSE)
+  }
+  if (!is.finite(tol) || tol <= 0) {
+    stop("'tol' must be a finite positive number.", call. = FALSE)
+  }
+  if (!is.finite(smooth) || smooth < 0) {
+    stop("'smooth' must be a finite non-negative number.", call. = FALSE)
+  }
   k <- as.integer(k)
   n_starts <- as.integer(n_starts)
   max_iter <- as.integer(max_iter)
-  stopifnot(
-    "'k' must be >= 2" = k >= 2L,
-    "'n_starts' must be >= 1" = n_starts >= 1L,
-    "'max_iter' must be >= 1" = max_iter >= 1L,
-    "'tol' must be > 0" = tol > 0,
-    "'smooth' must be >= 0" = smooth >= 0
-  )
 
   # ---- Extract data and states ----
   network_method <- NULL
@@ -437,7 +560,11 @@ build_mmm <- function(data,
   N <- nrow(counts)
   K2 <- n_states * n_states
 
-  # Extract initial states (first non-NA state per sequence)
+  # Extract initial states from the FIRST sequence column. We do NOT scan
+  # forward to the first non-NA position — see "Initial states" section in
+  # the build_mmm() roxygen for the rationale and a workaround for
+  # left-padded sequences. NA values here are treated downstream as an
+  # uninformative initial distribution.
   state_cols <- .select_state_cols(raw_data, id = NULL, cols = NULL)
   first_col <- as.character(raw_data[[state_cols[1L]]])
   init_state <- match(first_col, states)
@@ -544,6 +671,10 @@ build_mmm <- function(data,
          call. = FALSE)
   }
 
+  # ---- Assignments ----
+  # max.col is the vectorized row-wise argmax — avoids `apply` overhead.
+  assignments <- max.col(best$posterior, ties.method = "first")
+
   # ---- Build netobjects for each component ----
   models <- lapply(seq_len(k), function(m) {
     P_vec <- best$P_all[, m]
@@ -559,9 +690,10 @@ build_mmm <- function(data,
 
     # Initial state probabilities from EM M-step (states x components matrix)
     init <- setNames(best$init_all[, m], states)
+    model_data <- raw_data[assignments == m, , drop = FALSE]
 
     structure(list(
-      data = raw_data,
+      data = model_data,
       weights = P_mat,
       nodes = nodes_df,
       edges = edges,
@@ -582,9 +714,9 @@ build_mmm <- function(data,
 
   names(models) <- paste0("Cluster ", seq_len(k))
 
-  # ---- Assignments & quality ----
-  assignments <- apply(best$posterior, 1L, which.max)
+  # ---- Quality ----
   quality <- .mmm_quality(best$posterior, assignments, k)
+  .mmm_component_warnings(models, assignments, k)
 
   # ---- Information criteria ----
   n_params <- k * n_states * (n_states - 1L) +
@@ -599,13 +731,15 @@ build_mmm <- function(data,
   if (!is.null(cov_df) && !is.null(best$cov_beta)) {
     # Run final nnet::multinom once for SEs and proper inference
     cov_result <- .run_covariate_analysis(
-      assignments, cov_df, paste(names(cov_df), collapse = " + "), k
+      assignments, cov_df, paste(names(cov_df), collapse = " + "), k,
+      estimator = estimator
     )
     # Store EM-estimated beta
     cov_result$beta <- best$cov_beta
   }
 
   structure(list(
+    data = raw_data,
     models = models,
     k = k,
     mixing = best$pi_mix,
@@ -634,11 +768,19 @@ build_mmm <- function(data,
 #' Compare MMM fits across different k
 #'
 #' @param data Data frame, netobject, or tna model.
-#' @param k Integer vector of component counts. Default: 2:5.
+#' @param k Integer vector of component counts. Values must be whole finite
+#'   numbers >= 2. Default: 2:5.
+#' @param return_fits Logical. When \code{TRUE} the fitted models are
+#'   retained on the result via \code{attr(result, "fits")} (a list of
+#'   \code{net_mmm} objects, named by \code{k}), so the user can pick
+#'   the chosen model without re-running the EM. Default \code{FALSE}
+#'   keeps the historical lightweight return shape -- only the comparison
+#'   table is allocated.
 #' @param ... Arguments passed to \code{\link{build_mmm}}.
 #'
 #' @return A \code{mmm_compare} data frame with BIC, AIC, ICL, AvePP,
-#'   entropy per k.
+#'   entropy per k. When \code{return_fits = TRUE}, the fitted models are
+#'   attached as \code{attr(result, "fits")}.
 #'
 #' @examples
 #' seqs <- data.frame(V1 = sample(c("A","B","C"), 30, TRUE),
@@ -652,26 +794,46 @@ build_mmm <- function(data,
 #' )
 #' comp <- compare_mmm(seqs, k = 2:3, seed = 42)
 #' print(comp)
+#'
+#' # Retain fits to avoid a re-fit after picking the BIC-min model.
+#' comp_with_fits <- compare_mmm(seqs, k = 2:3, seed = 42, return_fits = TRUE)
+#' best_k <- comp_with_fits$k[which.min(comp_with_fits$BIC)]
+#' best_fit <- attr(comp_with_fits, "fits")[[as.character(best_k)]]
 #' }
 #'
 #' @export
-compare_mmm <- function(data, k = 2:5, ...) {
-  results <- lapply(k, function(m) {
-    fit <- build_mmm(data, k = m, ...)
+compare_mmm <- function(data, k = 2:5, return_fits = FALSE, ...) {
+  if (!is.logical(return_fits) || length(return_fits) != 1L ||
+      is.na(return_fits)) {
+    stop("'return_fits' must be TRUE or FALSE.", call. = FALSE)
+  }
+  if (!is.numeric(k) || !length(k) || any(!is.finite(k)) ||
+      any(k != floor(k)) || any(k < 2L)) {
+    stop("'k' must be a non-empty vector of whole finite numbers >= 2.",
+         call. = FALSE)
+  }
+  k <- as.integer(k)
+  fits <- lapply(k, function(m) build_mmm(data, k = m, ...))
+  rows <- lapply(seq_along(k), function(i) {
+    fit <- fits[[i]]
     data.frame(
-      k = m,
+      k              = k[i],
       log_likelihood = fit$log_likelihood,
-      AIC = fit$AIC,
-      BIC = fit$BIC,
-      ICL = fit$ICL,
-      AvePP = fit$quality$avepp_overall,
-      Entropy = fit$quality$entropy,
-      converged = fit$converged,
+      AIC            = fit$AIC,
+      BIC            = fit$BIC,
+      ICL            = fit$ICL,
+      AvePP          = fit$quality$avepp_overall,
+      Entropy        = fit$quality$entropy,
+      converged      = fit$converged,
       stringsAsFactors = FALSE
     )
   })
-  result <- do.call(rbind, results)
+  result <- do.call(rbind, rows)
   class(result) <- c("mmm_compare", "data.frame")
+  if (return_fits) {
+    names(fits) <- as.character(k)
+    attr(result, "fits") <- fits
+  }
   result
 }
 
@@ -682,8 +844,17 @@ compare_mmm <- function(data, k = 2:5, ...) {
 
 #' Print Method for net_mmm
 #'
+#' Compact summary of a Mixed Markov Model fit. Header carries dimensions
+#' and information criteria; cluster table carries N, mixing share, and
+#' per-cluster average posterior probability (AvePP). Layout matches
+#' \code{\link{print.net_clustering}} so distance- and model-based
+#' clusterings can be compared at a glance.
+#'
 #' @param x A \code{net_mmm} object.
-#' @param ... Additional arguments (ignored).
+#' @param digits Integer. Decimal places for floating-point statistics.
+#'   Default \code{3}. Non-breaking: \code{print(x)} keeps the same
+#'   alignment as before.
+#' @param ... Unsupported. Supplying unused arguments raises an error.
 #'
 #' @return The input object, invisibly.
 #'
@@ -704,40 +875,70 @@ compare_mmm <- function(data, k = 2:5, ...) {
 #' }
 #'
 #' @export
-print.net_mmm <- function(x, ...) {
-  cat("Mixed Markov Model\n")
-  cat(sprintf("  k = %d | %d sequences | %d states\n",
-              x$k, x$n_sequences, length(x$states)))
-  cat(sprintf("  LL = %.1f | BIC = %.1f | ICL = %.1f\n",
-              x$log_likelihood, x$BIC, x$ICL))
+print.net_mmm <- function(x, digits = 3L, ...) {
+  .net_mmm_check_unused_dots("print.net_mmm", ...)
+  .net_mmm_check_digits(digits)
+  digits <- as.integer(digits)
+  k <- as.integer(x$k)
+  n_total <- as.integer(x$n_sequences)
 
-  # Cluster table
-  cat("\n  Cluster  Size  Mix%%   AvePP\n")
-  cat("  " , strrep("-", 30), "\n", sep = "")
-  for (m in seq_len(x$k)) {
-    n_in <- sum(x$assignments == m)
-    cat(sprintf("  %7d  %4d  %4.1f%%  %.3f\n",
-                m, n_in, x$mixing[m] * 100, x$quality$avepp[m]))
+  cat("Mixed Markov Model\n")
+  cat(sprintf("  Sequences: %d  |  Clusters: %d  |  States: %d\n",
+              n_total, k, length(x$states)))
+  cat(sprintf("  ICs: LL = %.*f  |  BIC = %.*f  |  AIC = %.*f  |  ICL = %.*f\n",
+              digits, x$log_likelihood, digits, x$BIC,
+              digits, x$AIC, digits, x$ICL))
+  if (!is.null(x$quality)) {
+    cat(sprintf(
+      "  Quality: AvePP = %.*f  |  Entropy = %.*f  |  Class.Err = %.1f%%\n",
+      digits, x$quality$avepp_overall, digits, x$quality$entropy,
+      x$quality$classification_error * 100))
   }
-  cat(sprintf("\n  Overall AvePP = %.3f | Entropy = %.3f | Class.Err = %.1f%%\n",
-              x$quality$avepp_overall, x$quality$entropy,
-              x$quality$classification_error * 100))
+  if (isFALSE(x$converged)) {
+    cat(sprintf("  Status: did not converge in %d iterations\n",
+                as.integer(x$iterations)))
+  }
+
+  cat("\n")
+  sizes <- as.integer(tabulate(x$assignments, nbins = k))
+  cols <- list(
+    Cluster = sprintf("%d", seq_len(k)),
+    N       = .fmt_size_pct(sizes, n_total),
+    `Mix%`  = sprintf("%4.1f%%", as.numeric(x$mixing) * 100),
+    AvePP   = sprintf(paste0("%.", digits, "f"),
+                      as.numeric(x$quality$avepp))
+  )
+  cat(paste(.cluster_table_lines(cols), collapse = "\n"), "\n", sep = "")
+
   if (!is.null(x$covariates)) {
     cov_names <- setdiff(
       unique(x$covariates$coefficients$variable), "(Intercept)"
     )
-    cat(sprintf("  Covariates:    %s (integrated, %d predictors)\n",
+    cat(sprintf("\n  Covariates: %s (integrated, %d predictors)\n",
                 paste(cov_names, collapse = ", "), length(cov_names)))
   }
+
   invisible(x)
 }
 
 #' Summary Method for net_mmm
 #'
 #' @param object A \code{net_mmm} object.
-#' @param ... Additional arguments (ignored).
+#' @param ... Unsupported. Supplying unused arguments raises an error.
 #'
-#' @return The input object, invisibly.
+#' @return A per-component summary \code{data.frame}. The class and visibility
+#'   depend on whether the model was fitted with covariates:
+#'   \describe{
+#'     \item{No covariates}{A plain \code{data.frame} with one row per
+#'       component and columns \code{component}, \code{prior},
+#'       \code{n_assigned}, \code{mean_posterior}, \code{avepp}, returned
+#'       \emph{visibly} (so it auto-prints after the printed summary block).}
+#'     \item{With covariates}{A \code{tidy_covariates}/\code{data.frame}
+#'       (the tidied covariate table, with the per-component stats attached),
+#'       returned \emph{invisibly}.}
+#'   }
+#'   In both cases the printed summary (model fit, per-cluster transition
+#'   matrices, optional covariate profiles) is emitted as a side effect.
 #'
 #' @examples
 #' seqs <- data.frame(V1 = sample(c("A","B","C"), 30, TRUE),
@@ -757,6 +958,7 @@ print.net_mmm <- function(x, ...) {
 #'
 #' @export
 summary.net_mmm <- function(object, ...) {
+  .net_mmm_check_unused_dots("summary.net_mmm", ...)
   print(object)
   cat("\n")
   for (m in seq_len(object$k)) {
@@ -775,14 +977,39 @@ summary.net_mmm <- function(object, ...) {
     )
   }
 
-  invisible(object)
+  k <- object$k
+  mean_posterior <- vapply(seq_len(k), function(m) {
+    idx <- which(object$assignments == m)
+    if (length(idx) == 0L) return(NA_real_)
+    mean(object$posterior[idx, m])
+  }, numeric(1L))
+
+  component_stats <- data.frame(
+    component      = seq_len(k),
+    prior          = as.numeric(object$mixing),
+    n_assigned     = as.integer(tabulate(object$assignments, nbins = k)),
+    mean_posterior = mean_posterior,
+    avepp          = as.numeric(object$quality$avepp),
+    stringsAsFactors = FALSE,
+    row.names      = NULL
+  )
+
+  if (!is.null(object$covariates)) {
+    return(invisible(.tidy_covariates(object$covariates,
+                                       cluster_stats = component_stats)))
+  }
+  component_stats
 }
 
 #' Plot Method for net_mmm
 #'
 #' @param x A \code{net_mmm} object.
 #' @param type Character. Plot type: \code{"posterior"} (default) or \code{"covariates"}.
-#' @param ... Additional arguments (ignored).
+#' @param combined Logical. For \code{type = "covariates"} only: when
+#'   \code{TRUE} (default), covariate forest panels are combined into a
+#'   single faceted plot; when \code{FALSE}, a list of separate ggplots
+#'   is returned.
+#' @param ... Unsupported. Supplying unused arguments raises an error.
 #'
 #' @return A \code{ggplot} object, invisibly.
 #'
@@ -803,8 +1030,11 @@ summary.net_mmm <- function(object, ...) {
 #' }
 #'
 #' @export
-plot.net_mmm <- function(x, type = c("posterior", "covariates"), ...) {
+plot.net_mmm <- function(x, type = c("posterior", "covariates"),
+                          combined = TRUE, ...) {
+  .net_mmm_check_unused_dots("plot.net_mmm", ...)
   type <- match.arg(type)
+  stopifnot(is.logical(combined), length(combined) == 1L)
 
   if (type == "covariates") {
     if (is.null(x$covariates)) {
@@ -814,7 +1044,8 @@ plot.net_mmm <- function(x, type = c("posterior", "covariates"), ...) {
     return(.plot_covariate_forest(
       x$covariates$coefficients,
       sprintf("Covariate Effects (ref: Cluster %s)",
-              x$covariates$fit$reference_cluster)
+              x$covariates$fit$reference_cluster),
+      combined = combined
     ))
   }
 
@@ -841,7 +1072,7 @@ plot.net_mmm <- function(x, type = c("posterior", "covariates"), ...) {
     ggplot2::geom_vline(xintercept = 0.5, linetype = "dashed", color = "grey40") +
     ggplot2::labs(x = "Max Posterior Probability", y = "Count",
                   title = "Classification Certainty", fill = "Cluster") +
-    ggplot2::theme_minimal()
+    ggplot2::theme_minimal(base_size = 12)
 
   print(p)
   invisible(p)
@@ -850,7 +1081,7 @@ plot.net_mmm <- function(x, type = c("posterior", "covariates"), ...) {
 #' Print Method for mmm_compare
 #'
 #' @param x An \code{mmm_compare} object.
-#' @param ... Additional arguments (ignored).
+#' @param ... Unsupported. Supplying unused arguments raises an error.
 #'
 #' @return The input object, invisibly.
 #'
@@ -872,6 +1103,7 @@ plot.net_mmm <- function(x, type = c("posterior", "covariates"), ...) {
 #'
 #' @export
 print.mmm_compare <- function(x, ...) {
+  .mmm_compare_check_unused_dots(...)
   cat("MMM Model Comparison\n\n")
   best_bic <- which.min(x$BIC)
   best_icl <- which.min(x$ICL)
@@ -882,10 +1114,33 @@ print.mmm_compare <- function(x, ...) {
   invisible(x)
 }
 
+#' Summary Method for mmm_compare
+#'
+#' @param object An \code{mmm_compare} object (a data.frame subclass).
+#' @param ... Unsupported. Supplying unused arguments raises an error.
+#' @return A tidy data frame with one row per \code{k}, plus a \code{best}
+#'   character column flagging the minimum-BIC and minimum-ICL solutions.
+#' @export
+summary.mmm_compare <- function(object, ...) {
+  .mmm_compare_check_unused_dots(...)
+  best_bic <- which.min(object$BIC)
+  best_icl <- which.min(object$ICL)
+  best <- rep("", nrow(object))
+  best[best_bic] <- "BIC"
+  if (length(best_icl) && best_icl != best_bic) {
+    best[best_icl] <- if (nzchar(best[best_icl]))
+      paste(best[best_icl], "ICL", sep = "+") else "ICL"
+  }
+  out <- as.data.frame(object)
+  out$best <- best
+  row.names(out) <- NULL
+  out
+}
+
 #' Plot Method for mmm_compare
 #'
 #' @param x An \code{mmm_compare} object.
-#' @param ... Additional arguments (ignored).
+#' @param ... Unsupported. Supplying unused arguments raises an error.
 #'
 #' @return A \code{ggplot} object, invisibly.
 #'
@@ -907,6 +1162,7 @@ print.mmm_compare <- function(x, ...) {
 #'
 #' @export
 plot.mmm_compare <- function(x, ...) {
+  .mmm_compare_check_unused_dots(...)
   if (!requireNamespace("ggplot2", quietly = TRUE)) { # nocov start
     stop("Package 'ggplot2' required.", call. = FALSE)
   } # nocov end
@@ -924,43 +1180,282 @@ plot.mmm_compare <- function(x, ...) {
     ggplot2::scale_x_continuous(breaks = x$k) +
     ggplot2::labs(x = "k (components)", y = "Information Criterion",
                   title = "MMM Model Selection", color = NULL) +
-    ggplot2::theme_minimal() +
+    ggplot2::theme_minimal(base_size = 12) +
     ggplot2::theme(legend.position = "bottom")
 
   print(p)
   invisible(p)
 }
 
+.net_mmm_check_unused_dots <- function(method, ...) {
+  dots <- list(...)
+  if (!length(dots)) {
+    return(invisible(TRUE))
+  }
+  dot_names <- names(dots)
+  dot_names[!nzchar(dot_names)] <- paste0("..", which(!nzchar(dot_names)))
+  stop(
+    method, "() got unsupported argument",
+    if (length(dots) == 1L) ": " else "s: ",
+    paste(dot_names, collapse = ", "),
+    call. = FALSE
+  )
+}
+
+.net_mmm_check_digits <- function(digits) {
+  if (!is.numeric(digits) || length(digits) != 1L || !is.finite(digits) ||
+      digits != floor(digits) || digits < 0L) {
+    stop("'digits' must be a single non-negative whole finite number.",
+         call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
+.mmm_compare_check_unused_dots <- function(...) {
+  dots <- list(...)
+  if (!length(dots)) {
+    return(invisible(TRUE))
+  }
+  dot_names <- names(dots)
+  dot_names[!nzchar(dot_names)] <- paste0("..", which(!nzchar(dot_names)))
+  stop(
+    "mmm_compare method got unsupported argument",
+    if (length(dots) == 1L) ": " else "s: ",
+    paste(dot_names, collapse = ", "),
+    call. = FALSE
+  )
+}
+
 # ---------------------------------------------------------------------------
-# cluster_mmm — convenience alias for build_mmm
+# cluster_mmm — wrapper returning netobject_group (parallel to cluster_network)
 # ---------------------------------------------------------------------------
+
+# Attach MMM clustering metadata (assignments, posterior, mixing, ICs, full
+# sequence data) to a netobject_group built from a net_mmm. Used by both
+# cluster_mmm() and build_network.net_mmm so the netobject_group invariant
+# is the same regardless of how the user got there: every member has its
+# own $weights/$nodes/$edges, and `attr(, "clustering")` carries N-row
+# $data matching $assignments.
+#' @noRd
+.attach_mmm_clustering <- function(nets, mmm, full_data = NULL) {
+  clustering_info <- mmm[setdiff(names(mmm), "models")]
+  if (is.null(full_data) && !is.null(mmm$data)) {
+    full_data <- mmm$data
+  }
+  if (is.null(full_data) && length(nets) > 0L) {
+    full_data <- nets[[1L]]$data
+  }
+  if (!is.null(full_data)) clustering_info$data <- full_data
+  class(clustering_info) <- "net_mmm_clustering"
+  attr(nets, "clustering") <- clustering_info
+  attr(nets, "group_col")  <- "cluster"
+  nets
+}
 
 #' Cluster sequences using Mixed Markov Models
 #'
-#' Convenience alias for \code{\link{build_mmm}}. Fits a mixture of Markov
-#' chains to sequence data and returns per-component transition networks with
-#' EM-fitted initial state probabilities.
+#' Fits a mixture of Markov chains to sequence data and returns a
+#' \code{netobject_group} containing per-cluster transition networks.
+#' This is the MMM equivalent of \code{\link{cluster_network}} (which uses
+#' distance-based clustering); both functions share the
+#' \code{cluster_by = ...} surface argument so the call shape stays
+#' uniform across clustering families.
 #'
-#' Use \code{\link{build_network}} on the result to extract per-cluster
-#' networks with any estimation method, or use \code{\link{cluster_network}}
-#' for a one-shot clustering + network call.
+#' For the full \code{net_mmm} object with posterior probabilities, model
+#' fit statistics, and S3 methods, use \code{\link{build_mmm}} instead.
 #'
 #' @inheritParams build_mmm
-#' @return A \code{net_mmm} object. See \code{\link{build_mmm}} for details.
-#' @seealso \code{\link{build_mmm}}, \code{\link{cluster_network}}
+#' @param cluster_by Character. Accepted only as \code{"mmm"} (the
+#'   default). Present so \code{cluster_mmm()} and \code{cluster_network()}
+#'   share the same call shape; any other value raises an error pointing
+#'   at \code{\link{cluster_network}}.
+#' @param ... Unsupported. Supplying unused arguments raises an error.
+#' @return A \code{netobject_group} (list of \code{netobject}s, one per
+#'   cluster). MMM-specific information is stored in
+#'   \code{attr(, "clustering")} (class \code{"net_mmm_clustering"}):
+#'   \describe{
+#'     \item{assignments}{Integer vector of cluster assignments.}
+#'     \item{k}{Number of clusters.}
+#'     \item{posterior}{N x k matrix of posterior probabilities.}
+#'     \item{mixing}{Mixing proportions.}
+#'     \item{quality}{List with AvePP, entropy, classification error.}
+#'     \item{BIC, AIC, ICL}{Model fit statistics.}
+#'     \item{data}{The full N-row sequence frame, matching
+#'       \code{$assignments} -- so \code{\link{sequence_plot}} and
+#'       \code{\link{distribution_plot}} can recover both.}
+#'   }
+#' @seealso \code{\link{build_mmm}} for the full MMM object,
+#'   \code{\link{cluster_network}} for distance-based clustering
 #' @examples
 #' seqs <- data.frame(V1 = sample(c("A","B","C"), 30, TRUE),
 #'                    V2 = sample(c("A","B","C"), 30, TRUE))
-#' mmm <- cluster_mmm(seqs, k = 2, n_starts = 1, max_iter = 10, seed = 1)
-#' mmm
+#' grp <- cluster_mmm(seqs, k = 2, n_starts = 1, max_iter = 10, seed = 1)
+#' grp[[1]]$weights
+#' attr(grp, "clustering")$assignments
 #' \donttest{
+#' # Visualise with sequence_plot
 #' seqs <- data.frame(
 #'   V1 = sample(LETTERS[1:3], 40, TRUE),
 #'   V2 = sample(LETTERS[1:3], 40, TRUE),
 #'   V3 = sample(LETTERS[1:3], 40, TRUE)
 #' )
-#' mmm <- cluster_mmm(seqs, k = 2)
-#' print(mmm)
+#' grp <- cluster_mmm(seqs, k = 2)
+#' sequence_plot(grp, type = "index")
 #' }
 #' @export
-cluster_mmm <- build_mmm
+cluster_mmm <- function(data, k = 2L, n_starts = 50L, max_iter = 200L,
+                        tol = 1e-6, smooth = 0.01, seed = NULL,
+                        covariates = NULL,
+                        estimator = c("auto", "firth", "multinom", "chisq"),
+                        cluster_by = "mmm", ...) {
+  estimator <- match.arg(estimator)
+  dots <- list(...)
+  if (length(dots) > 0L) {
+    dot_names <- names(dots)
+    dot_names[!nzchar(dot_names)] <- paste0("..", which(!nzchar(dot_names)))
+    stop("cluster_mmm() got unsupported argument",
+         if (length(dots) == 1L) ": " else "s: ",
+         paste(dot_names, collapse = ", "), call. = FALSE)
+  }
+
+  # cluster_by exists for API parity with cluster_network() so a single
+  # surface argument toggles the clustering family. Only "mmm" is valid
+  # here; anything else is a programming error worth catching loudly.
+  if (!identical(as.character(cluster_by), "mmm")) {
+    stop("cluster_mmm() only supports cluster_by = \"mmm\". For other ",
+         "clustering algorithms, use cluster_network(..., cluster_by = ...).",
+         call. = FALSE)
+  }
+  mmm <- build_mmm(data = data, k = k, n_starts = n_starts,
+                   max_iter = max_iter, tol = tol, smooth = smooth,
+                   seed = seed, covariates = covariates,
+                   estimator = estimator)
+
+  grp <- mmm$models
+  if (is.null(names(grp))) names(grp) <- paste0("Cluster ", seq_along(grp))
+  class(grp) <- "netobject_group"
+  .attach_mmm_clustering(grp, mmm, full_data = mmm$data)
+}
+
+#' Print Method for MMM Clustering Attribute
+#'
+#' Prints the clustering metadata that \code{\link{cluster_mmm}} attaches
+#' to its \code{netobject_group} return value (\code{attr(grp, "clustering")}).
+#' Layout mirrors \code{\link{print.net_clustering}}: a one-line dimension
+#' header, a quality line with AvePP / entropy / classification error,
+#' information criteria, and a per-cluster table.
+#'
+#' @param x A \code{net_mmm_clustering} object.
+#' @param digits Integer. Decimal places for floating-point statistics.
+#'   Default \code{3}.
+#' @param ... Unsupported. Supplying unused arguments raises an error.
+#'
+#' @return The input object, invisibly.
+#'
+#' @examples
+#' seqs <- data.frame(V1 = sample(c("A","B","C"), 30, TRUE),
+#'                    V2 = sample(c("A","B","C"), 30, TRUE))
+#' grp <- cluster_mmm(seqs, k = 2, n_starts = 1, max_iter = 10, seed = 1)
+#' print(attr(grp, "clustering"))
+#'
+#' @export
+print.net_mmm_clustering <- function(x, digits = 3L, ...) {
+  .net_mmm_check_unused_dots("print.net_mmm_clustering", ...)
+  .net_mmm_check_digits(digits)
+  digits <- as.integer(digits)
+  k <- as.integer(x$k)
+  n_total <- as.integer(x$n_sequences)
+
+  cat("MMM Clustering [k = ", k, "]\n", sep = "")
+  cat(sprintf("  Sequences: %d  |  Clusters: %d\n", n_total, k))
+  if (!is.null(x$quality)) {
+    cat(sprintf(
+      "  Quality: AvePP = %.*f  |  Entropy = %.*f  |  Class.Err = %.1f%%\n",
+      digits, x$quality$avepp_overall, digits, x$quality$entropy,
+      x$quality$classification_error * 100))
+  }
+  if (!is.null(x$BIC)) {
+    cat(sprintf("  ICs: BIC = %.*f  |  AIC = %.*f  |  ICL = %.*f\n",
+                digits, x$BIC, digits, x$AIC, digits, x$ICL))
+  }
+
+  cat("\n")
+  sizes <- as.integer(tabulate(x$assignments, nbins = k))
+  cols <- list(
+    Cluster = sprintf("%d", seq_len(k)),
+    N       = .fmt_size_pct(sizes, n_total),
+    `Mix%`  = sprintf("%4.1f%%", as.numeric(x$mixing) * 100),
+    AvePP   = sprintf(paste0("%.", digits, "f"),
+                      as.numeric(x$quality$avepp))
+  )
+  cat(paste(.cluster_table_lines(cols), collapse = "\n"), "\n", sep = "")
+
+  if (!is.null(x$covariates)) {
+    cov_names <- setdiff(
+      unique(x$covariates$coefficients$variable), "(Intercept)"
+    )
+    cat(sprintf("\n  Covariates: %s (integrated, %d predictors)\n",
+                paste(cov_names, collapse = ", "), length(cov_names)))
+  }
+
+  invisible(x)
+}
+
+#' Plot Method for MMM Clustering Attribute
+#'
+#' Plot routines for the MMM clustering metadata attached to a
+#' \code{netobject_group} by \code{\link{cluster_mmm}} (or
+#' \code{\link{cluster_network}} with \code{cluster_by = "mmm"}).
+#' Mirrors the type-driven surface of
+#' \code{\link{plot.net_clustering}} but covers only the metrics the EM
+#' fit produces -- there is no distance matrix on an MMM clustering, so
+#' \code{"silhouette"} / \code{"mds"} / \code{"heatmap"} aren't defined
+#' here and the dispatcher raises a clear error if you ask for one of
+#' those on an MMM result.
+#'
+#' @param x A \code{net_mmm_clustering} object.
+#' @param type Character. One of \code{"posterior"} (default; histogram of
+#'   max posterior probability per sequence, coloured by cluster),
+#'   \code{"covariates"} or its alias \code{"predictors"} (covariate
+#'   forest plot when \code{cluster_mmm()} was run with \code{covariates}).
+#' @param combined Logical. For \code{type} in \code{"covariates"} or
+#'   \code{"predictors"} only: when \code{TRUE} (default), forest panels
+#'   are combined into a single faceted plot; when \code{FALSE}, a list
+#'   of separate ggplots is returned.
+#' @param ... Unsupported. Supplying unused arguments raises an error.
+#' @return A \code{ggplot} object, invisibly.
+#'
+#' @examples
+#' \donttest{
+#' seqs <- data.frame(V1 = sample(c("A","B","C"), 40, TRUE),
+#'                    V2 = sample(c("A","B","C"), 40, TRUE))
+#' grp <- cluster_mmm(seqs, k = 2, n_starts = 1, max_iter = 20, seed = 1)
+#' plot(attr(grp, "clustering"), type = "posterior")
+#' }
+#' @export
+plot.net_mmm_clustering <- function(x, type = c("posterior", "covariates",
+                                                 "predictors"),
+                                     combined = TRUE, ...) {
+  .net_mmm_check_unused_dots("plot.net_mmm_clustering", ...)
+  type <- match.arg(type)
+  stopifnot(is.logical(combined), length(combined) == 1L)
+  if (type == "predictors") type <- "covariates"
+
+  if (type == "covariates") {
+    if (is.null(x$covariates)) {
+      stop("No covariate analysis on this clustering. Re-run ",
+           "cluster_mmm() (or build_mmm()) with covariates = ...",
+           call. = FALSE)
+    }
+    return(.plot_covariate_forest(
+      x$covariates$coefficients,
+      sprintf("Covariate Effects (ref: Cluster %s)",
+              x$covariates$fit$reference_cluster),
+      combined = combined
+    ))
+  }
+
+  # type == "posterior": .plot_mmm_posterior() reads only $posterior +
+  # $assignments, both carried by net_mmm_clustering.
+  .plot_mmm_posterior(x)
+}

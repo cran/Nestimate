@@ -12,36 +12,56 @@ build_mmm(
   tol = 1e-06,
   smooth = 0.01,
   seed = NULL,
-  covariates = NULL
+  covariates = NULL,
+  estimator = c("auto", "firth", "multinom", "chisq")
 )
 }
 \arguments{
 \item{data}{A data.frame (wide format), \code{netobject}, or
 \code{tna} model. For tna objects, extracts the stored data.}
 
-\item{k}{Integer. Number of mixture components. Default: 2.}
+\item{k}{Integer. Whole finite number of mixture components, >= 2.
+Default: 2.}
 
-\item{n_starts}{Integer. Number of random restarts. Default: 50.}
+\item{n_starts}{Integer. Positive whole finite number of random restarts.
+Default: 50.}
 
-\item{max_iter}{Integer. Maximum EM iterations per start. Default: 200.}
+\item{max_iter}{Integer. Positive whole finite maximum EM iterations per
+start. Default: 200.}
 
-\item{tol}{Numeric. Convergence tolerance. Default: 1e-6.}
+\item{tol}{Numeric. Finite positive convergence tolerance. Default: 1e-6.}
 
-\item{smooth}{Numeric. Laplace smoothing constant. Default: 0.01.}
+\item{smooth}{Numeric. Finite non-negative Laplace smoothing constant.
+Default: 0.01.}
 
 \item{seed}{Integer or NULL. Random seed.}
 
 \item{covariates}{Optional. Covariates integrated into the EM algorithm
-to model covariate-dependent mixing proportions. Accepts formula,
-character vector, string, or data.frame (same forms as
-\code{\link{build_clusters}}). Unlike the post-hoc analysis in
-\code{build_clusters()}, these covariates directly influence cluster
-membership during estimation. Requires the \pkg{nnet} package.}
+to model covariate-dependent mixing proportions. Accepts a string,
+character vector, formula, or data.frame (same forms as
+\code{\link{build_clusters}}). For \code{netobject} or
+\code{cograph_network} input, names are resolved against
+\code{$metadata} first, so a typical call is
+\code{build_mmm(net, k = 3, covariates = "session_label")}.
+Unlike the post-hoc analysis in \code{build_clusters()}, these
+covariates directly influence cluster membership during EM
+estimation.}
+
+\item{estimator}{Multinomial fitter for the post-hoc covariate
+analysis (does not affect EM): \code{"firth"} (default, via
+\code{brglm2::brmultinom}; finite under separation),
+\code{"multinom"} (\code{nnet::multinom}; warns about separation
+risk), or \code{"chisq"} (descriptive tests, no logit). See
+\code{\link{build_clusters}} for full details.}
 }
 \value{
 An object of class \code{net_mmm} with components:
 \describe{
-\item{models}{List of \code{netobject}s, one per component.}
+\item{data}{The full N-row sequence frame used for estimation.}
+\item{models}{List of \code{netobject}s, one per component. Each
+component carries the rows assigned to that component in its
+\code{$data} slot, while its transition matrix is the EM-estimated
+component transition matrix.}
 \item{k}{Number of components.}
 \item{mixing}{Numeric vector of mixing proportions.}
 \item{posterior}{N x k matrix of posterior probabilities.}
@@ -58,6 +78,25 @@ Discovers latent subgroups with different transition dynamics using
 Expectation-Maximization. Each mixture component has its own transition
 matrix. Sequences are probabilistically assigned to components.
 }
+\section{Initial states}{
+
+The first sequence column has special status: it is read directly as
+the per-sequence initial state (\code{init_state[i] <-
+match(raw_data[i, state_cols[1L]], states)}). The function does
+\strong{not} scan forward to the first non-missing position, and it
+does not apply any \code{na_syms}-style symbol conversion (unlike
+\code{\link{build_clusters}}). The state vocabulary is built from the
+unique non-\code{NA} values across all columns, so if your data uses
+a sentinel character such as \code{"*"} or \code{"\%"} for missing
+cells, that sentinel becomes a real state and the first column reads
+it as a valid initial state. If you want padded leading missings to
+be treated as missing, recode them to \code{NA} before calling
+\code{build_mmm()} (then \code{match()} returns \code{NA}, which the
+EM treats as an uninformative initial distribution), or left-trim the
+leading missings so each sequence's first column carries an observed
+state.
+}
+
 \examples{
 seqs <- data.frame(V1 = sample(c("A","B","C"), 30, TRUE),
                    V2 = sample(c("A","B","C"), 30, TRUE))

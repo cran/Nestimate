@@ -22,7 +22,10 @@ build_network(
   level = NULL,
   time_threshold = 900,
   predictability = TRUE,
+  state_cols = NULL,
+  metadata_cols = NULL,
   params = list(),
+  labels = NULL,
   ...
 )
 }
@@ -32,13 +35,19 @@ square symmetric matrix (correlation or covariance).}
 
 \item{method}{Character. Required. Name of a registered estimator.
 Built-in methods: \code{"relative"}, \code{"frequency"},
-\code{"co_occurrence"}, \code{"cor"}, \code{"pcor"}, \code{"glasso"}.
+\code{"co_occurrence"}, \code{"cor"}, \code{"pcor"}, \code{"glasso"},
+\code{"ising"}, \code{"mgm"}, \code{"attention"}, \code{"wtna"},
+\code{"wtna_cooccurrence"}.
 Aliases: \code{"tna"} and \code{"transition"} map to \code{"relative"};
 \code{"ftna"} and \code{"counts"} map to \code{"frequency"};
-\code{"cna"} maps to \code{"co_occurrence"};
+\code{"cna"} and \code{"wcna"} map to \code{"co_occurrence"};
 \code{"corr"} and \code{"correlation"} map to \code{"cor"};
 \code{"partial"} maps to \code{"pcor"};
-\code{"ebicglasso"} and \code{"regularized"} map to \code{"glasso"}.}
+\code{"ebicglasso"} and \code{"regularized"} map to \code{"glasso"};
+\code{"isingfit"} maps to \code{"ising"};
+\code{"atna"} maps to \code{"attention"};
+\code{"mixed"} and \code{"mixed_graphical"} map to \code{"mgm"};
+\code{"wtna_transition"} maps to \code{"wtna"}.}
 
 \item{actor}{Character. Name of the actor/person ID column for sequence
 grouping. Default: \code{NULL}.}
@@ -66,8 +75,10 @@ Default: \code{NULL}.}
 \item{window_size}{Integer. Window size for one-hot windowing.
 Default: \code{3L}.}
 
-\item{mode}{Character. Windowing mode: \code{"non-overlapping"} or
-\code{"overlapping"}. Default: \code{"non-overlapping"}.}
+\item{mode}{Character. Windowing mode for one-hot input only:
+\code{"non-overlapping"} or \code{"overlapping"}. Has no effect on
+wide or long sequence data (only the one-hot/wtna path reads it).
+Default: \code{"non-overlapping"}.}
 
 \item{scaling}{Character vector or NULL. Post-estimation scaling to apply
 (in order). Options: \code{"minmax"}, \code{"max"}, \code{"rank"},
@@ -89,11 +100,38 @@ node predictability (R-squared) for undirected association methods
 (glasso, pcor, cor). Stored in \code{$predictability} and auto-displayed
 as donuts by \code{cograph::splot()}.}
 
+\item{state_cols}{Character vector or \code{NULL}. Explicit names of columns
+to classify as state columns in the returned netobject's \code{$data}
+slot. When provided, all other columns of the cleaned input go to
+\code{$metadata}. Auto-detection (values-in-nodes heuristic) is bypassed.
+Use this when a metadata column happens to contain values that overlap
+with node names (e.g. condition labels \code{"A","B","C"} and nodes
+\code{"A","B","C"}) and auto-detection would misclassify it. Default:
+\code{NULL} (auto-detect).}
+
+\item{metadata_cols}{Character vector or \code{NULL}. Explicit names of
+columns to force into the \code{$metadata} slot. The remaining columns
+are auto-detected as state via the values-in-nodes rule. Cannot overlap
+with \code{state_cols}. Default: \code{NULL}.}
+
 \item{params}{Named list. Method-specific parameters passed to the estimator
 function (e.g. \code{list(gamma = 0.5)} for glasso, or
 \code{list(format = "wide")} for transition methods). This is the key
 composability feature: downstream functions like bootstrap or grid search
-can store and replay the full params list without knowing method internals.}
+can store and replay the full params list without knowing method internals.
+Transition estimators accept tna-style sequence options such as
+\code{weighted}, \code{begin_state}, \code{end_state}, and \code{concat}.
+Column-like entries in \code{params} (\code{action}, \code{id},
+\code{id_col}, \code{time}, \code{session}, \code{order}, \code{codes},
+and \code{group}) are resolved before format detection and must name
+existing columns. If the same column role is supplied both directly and
+through \code{params}, the names must agree.}
+
+\item{labels}{Optional name -> label remap applied after construction.
+Accepts a 2-column data.frame \code{(name, label)}, a named character
+vector \code{c(name = "label")}, or a named list. Rewrites
+\code{$nodes$label} and \code{dimnames(weights)}. Unmapped names pass
+through unchanged.}
 
 \item{...}{Additional arguments passed to the estimator function.}
 }
@@ -139,6 +177,7 @@ estimator registry, so custom estimators can also be used.
 The function works as follows:
 \enumerate{
 \item Resolves method aliases to canonical names.
+\item Validates explicit column arguments before any format guessing.
 \item Retrieves the estimator function from the global registry.
 \item For association methods with \code{level} specified, decomposes
 the data (between-person means or within-person centering).
@@ -146,6 +185,12 @@ the data (between-person means or within-person centering).
 \item Applies scaling and thresholding to the result matrix.
 \item Extracts edges and constructs the \code{netobject}.
 }
+
+For long-format transition data, supplying \code{action} without
+\code{actor} is allowed and treats all rows as one sequence in row/time
+order. The function warns because a one-sequence transition network is not
+recommended and cannot be validated by bootstrap or other confirmatory
+tests.
 }
 \examples{
 seqs <- data.frame(V1 = c("A","B","C","A"), V2 = c("B","C","A","B"))

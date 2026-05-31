@@ -4,14 +4,19 @@
 \alias{plot.net_mmm}
 \title{Plot Method for net_mmm}
 \usage{
-\method{plot}{net_mmm}(x, type = c("posterior", "covariates"), ...)
+\method{plot}{net_mmm}(x, type = c("posterior", "covariates"), combined = TRUE, ...)
 }
 \arguments{
 \item{x}{A \code{net_mmm} object.}
 
 \item{type}{Character. Plot type: \code{"posterior"} (default) or \code{"covariates"}.}
 
-\item{...}{Additional arguments (ignored).}
+\item{combined}{Logical. For \code{type = "covariates"} only: when
+\code{TRUE} (default), covariate forest panels are combined into a
+single faceted plot; when \code{FALSE}, a list of separate ggplots
+is returned.}
+
+\item{...}{Unsupported. Supplying unused arguments raises an error.}
 }
 \value{
 A \code{ggplot} object, invisibly.
