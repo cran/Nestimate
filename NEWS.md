@@ -1,3 +1,337 @@
+# Nestimate 0.8.0
+
+## Documentation
+
+* The Bayesian verbs get their own reference section, placed directly after
+  Network Estimation: `certainty()`, `bayes_compare()`, `subtract_networks()`
+  and `as_netdifference()`. They were previously buried in a fourteen-entry
+  "Bootstrap & Inference" list. `bootstrap_network()` now points at
+  `certainty()` as its closed-form counterpart, and `permutation()` points at
+  `bayes_compare()` as its Bayesian complement, so each pair is reachable from
+  either side.
+
+* `frequencies()` is no longer marked `\keyword{internal}`. The topic page and
+  the exported function share a roxygen topic name, so the keyword from the
+  topic block leaked onto the function's own help page even though the function
+  is exported (and called by the \pkg{htna} package). `cluster_data()` keeps its
+  internal keyword: it is a deprecated alias for `build_clusters()` and is meant
+  to stay out of the index.
+
+* Dropped the `utils` help page, which documented no exported object. The
+  `@importFrom` directives it carried are retained.
+
+* `audit_codex/` is no longer tracked; it holds generated audit artifacts.
+
+## Dependencies
+
+* `Suggests: cograph (>= 2.4.4)`. The netdifference verbs added in 0.7.8 need
+  cograph 2.4.x: CRAN's cograph 2.3.6 contains no `netdifference` support, so
+  `cograph::plot_difference()` does not exist there and `cograph::splot()` on a
+  `netdifference` falls through to the plain `netobject` renderer and silently
+  draws an unsigned network. Nestimate must not be submitted to CRAN before
+  cograph 2.4.4 is available there.
+
+# Nestimate 0.7.8
+
+## New features
+
+* `subtract_networks()` / `as_netdifference()` — verbs for the difference
+  between two networks. `subtract_networks(x, y)` returns the edge-wise
+  difference as a `netdifference` object; `as_netdifference()` promotes an
+  existing comparison result to the same class — a `bayes_compare()` result,
+  or a `netdifference`, which passes through; anything else errors — so a
+  difference computed by any route prints the same way. Adds
+  `print.netdifference`.
+
+* `bayes_compare()` accepts two `net_edge_betweenness()` objects (source
+  method `"relative"` only). Edge betweenness is recomputed on every
+  posterior draw, giving the Bayesian analogue of `permutation()`'s
+  edge-betweenness dispatch, with posterior mean betweenness matrices and
+  the plug-in `observed_diff`.
+
+* `permutation()` gains a `measures` argument for centrality permutation
+  tests, matching the `tna` package's dispatch.
+
+## Enhancements
+
+* `bayes_compare()`'s probability-of-direction column is renamed `pd` ->
+  `p_difference` in the `summary()` frame, and the result now carries class
+  `c("net_bayes", "netdifference", "net_permutation")` so it dispatches to
+  the difference verbs as well as the permutation ones.
+
+* Non-ASCII characters normalized across R sources and man pages.
+
+## Bug fixes
+
+* `centrality_stability()` no longer errors with
+  "missing value where TRUE/FALSE needed" when a requested measure is
+  undefined on the network (e.g. `Diffusion` is `NaN` on a small cyclic
+  net): `sd()` returned `NA`, which poisoned `if (!any(keep))`. Such
+  measures now drop like zero-variance ones.
+
+* `centrality_stability()`'s default `measures` is restored to
+  `c("InStrength", "OutStrength", "Betweenness")`. 0.7.7 had swapped
+  `OutStrength` for `Diffusion`, which broke the \pkg{htna} package: it calls
+  `centrality_stability()` with no `measures` and compares the result
+  against its own explicit trio. `centrality()` / `net_centrality()` keep
+  the `Diffusion` default; only `centrality_stability()` reverts.
+
+* `Suggests: cograph` relaxed from `(>= 2.4.4)` to `(>= 2.3.6)`, the version
+  available on CRAN. `Additional_repositories` removed — every declared
+  dependency now resolves from CRAN.
+
+# Nestimate 0.7.7
+
+## Enhancements
+
+* `plot()` on a `net_centrality_group` gains `type = "delta"`, showing the
+  between-group difference per measure, and now supports three or more
+  groups. Zero-valued edges can be blanked with `drop_zero = TRUE`.
+
+# Nestimate 0.7.6
+
+## New features
+
+* `plot()` on a `net_edge_betweenness()` result (`plot.net_edge_betweenness`).
+
+## Enhancements
+
+* `plot()` on centrality results gains alternative views:
+  `type = c("bar", "line", "heatmap")` for a single `net_centrality`, and
+  `type = c("bar", "line", "delta")` for a `net_centrality_group`. Count-like
+  measures get integer axis labels.
+
+# Nestimate 0.7.5
+
+Version bump only; no user-visible changes.
+
+# Nestimate 0.7.4
+
+## New features
+
+* `as_htna()` — builds a grouped node-level network from data and a
+  clustering, keeping every node (unlike `cluster_summary()`, which
+  collapses to a cluster-level macro summary). Intended for
+  `cograph::plot_htna()`.
+
+## Enhancements
+
+* Centrality gains the `tna`-parity measures. `net_centrality(x, measures =
+  "all")` now returns `OutStrength`, `InStrength`, `ClosenessIn`,
+  `ClosenessOut`, `Closeness`, `Betweenness`, `BetweennessRSP`, `Diffusion`
+  and `Clustering` — previously only the strengths, `Closeness` and
+  `Betweenness`. Adds `plot.net_centrality` and `plot.net_centrality_group`.
+
+* `sequence_plot()` and the MCML plots gain layout refinements.
+
+# Nestimate 0.7.3
+
+## New features
+
+* `as_netobject()` / `validate_netobject()` — the boundary layer between
+  \pkg{psychnet} (which owns the psychometric-network math and emits a lean
+  `cograph_network`) and Nestimate (which owns the canonical `netobject`
+  schema). `as_netobject()` promotes a `psychnet` result or a bare
+  `cograph_network` to the dual-class `c("netobject", "cograph_network")` so it
+  dispatches to every Nestimate verb, parking psychnet-specific fields (including
+  the GLASSO KKT certificate) under `$meta$psychnet`; `netobject`s pass through
+  unchanged. `validate_netobject()` enforces the shared structural contract so
+  schema drift on either side fails loudly. `psychnet` is not a declared
+  dependency — Nestimate never calls it; the converter works by S3 dispatch on
+  whatever `psychnet` object the caller supplies.
+
+* `certainty()` — analytic Bayesian counterpart of `bootstrap_network()` for
+  transition networks. Models each state's outgoing transitions as a
+  Dirichlet-Multinomial process (Jeffreys prior) and returns posterior mean,
+  sd, credible interval and a stability decision per edge in closed form (no
+  resampling). Returns the exact `net_bootstrap` object layout and carries
+  class `c("net_certainty", "net_bootstrap")`, so it is a drop-in: every
+  `net_bootstrap` method works on it. Completes the assessment trio
+  certainty / stability (`bootstrap_network`) / reliability (`reliability`).
+
+## Enhancements
+
+* `sequence_plot()` gains a multichannel view for `mcml` objects built from
+  sequences. `sequence_plot(fit)` draws one carpet panel per cluster channel
+  plus a macro `Summary` panel — each channel's own states solid, the other
+  clusters a faded wash, finished cells white, rows aligned by the macro
+  sequence. `sequence_plot(fit, type = "distribution")` stacks the prevalence
+  (own states + faded other clusters + an explicit `NA` band, to 100%), and
+  `normalize = TRUE` gives a TraMineR-style `seqdplot` where each time point
+  sums to 1. ggplot-based and dependency-free; returns a `ggplot` object.
+
+* `bayes_compare()` results are now 100% compatible with the `permutation()`
+  format: the object carries class `c("net_bayes", "net_permutation")` with all
+  `net_permutation` slots (`diff_sig`, `p_values`, `effect_size`, `iter`,
+  `alpha`, `paired`, `adjust`), and its `summary` is a superset of
+  `summary.net_permutation` (`from, to, weight_x, weight_y, diff, effect_size,
+  p_value, sig` plus the Bayesian extras `count_x, count_y, ci_lower, ci_upper,
+  ci_width, pd`). A `bayes_compare()` result is now a drop-in wherever a
+  `net_permutation` is consumed.
+
+# Nestimate 0.7.2
+
+## New features
+
+* `bayes_compare()` — Bayesian Dirichlet-Multinomial comparison of two
+  transition networks, a complement to `permutation()`. Models each source
+  state's outgoing transitions as a Dirichlet-Multinomial process (Jeffreys
+  prior) and returns, per edge, a posterior mean difference, a credible
+  interval, the probability of direction (`pd`) and its two-sided
+  p-equivalent. Adds `print`/`summary`/`plot` methods and `netobject_group`
+  dispatch (all-pairwise or matched). Method source: Johnston & Jendoubi
+  (2026), *How Delivery Mode Reshapes Resource Engagement: A Bayesian
+  Differential Network Analysis*, TNA Workshop 2026.
+
+# Nestimate 0.7.1
+
+## New features
+
+* `as_networks()` — promote a `build_mcml_pc()` result into a
+  `netobject_group` (the psychometric-network counterpart of `as_tna()`).
+  Singleton clusters with no within-network are dropped with a warning;
+  an existing `netobject_group` passes through unchanged.
+
+## Documentation
+
+* Vignettes and articles now call package verbs directly instead of
+  hand-assembled base-R subsetting rituals: `markov_order_test()` reads
+  sequences straight from a fitted network (`markov_order_test(net)`);
+  HYPA anomaly tables use `summary(hypa, order_by = "ratio")`; higher-order
+  pathways use `pathways(hon, top = )`; grouped-clustering inspection uses
+  `cluster_diagnostics()`.
+
+# Nestimate 0.7.0
+
+## New features (experimental)
+
+* `build_mcml_pc()` — MCML aggregation for psychometric networks
+  (cor / pcor / EBICglasso). Five aggregation methods with explicitly
+  different statuses: `"average"` (descriptive block-mean; works without
+  raw data), `"composite"` (cluster scores re-estimated with the chosen
+  estimator — a genuine cluster-level network), `"loadings"` (composites
+  weighted by mean within-cluster connection strength — Nestimate's own
+  weighting, not an EGA reimplementation), `"rv"` (Escoufier's RV matrix
+  correlation between blocks), and `"canonical"` (first canonical
+  correlation — the upper bound for composite methods). Within-cluster
+  networks re-estimated by default (`within = "reestimate"`) since a
+  pcor submatrix is not the subsystem's pcor network. Item diagnostics
+  in `$loadings`: signed loadings (reverse-keyed items detected via the
+  leading eigenvector of the within-block matrix and flipped in
+  composites), cross-cluster strengths, and a `misfit` flag when an item
+  is more connected to another cluster than its own (warned). Composites
+  tolerate missing data (row-wise renormalized weighted means);
+  Composite item weights are selectable via `weighting` — ten built-in
+  schemes spanning three views of the cluster: the scale as scored
+  (`"equal"`, `"item_total"`), the network's view (`"strength"`,
+  `"eigen"`, `"closeness"`, `"betweenness"`, `"expected_influence"`,
+  `"specificity"` — the misfit margin as a weighting, zeroing items that
+  belong as much to another cluster), and the latent-variable view
+  (`"pca"`, `"factor"`); plus fully custom weighting via a named numeric
+  vector or a `function(W_block, data_block, nodes)`.
+  `aggregation = "loadings"` is the alias for composite + strength.
+  The `"factor"` weighting exposes its extraction method via
+  `fa_method`: `"ml"` (factanal), `"paf"` (iterated principal axis),
+  `"minres"` (ULS), or `"cfa"` (one-factor lavaan model; with
+  `cor_method = "polychoric"` the categorical DWLS factor model) — all
+  operating on the `cor_method`-consistent correlation structure.
+  Reverse-keyed handling works under every sign-carrying scheme
+  (item-total correlations are computed on eigen-sign-pre-oriented
+  columns so a reversed member cannot contaminate small clusters).
+  `cor_method = "polychoric"` (via lavaan) supports ordinal items;
+  `id_col` drops identifier columns so
+  `convert_sequence_format(format = "frequency")` actor-profiles feed
+  the function directly (the within-person co-occurrence view of event
+  data).
+  Returns class `mcml_pc` (macro + within netobjects, all undirected)
+  with print/summary/plot; the composite/loadings macro is a full
+  netobject, so `bootstrap_network()`, `vertex_bootstrap()`, and
+  `vertex_compare()` apply to it directly. `cograph::plot_mcml()`
+  (>= 2.3.8) renders the two-layer undirected MCML view. Experimental:
+  API and formulas may change.
+* `loading_stability()` — case-bootstrap stability of the
+  `build_mcml_pc()` composite weights (percentile CIs, sign-flip rates),
+  with print and forest-style plot.
+
+# Nestimate 0.6.5
+
+## New features
+
+* `vertex_bootstrap()` — Snijders & Borgatti (1999) vertex bootstrap for
+  network-level statistics (density, mean weight, strength centralization,
+  weighted reciprocity, plus custom `statistic_fn`). Needs only the weight
+  matrix, so it works on data-less netobjects (`build_mlvar()`
+  constituents, `as_tna(mcml)` elements, plain matrices) where
+  `bootstrap_network()` cannot run. Returns a tidy one-row-per-statistic
+  `net_vertex_bootstrap` with print/summary/plot. Self-loops are preserved
+  (diagonal carries the resampled vertex's own self-weight); undirected
+  replicates stay symmetric.
+* `vertex_compare()` — the Snijders & Borgatti two-network test the
+  vertex bootstrap was originally proposed for: z-tests and
+  normal-approximation CIs for differences in network-level statistics
+  between two networks (netobjects, matrices, or precomputed
+  `net_vertex_bootstrap` objects). Tidy `net_vertex_comparison` result
+  with print/summary/plot (forest plot of differences).
+* `bootstrap_network()` and `vertex_bootstrap()` gain
+  `ci_method = c("percentile", "basic")`: basic intervals
+  (Davison & Hinkley 1997, eq. 5.6) reflect the percentile bounds around
+  the observed estimate, correcting first-order bootstrap bias. Default
+  remains `"percentile"`.
+
+# Nestimate 0.6.4
+
+## Bug fixes
+
+* `build_mcml()` (sequence and edge-list paths) now records the
+  *effective* directedness in `$meta$directed`: `FALSE` when
+  `type = "cooccurrence"`, whose weights are symmetrized, instead of
+  echoing the `directed` argument unchanged. Renderers that auto-detect
+  directedness (e.g., `cograph::plot_mcml()` with `directed = NULL`) now
+  draw co-occurrence MCML objects as undirected networks automatically.
+
+# Nestimate 0.6.3
+
+## New features
+
+* `mosaic_analysis(data, var1, var2)` — two-variable mosaic analysis on a
+  `data.frame`: chi-square or Fisher test, Cramer's V (df-adjusted effect
+  size) and a flat mosaic plot. Returns class `mosaic_analysis` with a tidy
+  one-row-per-cell `$counts`, a one-row `$stats`, and print/summary/plot.
+  Distinct from `mosaic_plot()`, which draws from a fitted network object.
+
+## Enhancements
+
+* `mosaic_plot()` gains `style = c("classic", "flat")`. The flat style uses
+  variable-width columns, white gutters and in-tile or side labels, sharing
+  the classic style's geometry and diverging palette; `values = TRUE` prints
+  residuals inside the tiles.
+
+# Nestimate 0.6.2
+
+## Bug fixes
+
+* Corrected stale rank-scaling assertions in the test suite. No user-visible
+  change.
+
+# Nestimate 0.6.1
+
+## New features
+
+* `build_network()` and the transition wrappers (`build_tna()`,
+  `build_ftna()`, `build_atna()`, `build_cna()`) gain `start` and `end`
+  boundary markers: `FALSE` (default), `TRUE` (labels `"Start"` / `"End"`)
+  or a custom string. `start` prepends a source state to every sequence;
+  `end` places a sink in the single cell after each sequence's last non-`NA`
+  state (not absorbing — see `mark_terminal_state()` for that). Honoured by
+  the `relative`, `frequency`, `co_occurrence` and `attention` estimators;
+  other methods error.
+
+* `build_mmm()` gains `covariate_effect`. `"em"` (default) folds covariates
+  into the EM as covariate-dependent mixing, changing the fit; `"posthoc"`
+  fits a plain mixture and uses covariates only for the after-fit
+  multinomial logit, leaving the clustering bit-identical to a
+  no-covariate fit.
+
 # Nestimate 0.6.0
 
 ## New features

@@ -118,6 +118,14 @@
 #'     \item{net_mmm}{From \code{\link{build_mmm}}. Uses \code{$models[[1]]$data}
 #'       and \code{$assignments}.}
 #'     \item{tna}{From the tna package. Decodes integer-encoded sequences.}
+#'     \item{mcml}{From \code{\link{build_mcml}} (built from sequences).
+#'       Produces a \strong{multichannel} plot: one panel per cluster plus a
+#'       macro \code{Summary} panel. \code{type = "heatmap"}/\code{"index"}
+#'       draw the carpet (each channel's own states solid, other clusters a
+#'       faded wash); \code{type = "distribution"} draws the stacked
+#'       distribution (add \code{normalize = TRUE} for a TraMineR-style
+#'       \code{seqdplot} where each time point sums to 1). Returns a
+#'       \code{ggplot} object.}
 #'   }
 #' @param type One of \code{"heatmap"} (default), \code{"index"}, or
 #'   \code{"distribution"}.
@@ -132,6 +140,26 @@
 #'   one facet per group. Index/distribution only. Ignored for heatmap.
 #' @param scale,geom,na Passed to \code{\link{distribution_plot}} when
 #'   \code{type = "distribution"}.
+#' @param normalize \code{mcml} + \code{type = "distribution"} only. When
+#'   \code{TRUE}, each time point is normalised to sum to 1 within its channel
+#'   (TraMineR-style \code{seqdplot} composition); when \code{FALSE} (default)
+#'   the stack shows prevalence and is capped with an \code{NA} band.
+#' @param trim Optional time-axis truncation, to stop a few long
+#'   sequences from stretching the plot. Applies to all three types
+#'   (including the \code{mcml} multichannel view). \code{NULL} (default)
+#'   plots the full width. A fraction in \code{(0, 1)} drops everything
+#'   past that quantile of sequence lengths (e.g. \code{trim = 0.95} keeps
+#'   the columns covering the shortest 95\% of sequences); a value
+#'   \code{>= 1} is an absolute cut (\code{trim = 50} keeps the first 50
+#'   time points).
+#' @param trim_clusterwise Grouped \code{type = "index"} /
+#'   \code{"distribution"} only, and only when \code{trim} is a fraction.
+#'   \code{FALSE} (default) computes one cutoff on the pooled data and
+#'   applies it to every panel, so all facets share the same width and the
+#'   time axes stay aligned. \code{TRUE} crops each group to its own
+#'   length quantile, so panels can end up at different widths (ragged
+#'   axes). Absolute \code{trim} (\code{>= 1}) ignores this - the column is
+#'   the same everywhere either way.
 #' @param row_gap Fraction of row height used as vertical gap between
 #'   sequences in index plots. \code{0} (default) = dense like heatmap.
 #'   Try \code{0.15} for visible separators at low row counts.
@@ -176,14 +204,27 @@
 #' @param legend_border Swatch border colour.
 #' @param legend_bty \code{"n"} or \code{"o"}.
 #'
-#' @return Invisibly, a list describing the plot (shape depends on
-#'   \code{type}).
-#' @seealso \code{\link{distribution_plot}}, \code{\link{build_clusters}}
+#' @return For base-graphics types, invisibly a list describing the plot
+#'   (shape depends on \code{type}). For an \code{mcml} input, a \code{ggplot}
+#'   object.
+#' @seealso \code{\link{distribution_plot}}, \code{\link{build_clusters}},
+#'   \code{\link{build_mcml}}
 #' @examples
 #' \donttest{
 #' sequence_plot(trajectories)
 #' sequence_plot(trajectories, type = "index")
 #' sequence_plot(trajectories, type = "distribution")
+#'
+#' # Multichannel MCML view: one channel per cluster + a macro Summary.
+#' fit <- build_mcml(
+#'   group_regulation_long,
+#'   clusters = list(Cognitive  = c("discuss", "synthesis", "consensus", "cohesion"),
+#'                   Regulation = c("plan", "monitor", "adapt", "coregulate"),
+#'                   Affective  = "emotion"),
+#'   actor = "Actor", action = "Action", time = "Time")
+#' sequence_plot(fit)                                          # multichannel carpet
+#' sequence_plot(fit, type = "distribution")                  # prevalence + NA band
+#' sequence_plot(fit, type = "distribution", normalize = TRUE) # seqdplot (sums to 1)
 #' }
 #' @export
 sequence_plot <- function(x,
@@ -199,6 +240,9 @@ sequence_plot <- function(x,
                           scale            = c("proportion", "count"),
                           geom             = c("area", "bar"),
                           na               = TRUE,
+                          normalize        = FALSE,
+                          trim             = NULL,
+                          trim_clusterwise = FALSE,
                           row_gap          = 0,
                           dendrogram_width = 1.2,
                           k                = NULL,
@@ -229,10 +273,20 @@ sequence_plot <- function(x,
 
   type <- match.arg(type)
   sort <- match.arg(sort)
-  stopifnot(is.logical(combined), length(combined) == 1L)
+  stopifnot(is.logical(combined), length(combined) == 1L,
+            is.logical(trim_clusterwise), length(trim_clusterwise) == 1L)
   if (is.null(legend)) legend <- "right"
   legend <- match.arg(legend, c("bottom", "right", "none"))
   if (!is.null(xlab)) time_label <- xlab
+
+  # mcml: multichannel sequence / distribution plot (ggplot, faceted by
+  # cluster-channel). Self-contained path; returns a ggplot object.
+  if (inherits(x, "mcml")) {
+    return(.sequence_plot_mcml(
+      x, type = type, normalize = isTRUE(normalize),
+      state_colors = state_colors, na_color = na_color,
+      main = main, time_label = time_label, trim = trim))
+  }
 
   # Open a new device when width/height supplied (interactive use). In
   # knitr, set fig.width / fig.height in the chunk header instead - this
@@ -251,7 +305,8 @@ sequence_plot <- function(x,
   if (type == "distribution") {
     return(distribution_plot(
       x, group = group, scale = match.arg(scale), geom = match.arg(geom),
-      na = na, state_colors = state_colors, na_color = na_color,
+      na = na, trim = trim, trim_clusterwise = trim_clusterwise,
+      state_colors = state_colors, na_color = na_color,
       frame = frame,
       main = main, show_n = show_n,
       time_label = time_label, y_label = y_label, ylab = ylab,
@@ -267,7 +322,7 @@ sequence_plot <- function(x,
       state_colors, na_color, cell_border, frame,
       main, show_n, time_label, tick,
       legend, legend_size, legend_title, legend_ncol,
-      legend_border, legend_bty))
+      legend_border, legend_bty, trim))
   }
 
   .sequence_plot_index(
@@ -275,7 +330,7 @@ sequence_plot <- function(x,
     state_colors, na_color, cell_border, frame,
     main, show_n, time_label, tick, ncol, nrow, combined,
     legend, legend_size, legend_title, legend_ncol,
-    legend_border, legend_bty)
+    legend_border, legend_bty, trim, trim_clusterwise)
 }
 
 
@@ -285,7 +340,8 @@ sequence_plot <- function(x,
                                    state_colors, na_color, cell_border, frame,
                                    main, show_n, time_label, tick,
                                    legend, legend_size, legend_title,
-                                   legend_ncol, legend_border, legend_bty) {
+                                   legend_ncol, legend_border, legend_bty,
+                                   trim = NULL) {
 
   # Extract data from various input types
   extracted <- .extract_seqplot_input(x)
@@ -307,7 +363,7 @@ sequence_plot <- function(x,
   x <- extracted$data
 
   enc        <- .encode_states(x)
-  codes      <- enc$codes
+  codes      <- .trim_codes(enc$codes, trim)
   levels_all <- enc$levels
   n_rows     <- nrow(codes); n_cols <- ncol(codes)
 
@@ -406,7 +462,8 @@ sequence_plot <- function(x,
                                  main, show_n, time_label, tick, ncol, nrow,
                                  combined,
                                  legend, legend_size, legend_title,
-                                 legend_ncol, legend_border, legend_bty) {
+                                 legend_ncol, legend_border, legend_bty,
+                                 trim = NULL, trim_clusterwise = FALSE) {
 
   stopifnot(is.numeric(row_gap), length(row_gap) == 1L,
             row_gap >= 0, row_gap < 1)
@@ -422,21 +479,31 @@ sequence_plot <- function(x,
   }
 
   enc        <- .encode_states(x)
-  codes      <- enc$codes
+  full_codes <- enc$codes
   levels_all <- enc$levels
-  n_cols     <- ncol(codes)
+  col_names  <- colnames(full_codes)
   palette    <- .state_palette(state_colors, length(levels_all))
+  # One global cut keeps every panel the same width (aligned axes). With
+  # trim_clusterwise = TRUE each group is cropped to its own length
+  # quantile instead, so panels can end up different widths.
+  global_cut <- .trim_cut(full_codes, trim)
 
-  groups       <- if (is.null(group)) factor(rep("all", nrow(codes))) else group
+  groups       <- if (is.null(group)) factor(rep("all", nrow(full_codes))) else group
   group_levels <- levels(groups)
   G            <- length(group_levels)
   group_sizes  <- vapply(group_levels,
                          function(g) sum(groups == g), integer(1))
 
-  ords <- lapply(group_levels, function(g) {
+  # Per-group: crop columns (own cut if clusterwise, else the global cut),
+  # then order rows within the cropped view. `order` keeps the global row
+  # indices so the returned `orders` still maps back to the input rows.
+  panels <- lapply(group_levels, function(g) {
     rows <- which(groups == g)
-    sub  <- codes[rows, , drop = FALSE]
-    rows[.row_order(sub, sort, tree = NULL, levels_all)]
+    sub  <- full_codes[rows, , drop = FALSE]
+    cut  <- if (isTRUE(trim_clusterwise)) .trim_cut(sub, trim) else global_cut
+    sub  <- sub[, seq_len(cut), drop = FALSE]
+    ord  <- .row_order(sub, sort, tree = NULL, levels_all)
+    list(sub = sub[ord, , drop = FALSE], order = rows[ord])
   })
 
   if (is.null(ncol) && is.null(nrow)) {
@@ -464,13 +531,13 @@ sequence_plot <- function(x,
 
   mar_bottom <- if (!is.null(time_label) && nzchar(time_label)) 3 else 1
   mar_top    <- if (!is.null(main) || isTRUE(show_n) || G > 1L) 2.5 else 1.5
-  ticks      <- .tick_positions(n_cols, tick, colnames(codes))
 
   invisible(lapply(seq_len(G), function(g_idx) {
     g    <- group_levels[g_idx]
-    ord  <- ords[[g_idx]]
-    sub  <- codes[ord, , drop = FALSE]
+    sub  <- panels[[g_idx]]$sub
     nN   <- nrow(sub)
+    nc   <- ncol(sub)
+    ticks <- .tick_positions(nc, tick, col_names[seq_len(nc)])
 
     if (!combined && g_idx > 1L) {
       graphics::par(oma = c(if (legend == "bottom") oma[["oma_b"]] else 0.3,
@@ -479,16 +546,16 @@ sequence_plot <- function(x,
     }
     graphics::par(mar = c(mar_bottom, 2, mar_top, 1))
     graphics::plot.new()
-    graphics::plot.window(xlim = c(0.5, n_cols + 0.5),
+    graphics::plot.window(xlim = c(0.5, nc + 0.5),
                           ylim = c(0.5, nN + 0.5), yaxs = "i", xaxs = "i")
 
     # Fill whole panel with na_color so NA cells show through.
-    graphics::rect(0.5, 0.5, n_cols + 0.5, nN + 0.5,
+    graphics::rect(0.5, 0.5, nc + 0.5, nN + 0.5,
                    col = na_color, border = NA)
 
     # Vectorised per-cell rects with a vertical gap.
-    ts <- rep(seq_len(n_cols), each  = nN)
-    ss <- rep(seq_len(nN),     times = n_cols)
+    ts <- rep(seq_len(nc), each  = nN)
+    ss <- rep(seq_len(nN), times = nc)
     cell_col <- palette[as.vector(sub)]
     keep <- !is.na(cell_col)
     graphics::rect(xleft   = ts[keep] - 0.5,
@@ -530,8 +597,10 @@ sequence_plot <- function(x,
                         legend_ncol, legend_title, legend_border, legend_bty)
   }
 
-  invisible(list(codes = codes, palette = palette, levels = levels_all,
-                 orders = ords, groups = group_levels))
+  invisible(list(codes = full_codes[, seq_len(global_cut), drop = FALSE],
+                 palette = palette, levels = levels_all,
+                 orders = lapply(panels, `[[`, "order"),
+                 groups = group_levels))
 }
 
 

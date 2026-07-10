@@ -129,12 +129,11 @@ grp_mmm <- cluster_mmm(net, k = 2)
 grp_mmm
 
 ## -----------------------------------------------------------------------------
-# Access cluster assignments
-attr(grp_dist, "clustering")$assignments[1:10]
-attr(grp_mmm, "clustering")$assignments[1:10]
+cluster_diagnostics(grp_dist)
+cluster_diagnostics(grp_mmm)
 
-# Access individual cluster networks
-grp_dist[[1]]$weights[1:3, 1:3]
+## -----------------------------------------------------------------------------
+grp_dist[["Cluster 1"]]
 
 ## -----------------------------------------------------------------------------
 comparison <- permutation(grp_dist, iter = 100)

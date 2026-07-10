@@ -22,8 +22,16 @@
 #' that such a network is not recommended for permutation or other
 #' confirmatory testing.
 #'
-#' @param x A \code{netobject} (from \code{\link{build_network}}).
-#' @param y A \code{netobject} (from \code{\link{build_network}}).
+#' \code{permutation()} also accepts two \code{\link{net_edge_betweenness}}
+#' objects. In that case it permutes the source networks, recomputes edge
+#' betweenness for each shuffled split, and tests edge-betweenness differences.
+#' The two edge-betweenness objects must come from the same source method and
+#' use the same \code{invert} setting.
+#'
+#' @param x A \code{netobject} (from \code{\link{build_network}}) or a
+#'   \code{\link{net_edge_betweenness}} object.
+#' @param y A \code{netobject} (from \code{\link{build_network}}) or a
+#'   \code{\link{net_edge_betweenness}} object.
 #'   Must use the same method and have the same nodes as \code{x}.
 #' @param iter Integer. Number of permutation iterations (default: 1000).
 #' @param alpha Numeric. Significance level (default: 0.05).
@@ -32,6 +40,14 @@
 #' @param adjust Character. p-value adjustment method passed to
 #'   \code{\link[stats]{p.adjust}} (default: \code{"none"}). Common choices:
 #'   \code{"holm"}, \code{"BH"}, \code{"bonferroni"}.
+#' @param measures Character vector of centrality measures to permutation-test
+#'   in addition to the edges, or \code{"all"} for every built-in measure.
+#'   Default \code{NULL} (edges only). When supplied, the result gains a
+#'   \code{$centralities} block matching the layout of
+#'   \code{tna::permutation_test(measures = )}: per state and measure it reports
+#'   the observed difference, an effect size (difference / SD of the permutation
+#'   null), and a permutation p-value, all using the same permuted networks as
+#'   the edge test. Not supported for \code{net_edge_betweenness} inputs.
 #' @param nlambda Integer. Number of lambda values for the \code{glassopath}
 #'   regularisation path (only used when \code{method = "glasso"}).
 #'   Higher values give finer lambda resolution at the cost of speed.
@@ -48,10 +64,16 @@
 #'   \item{effect_size}{Effect size matrix (observed diff / SD of permutation diffs).}
 #'   \item{summary}{Long-format data frame of edge-level results.}
 #'   \item{method}{The network estimation method.}
+#'   \item{source_method}{For edge-betweenness tests, the source network method.}
 #'   \item{iter}{Number of permutation iterations.}
 #'   \item{alpha}{Significance level used.}
 #'   \item{paired}{Whether paired permutation was used.}
 #'   \item{adjust}{p-value adjustment method used.}
+#'   \item{centralities}{Present only when \code{measures} is supplied. A list
+#'     with \code{stats} (one row per state-by-measure: \code{state},
+#'     \code{centrality}, \code{diff_true}, \code{effect_size}, \code{p_value}),
+#'     \code{diffs_true} (wide observed differences), and \code{diffs_sig}
+#'     (observed differences where \code{p < alpha}, else 0).}
 #' }
 #'
 #' @examples
@@ -75,7 +97,10 @@
 #' summary(perm)
 #' }
 #'
-#' @seealso \code{\link{build_network}}, \code{\link{bootstrap_network}},
+#' @seealso \code{\link{bayes_compare}} for the Bayesian complement: instead of
+#'   "is this difference more extreme than chance?" it answers "how probable is
+#'   a difference, and how large?";
+#'   \code{\link{build_network}}, \code{\link{bootstrap_network}},
 #'   \code{\link{print.net_permutation}},
 #'   \code{\link{summary.net_permutation}}
 #'
@@ -86,6 +111,7 @@ permutation <- function(x, y = NULL,
                              alpha = 0.05,
                              paired = FALSE,
                              adjust = "none",
+                             measures = NULL,
                              nlambda = 50L,
                              seed = NULL) {
 
@@ -97,11 +123,12 @@ permutation <- function(x, y = NULL,
     result <- list(
       transition = permutation(
         x$transition, y$transition, iter = iter, alpha = alpha,
-        paired = paired, adjust = adjust, nlambda = nlambda, seed = seed
+        paired = paired, adjust = adjust, measures = measures, nlambda = nlambda, seed = seed
       ),
       cooccurrence = permutation(
         x$cooccurrence, y$cooccurrence, iter = iter, alpha = alpha,
-        paired = paired, adjust = adjust, nlambda = nlambda, seed = seed
+        paired = paired, adjust = adjust, measures = measures,
+        nlambda = nlambda, seed = seed
       )
     )
     class(result) <- "wtna_perm_mixed"
@@ -125,7 +152,7 @@ permutation <- function(x, y = NULL,
       i <- pairs[1L, k]
       j <- pairs[2L, k]
       permutation(x[[i]], x[[j]], iter = iter, alpha = alpha,
-                  paired = paired, adjust = adjust,
+                  paired = paired, adjust = adjust, measures = measures,
                   nlambda = nlambda, seed = seed)
     })
     pair_labels <- vapply(seq_len(ncol(pairs)), function(k) {
@@ -144,8 +171,8 @@ permutation <- function(x, y = NULL,
     }
     results <- lapply(common, function(nm) {
       permutation(x[[nm]], y[[nm]], iter = iter, alpha = alpha,
-                  paired = paired, adjust = adjust, nlambda = nlambda,
-                  seed = seed)
+                  paired = paired, adjust = adjust, measures = measures,
+                  nlambda = nlambda, seed = seed)
     })
     names(results) <- common
     class(results) <- c("net_permutation_group", "list")
@@ -155,6 +182,15 @@ permutation <- function(x, y = NULL,
   # ---- Coerce cograph_network inputs ----
   if (inherits(x, "cograph_network")) x <- .as_netobject(x)
   if (inherits(y, "cograph_network")) y <- .as_netobject(y)
+
+  # ---- Edge-betweenness dispatch: permute source networks, compare EB ----
+  if (inherits(x, "net_edge_betweenness") ||
+      inherits(y, "net_edge_betweenness")) {
+    return(.permutation_edge_betweenness(
+      x = x, y = y, iter = iter, alpha = alpha, paired = paired,
+      adjust = adjust, measures = measures, nlambda = nlambda, seed = seed
+    ))
+  }
 
   # ---- Input validation ----
   stopifnot(
@@ -210,6 +246,23 @@ permutation <- function(x, y = NULL,
   # ---- Observed difference ----
   obs_diff <- x$weights - y$weights
 
+  # ---- Centrality differences (optional, tna-parity) ----
+  if (!is.null(measures)) {
+    if (length(measures) == 1L && identical(tolower(measures), "all")) {
+      measures <- .centrality_all_measures()
+    }
+    bad <- setdiff(measures, .centrality_builtin_measures())
+    if (length(bad) > 0L) {
+      stop("Unknown measures: ", paste(bad, collapse = ", "),
+           ". Options: ", paste(.centrality_builtin_measures(), collapse = ", "),
+           call. = FALSE)
+    }
+    obs_cent_diff <- .perm_cent_diff_mat(x$weights, y$weights, nodes,
+                                         directed, measures)
+  } else {
+    obs_cent_diff <- NULL
+  }
+
   # ---- Dispatch permutation ----
   has_data_x <- is.data.frame(x$data) && ncol(x$data) > 0L
   has_data_y <- is.data.frame(y$data) && ncol(y$data) > 0L
@@ -233,12 +286,14 @@ permutation <- function(x, y = NULL,
     }
     perm_result <- .permutation_transition(
       x = x, y = y, nodes = nodes, method = method,
-      iter = iter, paired = paired
+      iter = iter, paired = paired,
+      measures = measures, directed = directed, obs_cent_diff = obs_cent_diff
     )
   } else {
     perm_result <- .permutation_association(
       x = x, y = y, nodes = nodes, method = method,
-      iter = iter, paired = paired, nlambda = nlambda
+      iter = iter, paired = paired, nlambda = nlambda,
+      measures = measures, directed = directed, obs_cent_diff = obs_cent_diff
     )
   }
 
@@ -293,6 +348,261 @@ permutation <- function(x, y = NULL,
     paired      = paired,
     adjust      = adjust
   )
+
+  # ---- Centrality permutation block (tna-parity) ----
+  if (!is.null(measures)) {
+    result$centralities <- .build_permutation_centralities(
+      obs_cent_diff = obs_cent_diff,
+      cent_exceed = perm_result$cent_exceed,
+      cent_sum = perm_result$cent_sum,
+      cent_sumsq = perm_result$cent_sumsq,
+      states = nodes, measures = measures,
+      iter = iter, alpha = alpha, adjust = adjust
+    )
+  }
+
+  class(result) <- "net_permutation"
+  result
+}
+
+# ---- Centrality permutation helpers (tna-parity) ----
+
+#' Centralities of a permuted weight matrix, tna::centralities() settings
+#' @noRd
+.perm_centralities_mat <- function(mat, nodes, directed, measures) {
+  dimnames(mat) <- list(nodes, nodes)
+  res <- .compute_centralities(
+    mat, nodes, directed, measures,
+    loops = FALSE, normalize = FALSE, invert = TRUE,
+    normalize_diffusion = FALSE
+  )
+  vapply(measures, function(m) {
+    v <- res[[.centrality_canonical_measure(m)]]
+    if (is.null(v)) rep(NA_real_, length(nodes)) else unname(v)
+  }, numeric(length(nodes)))
+}
+
+#' Observed/permuted centrality difference matrix (states x measures)
+#' @noRd
+.perm_cent_diff_mat <- function(wx, wy, nodes, directed, measures) {
+  cx <- .perm_centralities_mat(wx, nodes, directed, measures)
+  cy <- .perm_centralities_mat(wy, nodes, directed, measures)
+  m <- cx - cy
+  dim(m) <- c(length(nodes), length(measures))
+  dimnames(m) <- list(nodes, measures)
+  m
+}
+
+#' Assemble the $centralities block exactly like tna::permutation_test()
+#' @noRd
+.build_permutation_centralities <- function(obs_cent_diff, cent_exceed,
+                                            cent_sum, cent_sumsq, states,
+                                            measures, iter, alpha, adjust) {
+  cent_p <- (cent_exceed + 1) / (iter + 1)
+  cent_p[] <- stats::p.adjust(as.vector(cent_p), method = adjust)
+  cent_mean <- cent_sum / iter
+  cent_sd <- sqrt(pmax(cent_sumsq / iter - cent_mean^2, 0))
+  effect <- obs_cent_diff / cent_sd          # tna: diff / sd (no guard)
+  sig <- obs_cent_diff * (cent_p < alpha)
+  state_f <- factor(states, levels = states)
+  stats_df <- expand.grid(state = state_f, centrality = measures,
+                          KEEP.OUT.ATTRS = FALSE, stringsAsFactors = FALSE)
+  stats_df$centrality <- factor(stats_df$centrality, levels = measures)
+  stats_df$diff_true <- as.vector(obs_cent_diff)
+  stats_df$effect_size <- as.vector(effect)
+  stats_df$p_value <- as.vector(cent_p)
+  diffs_true <- data.frame(state = state_f, as.data.frame(obs_cent_diff),
+                           check.names = FALSE)
+  diffs_sig <- data.frame(state = state_f, as.data.frame(sig),
+                          check.names = FALSE)
+  rownames(diffs_true) <- NULL
+  rownames(diffs_sig) <- NULL
+  list(stats = stats_df, diffs_true = diffs_true, diffs_sig = diffs_sig)
+}
+
+
+# ---- Edge-betweenness permutation path ----
+
+#' Source-network proxy for a net_edge_betweenness object
+#' @noRd
+.edge_betweenness_source_net <- function(x) {
+  if (!inherits(x, "net_edge_betweenness")) {
+    stop("Both x and y must be net_edge_betweenness objects.",
+         call. = FALSE)
+  }
+  source_method <- x$edge_betweenness$source_method
+  if (is.null(source_method) || length(source_method) != 1L ||
+      is.na(source_method) || !nzchar(source_method)) {
+    stop(
+      "net_edge_betweenness object does not carry its source method. ",
+      "Recreate it with net_edge_betweenness() before permutation().",
+      call. = FALSE
+    )
+  }
+  src <- x
+  src$method <- source_method
+  if (!is.null(x$source_weights)) {
+    src$weights <- x$source_weights
+  }
+  src$params <- x$params %||% list()
+  src$scaling <- x$scaling
+  src$threshold <- x$threshold %||% 0
+  src
+}
+
+#' Permutation test for edge-betweenness differences
+#' @noRd
+.permutation_edge_betweenness <- function(x, y, iter, alpha, paired,
+                                          adjust, measures, nlambda, seed) {
+  if (!inherits(x, "net_edge_betweenness") ||
+      !inherits(y, "net_edge_betweenness")) {
+    stop("Both x and y must be net_edge_betweenness objects.",
+         call. = FALSE)
+  }
+  if (!is.null(measures)) {
+    stop("`measures` is not supported for edge-betweenness permutation tests.",
+         call. = FALSE)
+  }
+
+  stopifnot(
+    is.numeric(iter), length(iter) == 1, iter >= 2,
+    is.numeric(alpha), length(alpha) == 1, alpha > 0, alpha < 1,
+    is.logical(paired), length(paired) == 1,
+    is.character(adjust), length(adjust) == 1
+  )
+  iter <- as.integer(iter)
+
+  if (is.null(x$data)) {
+    stop("'x' does not contain $data. Rebuild with build_network().",
+         call. = FALSE)
+  }
+  if (is.null(y$data)) {
+    stop("'y' does not contain $data. Rebuild with build_network().",
+         call. = FALSE)
+  }
+
+  if (!setequal(x$nodes$label, y$nodes$label)) {
+    stop("Nodes must be the same in both networks.", call. = FALSE)
+  }
+
+  nodes <- x$nodes$label
+  if (!identical(x$nodes$label, y$nodes$label)) {
+    y$weights <- y$weights[nodes, nodes]
+  }
+
+  x_src <- .edge_betweenness_source_net(x)
+  y_src <- .edge_betweenness_source_net(y)
+  method <- .resolve_method_alias(x_src$method)
+  y_method <- .resolve_method_alias(y_src$method)
+  if (method != y_method) {
+    stop("Source methods must match: x uses '", method,
+         "', y uses '", y_method, "'.", call. = FALSE)
+  }
+
+  directed <- x$directed
+  n_nodes <- length(nodes)
+
+  if (paired && nrow(x$data) != nrow(y$data)) {
+    stop("Paired test requires equal number of observations in x and y.",
+         call. = FALSE)
+  }
+
+  if (!is.null(seed)) {
+    stopifnot(is.numeric(seed), length(seed) == 1)
+    set.seed(seed)
+  }
+
+  obs_diff <- x$weights - y$weights
+  invert <- isTRUE(x$edge_betweenness$invert)
+  if (!identical(isTRUE(y$edge_betweenness$invert), invert)) {
+    stop("x and y must use the same edge-betweenness `invert` setting.",
+         call. = FALSE)
+  }
+  transform_eb <- function(mat) {
+    dimnames(mat) <- list(nodes, nodes)
+    .edge_betweenness(mat, invert = invert)
+  }
+
+  has_data_x <- is.data.frame(x_src$data) && ncol(x_src$data) > 0L
+  has_data_y <- is.data.frame(y_src$data) && ncol(y_src$data) > 0L
+  if (method %in% c("relative", "frequency", "co_occurrence")) {
+    if (!has_data_x || !has_data_y) {
+      stop("Permutation test requires the original data stored in the netobject. ",
+           "For wtna/cna networks, use wtna() directly instead of ",
+           "build_network(method='cna').", call. = FALSE)
+    }
+    x_src$data <- .resampling_transition_data(
+      x_src$data, x_src$metadata, x_src$params
+    )
+    y_src$data <- .resampling_transition_data(
+      y_src$data, y_src$metadata, y_src$params
+    )
+    n_seq_x <- .transition_resampling_n_sequences(x_src$data, x_src$params)
+    n_seq_y <- .transition_resampling_n_sequences(y_src$data, y_src$params)
+    if ((!is.na(n_seq_x) && n_seq_x <= 1L) ||
+        (!is.na(n_seq_y) && n_seq_y <= 1L)) {
+      warning(
+        "A network with one long sequence is not recommended and can't be ",
+        "validated using bootstrap and other confirmatory testings.",
+        call. = FALSE
+      )
+    }
+    perm_result <- .permutation_transition(
+      x = x_src, y = y_src, nodes = nodes, method = method,
+      iter = iter, paired = paired,
+      measures = NULL, directed = directed, obs_cent_diff = NULL,
+      transform = transform_eb, obs_diff = obs_diff
+    )
+  } else {
+    perm_result <- .permutation_association(
+      x = x_src, y = y_src, nodes = nodes, method = method,
+      iter = iter, paired = paired, nlambda = nlambda,
+      measures = NULL, directed = directed, obs_cent_diff = NULL,
+      transform = transform_eb, obs_diff = obs_diff
+    )
+  }
+
+  obs_flat <- as.vector(obs_diff)
+  p_values_flat <- (perm_result$exceed_counts + 1L) / (iter + 1L)
+  p_values_flat <- p.adjust(p_values_flat, method = adjust)
+  p_mat <- matrix(p_values_flat, n_nodes, n_nodes,
+                  dimnames = list(nodes, nodes))
+
+  perm_sd <- perm_result$perm_sd
+  perm_sd[perm_sd == 0] <- NA_real_
+  es_flat <- obs_flat / perm_sd
+  es_flat[is.na(es_flat)] <- 0
+  es_mat <- matrix(es_flat, n_nodes, n_nodes,
+                   dimnames = list(nodes, nodes))
+
+  diff_sig <- obs_diff * ((p_mat < alpha) * 1)
+  summary_df <- .build_permutation_summary(
+    obs_diff = obs_diff,
+    p_mat = p_mat,
+    es_mat = es_mat,
+    x_matrix = x$weights,
+    y_matrix = y$weights,
+    nodes = nodes,
+    directed = directed,
+    alpha = alpha
+  )
+
+  result <- list(
+    x = x,
+    y = y,
+    diff = obs_diff,
+    diff_sig = diff_sig,
+    p_values = p_mat,
+    effect_size = es_mat,
+    summary = summary_df,
+    method = "edge_betweenness",
+    source_method = method,
+    iter = iter,
+    alpha = alpha,
+    paired = paired,
+    adjust = adjust,
+    edge_betweenness = list(invert = invert, source_method = method)
+  )
   class(result) <- "net_permutation"
   result
 }
@@ -302,10 +612,22 @@ permutation <- function(x, y = NULL,
 
 #' Permutation test for transition networks via pre-computed counts
 #' @noRd
-.permutation_transition <- function(x, y, nodes, method, iter, paired) {
+.permutation_transition <- function(x, y, nodes, method, iter, paired,
+                                    measures = NULL, directed = TRUE,
+                                    obs_cent_diff = NULL,
+                                    transform = NULL,
+                                    obs_diff = NULL) {
   n_nodes <- length(nodes)
   nbins <- n_nodes * n_nodes
   is_relative <- method == "relative"
+  do_cent <- !is.null(measures)
+  if (is.null(transform)) transform <- identity
+  if (do_cent) {
+    cent_abs_true <- abs(obs_cent_diff)
+    cent_exceed <- matrix(0L, n_nodes, length(measures))
+    cent_sum <- matrix(0, n_nodes, length(measures))
+    cent_sumsq <- matrix(0, n_nodes, length(measures))
+  }
 
   # Pre-compute per-sequence counts for both groups
   trans_x <- .precompute_per_sequence(x$data, method, x$params, nodes)
@@ -319,7 +641,7 @@ permutation <- function(x, y = NULL,
   n_total <- n_x + n_y
 
   # Observed diff (recomputed from counts for consistency)
-  obs_flat <- as.vector(x$weights - y$weights)
+  obs_flat <- as.vector(obs_diff %||% (x$weights - y$weights))
 
   # Running counters
   exceed_counts <- integer(nbins)
@@ -347,22 +669,37 @@ permutation <- function(x, y = NULL,
     mat_y <- .postprocess_counts(counts_y, n_nodes, is_relative,
                                  y$scaling, y$threshold)
 
+    mat_x <- transform(mat_x)
+    mat_y <- transform(mat_y)
     perm_diff <- as.vector(mat_x) - as.vector(mat_y)
 
     # Accumulate
     exceed_counts <- exceed_counts + (abs(perm_diff) >= abs(obs_flat))
     sum_diffs <- sum_diffs + perm_diff
     sum_diffs_sq <- sum_diffs_sq + perm_diff^2
+
+    if (do_cent) {
+      cd <- .perm_cent_diff_mat(mat_x, mat_y, nodes, directed, measures)
+      cent_exceed <- cent_exceed + (abs(cd) >= cent_abs_true)
+      cent_sum <- cent_sum + cd
+      cent_sumsq <- cent_sumsq + cd^2
+    }
   }
 
   # SD of permutation diffs
   perm_mean <- sum_diffs / iter
   perm_sd <- sqrt(pmax(sum_diffs_sq / iter - perm_mean^2, 0))
 
-  list(
+  out <- list(
     exceed_counts = exceed_counts,
     perm_sd = perm_sd
   )
+  if (do_cent) {
+    out$cent_exceed <- cent_exceed
+    out$cent_sum <- cent_sum
+    out$cent_sumsq <- cent_sumsq
+  }
+  out
 }
 
 
@@ -392,12 +729,23 @@ permutation <- function(x, y = NULL,
 #' back to full estimator calls.
 #' @noRd
 .permutation_association <- function(x, y, nodes, method, iter, paired,
-                                    nlambda = 50L) {
+                                    nlambda = 50L, measures = NULL,
+                                    directed = FALSE, obs_cent_diff = NULL,
+                                    transform = NULL,
+                                    obs_diff = NULL) {
   n_nodes <- length(nodes)
   nbins <- n_nodes * n_nodes
+  do_cent <- !is.null(measures)
+  if (is.null(transform)) transform <- identity
+  if (do_cent) {
+    cent_abs_true <- abs(obs_cent_diff)
+    cent_exceed <- matrix(0L, n_nodes, length(measures))
+    cent_sum <- matrix(0, n_nodes, length(measures))
+    cent_sumsq <- matrix(0, n_nodes, length(measures))
+  }
 
   # $data is already cleaned by the estimator (numeric matrix, no NAs,
-  # no zero-variance columns) — just pool directly
+  # no zero-variance columns) - just pool directly
   n_x <- nrow(x$data)
   n_y <- nrow(y$data)
   pooled_mat <- rbind(x$data, y$data)
@@ -410,7 +758,7 @@ permutation <- function(x, y = NULL,
   threshold_y <- y$threshold
   scaling_x <- x$scaling
   scaling_y <- y$scaling
-  obs_flat <- as.vector(x$weights - y$weights)
+  obs_flat <- as.vector(obs_diff %||% (x$weights - y$weights))
 
   # Select fast path based on method
   use_fast <- method %in% c("cor", "pcor", "glasso")
@@ -446,8 +794,8 @@ permutation <- function(x, y = NULL,
         S <- cor(mat_subset, method = cor_method)
         n_obs <- nrow(mat_subset)
         gp <- tryCatch(
-          glasso::glassopath(s = S, rholist = perm_rholist, trace = 0,
-                             penalize.diagonal = penalize_diag),
+          .glassopath_fit(S = S, rholist = perm_rholist,
+                          penalize.diagonal = penalize_diag),
           error = function(e) NULL
         )
         if (is.null(gp)) return(NULL) # nocov
@@ -505,20 +853,35 @@ permutation <- function(x, y = NULL,
     if (!is.null(scaling_y)) mat_y <- .apply_scaling(mat_y, scaling_y) # nocov
     if (threshold_y > 0) mat_y[abs(mat_y) < threshold_y] <- 0
 
+    mat_x <- transform(mat_x)
+    mat_y <- transform(mat_y)
     perm_diff <- as.vector(mat_x) - as.vector(mat_y)
 
     exceed_counts <- exceed_counts + (abs(perm_diff) >= abs(obs_flat))
     sum_diffs <- sum_diffs + perm_diff
     sum_diffs_sq <- sum_diffs_sq + perm_diff^2
+
+    if (do_cent) {
+      cd <- .perm_cent_diff_mat(mat_x, mat_y, nodes, directed, measures)
+      cent_exceed <- cent_exceed + (abs(cd) >= cent_abs_true)
+      cent_sum <- cent_sum + cd
+      cent_sumsq <- cent_sumsq + cd^2
+    }
   }
 
   perm_mean <- sum_diffs / iter
   perm_sd <- sqrt(pmax(sum_diffs_sq / iter - perm_mean^2, 0))
 
-  list(
+  out <- list(
     exceed_counts = exceed_counts,
     perm_sd = perm_sd
   )
+  if (do_cent) {
+    out$cent_exceed <- cent_exceed
+    out$cent_sum <- cent_sum
+    out$cent_sumsq <- cent_sumsq
+  }
+  out
 }
 
 
@@ -620,7 +983,8 @@ print.net_permutation <- function(x, ...) {
     pcor          = "Partial Correlation Network (unregularised)",
     cor           = "Correlation Network",
     attention     = "Attention Network (decay-weighted transitions)",
-    wtna          = "Window TNA (transitions)"
+    wtna          = "Window TNA (transitions)",
+    edge_betweenness = "Edge-Betweenness Network"
   )
   label <- if (x$method %in% names(method_labels)) {
     method_labels[[x$method]]

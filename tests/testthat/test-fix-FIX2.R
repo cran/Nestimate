@@ -16,10 +16,13 @@ testthat::skip_on_cran()
 }
 
 # Helper: directed transition net from bundled group_regulation_long.
+# `actor = "Actor"` is what makes this the wide form: 2000 sequences of 26
+# steps. Without it every row joins one 27533-step sequence whose transitions
+# cross actor boundaries -- a wrong network, and ~100x slower to build.
 .fix2_directed_net <- function(method = "relative") {
   e <- new.env()
   data("group_regulation_long", package = "Nestimate", envir = e)
-  suppressWarnings(build_network(e$group_regulation_long, method = method))
+  build_network(e$group_regulation_long, method = method, actor = "Actor")
 }
 
 
@@ -122,16 +125,15 @@ test_that("A09-F01: unknown measure still rejected when no centrality_fn", {
 })
 
 
-# ---- A09-F02: centrality_stability("Closeness") on directed errors
+# ---- A09-F02: centrality_stability("Closeness") on directed works
 #       cleanly (no cryptic crash) ----
 
-test_that("A09-F02: directed Closeness gives an actionable error", {
+test_that("A09-F02: directed Closeness is supported", {
   netd <- .fix2_directed_net()
-  expect_error(
-    centrality_stability(netd, measures = "Closeness", iter = 8,
-                         drop_prop = c(0.2, 0.5), seed = 1),
-    "only for undirected networks"
-  )
+  cs_close <- centrality_stability(netd, measures = "Closeness", iter = 8,
+                                   drop_prop = c(0.2, 0.5), seed = 1)
+  expect_s3_class(cs_close, "net_stability")
+  expect_true("Closeness" %in% names(cs_close$cs))
   # The default directed measures still work.
   cs <- centrality_stability(netd, iter = 6, drop_prop = c(0.2, 0.4),
                              seed = 1)
@@ -141,20 +143,19 @@ test_that("A09-F02: directed Closeness gives an actionable error", {
 })
 
 
-# ---- A09-F03: net_centrality("Closeness") on directed errors cleanly
+# ---- A09-F03: directed net_centrality() supports tna closeness names
 #       (no silent 0-column data.frame) ----
 
-test_that("A09-F03: directed net_centrality Closeness errors clearly", {
+test_that("A09-F03: directed net_centrality Closeness is computed", {
   netd <- .fix2_directed_net()
-  expect_error(
-    suppressMessages(net_centrality(netd, measures = "Closeness")),
-    "only for undirected networks"
-  )
-  expect_error(
-    suppressMessages(net_centrality(netd,
-                                    measures = c("InStrength", "Closeness"))),
-    "only for undirected networks"
-  )
+  dc <- suppressMessages(net_centrality(
+    netd, measures = c("Closeness", "ClosenessIn", "ClosenessOut",
+                       "InCloseness", "OutCloseness")
+  ))
+  expect_true(all(c("Closeness", "ClosenessIn", "ClosenessOut",
+                    "InCloseness", "OutCloseness") %in% colnames(dc)))
+  expect_equal(dc$InCloseness, dc$ClosenessIn)
+  expect_equal(dc$OutCloseness, dc$ClosenessOut)
   # Undirected Closeness still works; defaults still work both ways.
   set.seed(1)
   panel <- as.data.frame(matrix(rnorm(600), 150, 4,
@@ -164,19 +165,19 @@ test_that("A09-F03: directed net_centrality Closeness errors clearly", {
   expect_true("Closeness" %in% colnames(uc))
   expect_equal(nrow(uc), 4L)
   dd <- suppressMessages(net_centrality(netd))
-  expect_true(all(c("InStrength", "OutStrength", "Betweenness") %in%
+  expect_true(all(c("InStrength", "Betweenness", "Diffusion") %in%
                     colnames(dd)))
 })
 
-test_that("A09-F03: undirected In/OutCloseness errors clearly", {
+test_that("A09-F03: undirected In/OutCloseness aliases are accepted", {
   set.seed(1)
   panel <- as.data.frame(matrix(rnorm(600), 150, 4,
                                 dimnames = list(NULL, LETTERS[1:4])))
   und <- build_network(panel, method = "cor")
-  expect_error(
-    suppressMessages(net_centrality(und, measures = "InCloseness")),
-    "only for directed networks"
-  )
+  uc <- suppressMessages(net_centrality(
+    und, measures = c("InCloseness", "OutCloseness")
+  ))
+  expect_true(all(c("InCloseness", "OutCloseness") %in% colnames(uc)))
 })
 
 

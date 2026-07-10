@@ -386,7 +386,19 @@ plot_mosaic <- function(data,
 #'   white on saturated cells (|stdres| > 1.5) and dark grey otherwise.
 #'   Default \code{FALSE} -- the colour bar legend already conveys the
 #'   sign and magnitude.
-#' @param ... Ignored.
+#' @param style Character. \code{"classic"} (default) draws the
+#'   black-bordered \code{theme_minimal} mosaic with axis labels;
+#'   \code{"flat"} draws the flat \code{theme_void} mosaic with white
+#'   gutters, a soft background and a colour-bar legend. With
+#'   \code{style = "flat"}, \code{values = TRUE} prints the standardized
+#'   residual inside each tile, and extra flat styling arguments
+#'   (\code{tile_label}, \code{col_label_side}, \code{row_label_side},
+#'   \code{legend_position}, \code{legend_size}, \code{label_size}, ...;
+#'   see \code{\link{mosaic_analysis}}) may be passed via \code{...}.
+#'   Not supported for multi-panel \code{mcml} (level = "clusters"),
+#'   which falls back to the classic faceted style.
+#' @param ... Flat styling overrides forwarded to the flat renderer when
+#'   \code{style = "flat"} (otherwise ignored).
 #'
 #' @return A \code{ggplot} object (or a \code{gtable} from
 #'   \code{gridExtra::arrangeGrob} for \code{netobject_group} when
@@ -422,12 +434,14 @@ mosaic_plot.netobject <- function(x,
                                   n_perm = 500L,
                                   seed = NULL,
                                   values = FALSE,
+                                  style = c("classic", "flat"),
                                   ...) {
   .mosaic_plot_impl(x, source_class = "netobject",
                     xlab = xlab, ylab = ylab, range = range,
                     top_angle = top_angle, left_angle = left_angle,
                     residuals = match.arg(residuals),
-                    n_perm = n_perm, seed = seed, values = values, ...)
+                    n_perm = n_perm, seed = seed, values = values,
+                    style = match.arg(style), ...)
 }
 
 #' @export
@@ -442,12 +456,14 @@ mosaic_plot.htna <- function(x,
                              n_perm = 500L,
                              seed = NULL,
                              values = FALSE,
+                             style = c("classic", "flat"),
                              ...) {
   .mosaic_plot_impl(x, source_class = "htna",
                     xlab = xlab, ylab = ylab, range = range,
                     top_angle = top_angle, left_angle = left_angle,
                     residuals = match.arg(residuals),
-                    n_perm = n_perm, seed = seed, values = values, ...)
+                    n_perm = n_perm, seed = seed, values = values,
+                    style = match.arg(style), ...)
 }
 
 #' @export
@@ -464,15 +480,22 @@ mosaic_plot.mcml <- function(x,
                              seed = NULL,
                              ncol = 2L,
                              values = FALSE,
+                             style = c("classic", "flat"),
                              ...) {
-  .mosaic_plot_check_unused_dots("mosaic_plot.mcml", ...)
+  style <- match.arg(style)
+  # The classic path takes no extra dots, so a stray arg is a typo -> reject.
+  # The flat path legitimately forwards styling args to the renderer (validated
+  # there), so only guard unused dots when classic.
+  if (identical(style, "classic")) {
+    .mosaic_plot_check_unused_dots("mosaic_plot.mcml", ...)
+  }
   .mosaic_plot_impl(x, source_class = "mcml",
                     level = match.arg(level),
                     xlab = xlab, ylab = ylab, range = range,
                     top_angle = top_angle, left_angle = left_angle,
                     residuals = match.arg(residuals),
                     n_perm = n_perm, seed = seed, ncol = ncol,
-                    values = values, ...)
+                    values = values, style = style, ...)
 }
 
 .mosaic_plot_check_unused_dots <- function(method, ...) {
@@ -504,13 +527,14 @@ mosaic_plot.netobject_group <- function(x,
                                         seed = NULL,
                                         ncol = 2L,
                                         values = FALSE,
+                                        style = c("classic", "flat"),
                                         ...) {
   .mosaic_plot_impl(x, source_class = "netobject_group",
                     xlab = xlab, ylab = ylab, range = range,
                     top_angle = top_angle, left_angle = left_angle,
                     residuals = match.arg(residuals),
                     n_perm = n_perm, seed = seed, ncol = ncol,
-                    values = values, ...)
+                    values = values, style = match.arg(style), ...)
 }
 
 #' @export
@@ -525,11 +549,13 @@ mosaic_plot.table <- function(x,
                               n_perm = 500L,
                               seed = NULL,
                               values = FALSE,
+                              style = c("classic", "flat"),
                               ...) {
   .mosaic_plot_tab(x, xlab = xlab, ylab = ylab, range = range,
                    top_angle = top_angle, left_angle = left_angle,
                    residuals = match.arg(residuals),
-                   n_perm = n_perm, seed = seed, values = values)
+                   n_perm = n_perm, seed = seed, values = values,
+                   style = match.arg(style), ...)
 }
 
 #' @export
@@ -551,7 +577,9 @@ mosaic_plot.matrix <- function(x, ...) mosaic_plot.table(as.table(x), ...)
                               top_angle = NULL, left_angle = NULL,
                               residuals = "permutation",
                               n_perm = 500L, seed = NULL,
-                              ncol = 2L, values = FALSE, ...) {
+                              ncol = 2L, values = FALSE,
+                              style = c("classic", "flat"), ...) {
+  style  <- match.arg(style)
   panels <- .mosaic_panels(x, source_class, level)
   xlab <- xlab %||% panels$xlab_default
   ylab <- ylab %||% panels$ylab_default
@@ -561,6 +589,10 @@ mosaic_plot.matrix <- function(x, ...) mosaic_plot.table(as.table(x), ...)
   # netobject_group is rendered as a single (group x state) mosaic, so it
   # falls through to the single-panel path below.
   if (length(panels$tabs) > 1L && identical(source_class, "mcml")) {
+    if (identical(style, "flat")) {
+      message("mosaic_plot: style = 'flat' is not supported for multi-panel ",
+              "mcml (level = 'clusters'); using the classic faceted style.")
+    }
     return(.mosaic_facet_plot(panels$tabs, panels$titles,
                               panel_states = panels$panel_states,
                               xlab = xlab, ylab = ylab, range = range,
@@ -576,7 +608,8 @@ mosaic_plot.matrix <- function(x, ...) mosaic_plot.table(as.table(x), ...)
                           top_angle = top_angle, left_angle = left_angle,
                           residuals = residuals,
                           n_perm = n_perm, seed = seed,
-                          axis_groups = ag, values = values)
+                          axis_groups = ag, values = values,
+                          style = style, ...)
     if (!is.null(panels$titles)) p + ggplot2::ggtitle(panels$titles[[i]]) else p
   })
 
@@ -796,12 +829,17 @@ mosaic_plot.matrix <- function(x, ...) mosaic_plot.table(as.table(x), ...)
   if (identical(source_class, "mcml")) {
     # build_mcml() / cluster_summary() return $macro$weights (cluster x
     # cluster aggregate) and $clusters[[k]]$weights (per-cluster matrix).
+    # mcml weights may be row-normalised (type = "tna"); the mosaic needs
+    # integer transition counts. .mosaic_count_or_stop() recovers them from
+    # the layer's $data when the stored weights aren't counts, so the mosaic
+    # works regardless of how the mcml was estimated.
     if (identical(level, "macro")) {
       if (is.null(x$macro) || is.null(x$macro$weights)) {
         stop("mosaic_plot.mcml: x$macro$weights is missing.", call. = FALSE)
       }
-      w <- .mosaic_weights_or_stop(x$macro$weights, x$meta$type,
-                                   ctx = "macro")
+      w <- .mosaic_count_or_stop(
+        list(weights = x$macro$weights, data = x$macro$data,
+             method = x$meta$type), ctx = "macro")
       return(list(tabs = list(as.table(t(w))),
                   titles = NULL,
                   xlab_default = NULL,
@@ -813,12 +851,26 @@ mosaic_plot.matrix <- function(x, ...) mosaic_plot.table(as.table(x), ...)
     }
     titles <- names(x$clusters) %||%
       paste0("Cluster ", seq_along(x$clusters))
-    tabs <- lapply(seq_along(x$clusters), function(i) {
-      w <- .mosaic_weights_or_stop(x$clusters[[i]]$weights, x$meta$type,
-                                   ctx = sprintf("cluster[%s]", titles[i]))
-      as.table(t(w))
+    built <- lapply(seq_along(x$clusters), function(i) {
+      cl <- x$clusters[[i]]
+      w <- .mosaic_count_or_stop(
+        list(weights = cl$weights, data = cl$data, method = x$meta$type),
+        ctx = sprintf("cluster[%s]", titles[i]))
+      # A single-state cluster has a 1x1 matrix -- no 2-D contingency table
+      # to draw -- so it is dropped from the faceted figure (with a note)
+      # rather than aborting every other cluster's panel.
+      if (nrow(w) < 2L || ncol(w) < 2L) NULL else as.table(t(w))
     })
-    return(list(tabs = tabs, titles = titles,
+    keep <- !vapply(built, is.null, logical(1L))
+    if (!any(keep)) {
+      stop("mosaic_plot.mcml: no cluster has >= 2 states to draw a mosaic.",
+           call. = FALSE)
+    }
+    if (!all(keep)) {
+      warning("mosaic_plot.mcml: skipping single-state cluster(s): ",
+              paste(titles[!keep], collapse = ", "), call. = FALSE)
+    }
+    return(list(tabs = built[keep], titles = titles[keep],
                 xlab_default = NULL,
                 ylab_default = NULL))
   }
@@ -835,7 +887,7 @@ mosaic_plot.matrix <- function(x, ...) mosaic_plot.table(as.table(x), ...)
 # cor, ...) -- mirroring the documented fallback honored by the
 # netobject_group path. Falls through to the strict integer guard only when
 # $data is also absent.
-.mosaic_count_or_stop <- function(x) {
+.mosaic_count_or_stop <- function(x, ctx = NULL) {
   w <- x$weights
   is_count_mat <- function(m) {
     is.matrix(m) && is.numeric(m) && all(is.finite(m)) &&
@@ -852,15 +904,18 @@ mosaic_plot.matrix <- function(x, ...) mosaic_plot.table(as.table(x), ...)
   #    review).
   fm <- x$frequency_matrix
   if (is_count_mat(fm)) return(fm)
-  # 3. Last resort: recount plain order-1 transitions from raw $data.
+  # 3. Last resort: recount plain order-1 transitions from raw $data. This
+  #    is what lets a row-normalised network (tna / relative / glasso) still
+  #    produce a count-based mosaic -- and is the path mcml clusters take,
+  #    since their stored $weights are probabilities under type = "tna".
   if (!is.null(x$data) &&
       (is.data.frame(x$data) || is.matrix(x$data))) {
     alphabet <- rownames(w) %||% colnames(w)
     counts <- .count_transitions(as.data.frame(x$data), format = "wide",
                                  id = NULL, alphabet = alphabet)
-    return(.mosaic_weights_or_stop(counts, "frequency"))
+    return(.mosaic_weights_or_stop(counts, "frequency", ctx))
   }
-  .mosaic_weights_or_stop(w, x$method)
+  .mosaic_weights_or_stop(w, x$method, ctx)
 }
 
 # Validate that a weight matrix is mosaic-able (finite, non-negative, integer-
@@ -1006,6 +1061,9 @@ mosaic_plot.matrix <- function(x, ...) mosaic_plot.table(as.table(x), ...)
   attr(d, "heights")    <- heights
   attr(d, "row_labels") <- row_labels
   attr(d, "col_labels") <- col_labels
+  # Keep the cell-aligned residual matrix so the flat renderer can index it
+  # positionally instead of rebuilding geometry and rejoining by string key.
+  attr(d, "stdres")     <- stdres
   d
 }
 
@@ -1014,9 +1072,27 @@ mosaic_plot.matrix <- function(x, ...) mosaic_plot.table(as.table(x), ...)
                              top_angle = NULL, left_angle = NULL,
                              residuals = "permutation", n_perm = 500L,
                              seed = NULL, axis_groups = NULL,
-                             values = FALSE) {
+                             values = FALSE, style = "classic", ...) {
   d <- .mosaic_rect_data(tab, residuals = residuals,
                          n_perm = n_perm, seed = seed)
+  # "flat" routes to the ported Saqrmisc renderer: white gutters, theme_void,
+  # in-tile labels. `values = TRUE` maps to in-tile standardized residuals,
+  # unless the caller passes an explicit `tile_label` via `...`.
+  if (identical(style, "flat")) {
+    if (!is.null(axis_groups)) {
+      warning("mosaic_plot: group-coloured axis strips are not drawn in ",
+              "style = 'flat'; use style = 'classic' for the htna group ",
+              "annotation.", call. = FALSE)
+    }
+    dots <- list(...)
+    if (is.null(dots$tile_label)) {
+      dots$tile_label <- if (isTRUE(values)) "residual" else "none"
+    }
+    .mosaic_flat_check_args(names(dots))
+    return(do.call(.mosaic_flat_draw,
+                   c(list(res = attr(d, "stdres"), tab = tab, range = range),
+                     dots)))
+  }
   widths     <- attr(d, "widths")
   heights    <- attr(d, "heights")
   row_labels <- attr(d, "row_labels")
@@ -1083,6 +1159,198 @@ mosaic_plot.matrix <- function(x, ...) mosaic_plot.table(as.table(x), ...)
     )
   }
   p
+}
+
+
+# Validate flat-styling argument names against the renderer's formals, so an
+# unknown / mistyped arg (or a mosaic_plot-only arg like `values`) fails with a
+# clear, listed message instead of an opaque base-R "unused argument" error.
+.mosaic_flat_check_args <- function(nms) {
+  nms  <- nms[nzchar(nms)]
+  valid <- setdiff(names(formals(.mosaic_flat_draw)), c("res", "tab"))
+  bad  <- setdiff(nms, valid)
+  if (length(bad)) {
+    stop("mosaic flat style: unsupported styling argument",
+         if (length(bad) > 1L) "s" else "", ": ",
+         paste(bad, collapse = ", "),
+         ".\n  Valid styling arguments: ", paste(valid, collapse = ", "), ".",
+         call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
+# ColorBrewer RdBu (11): red = negative residual, blue = positive. The flat
+# mosaic's shared default palette (matches the Saqrmisc style).
+.mosaic_rdbu <- c("#67001f", "#b2182b", "#d6604d", "#f4a582", "#fddbc7",
+                  "#f7f7f7", "#d1e5f0", "#92c5de", "#4393c3", "#2166ac",
+                  "#053061")
+
+# Flat ggplot mosaic (variable-width columns, white gutters, theme_void),
+# ported from the Saqrmisc style: RdBu residual ramp (`palette`). `res` is the
+# cell-aligned standardized-residual matrix (same shape/order as `tab`); `tab`
+# supplies the counts and marginals. Reused by mosaic_plot(style = "flat") and
+# mosaic_analysis(). Geometry is a clean [0,1] grid (no inter-tile offsets --
+# the white gutters supply the separation), so side labels align and the
+# residual fill is indexed positionally (no string-key join, no NA on misses).
+.mosaic_flat_draw <- function(res, tab, title = "",
+                              tile_label = c("none", "count", "percent",
+                                             "residual", "category"),
+                              pct_base = c("total", "row", "column"),
+                              col_label_side = c("top", "bottom", "both", "none"),
+                              row_label_side = c("left", "right", "both", "none"),
+                              col_label_angle = NULL, row_label_angle = NULL,
+                              show_legend = TRUE, legend_position = "right",
+                              legend_size = 0.7,
+                              legend_title = "Standardized\nresidual",
+                              label_size = 3.5, range = NULL, palette = NULL,
+                              min_label_h = 0.04, min_label_w = 0.03) {
+  if (is.null(palette)) palette <- .mosaic_rdbu
+  tile_label     <- match.arg(tile_label)
+  pct_base       <- match.arg(pct_base)
+  col_label_side <- match.arg(col_label_side)
+  row_label_side <- match.arg(row_label_side)
+  stopifnot("residual matrix must match the contingency table shape" =
+              identical(dim(res), dim(tab)))
+
+  rn <- rownames(tab); cn <- colnames(tab)
+  R  <- nrow(tab); C <- ncol(tab)
+  grand   <- sum(tab)
+  row_tot <- rowSums(tab)            # first-variable marginal (plot columns)
+  col_tot <- colSums(tab)            # second-variable marginal (stacked rows)
+
+  # Column width = first-variable marginal; tile height = within-column
+  # conditional. Residuals are read straight from `res` by position.
+  xw     <- as.numeric(row_tot) / grand
+  xright <- cumsum(xw); xleft <- xright - xw
+
+  tiles <- do.call(rbind, lapply(seq_len(R), function(i) {
+    h <- as.numeric(tab[i, ]) / row_tot[i]
+    data.frame(
+      xmin = xleft[i], xmax = xright[i],
+      ymin = 1 - cumsum(h), ymax = 1 - c(0, cumsum(h)[-C]),
+      freq = as.numeric(tab[i, ]),
+      stdres = as.numeric(res[i, ]),
+      row = rn[i], col = cn, stringsAsFactors = FALSE)
+  }))
+  tiles <- tiles[tiles$freq > 0, , drop = FALSE]
+  tiles$xcent <- (tiles$xmin + tiles$xmax) / 2
+  tiles$ycent <- (tiles$ymin + tiles$ymax) / 2
+  tiles$w <- tiles$xmax - tiles$xmin
+  tiles$h <- tiles$ymax - tiles$ymin
+
+  pct <- switch(pct_base,
+    total  = tiles$freq / grand * 100,
+    row    = tiles$freq / as.numeric(row_tot[tiles$row]) * 100,
+    column = tiles$freq / as.numeric(col_tot[tiles$col]) * 100)
+
+  raw_txt <- switch(tile_label,
+    none     = rep("", nrow(tiles)),
+    count    = formatC(tiles$freq, format = "d", big.mark = ","),
+    percent  = paste0(formatC(pct, format = "f", digits = 1), "%"),
+    residual = formatC(tiles$stdres, format = "f", digits = 1),
+    category = tiles$col)
+
+  max_abs <- max(abs(tiles$stdres), 1e-6, na.rm = TRUE)
+  tiles$txt_col <- ifelse(!is.na(tiles$stdres) & abs(tiles$stdres) > 0.55 * max_abs,
+                          "white", "grey15")
+  tiles$lab <- ifelse(tiles$h >= min_label_h & tiles$w >= min_label_w,
+                      raw_txt, "")
+
+  # Auto-rotate top/bottom labels to vertical when there are many (narrow)
+  # columns, so wide category names cannot overlap. Caller can override.
+  col_angle <- if (is.null(col_label_angle)) (if (R > 6L) 90 else 0) else
+    col_label_angle
+  row_angle <- if (is.null(row_label_angle)) 0 else row_label_angle
+  col_vert  <- abs(col_angle) >= 45
+
+  # --- side category-label frames (on the clean [0,1] grid) ---
+  col_centers <- (xleft + xright) / 2
+  col_keep    <- xw >= min_label_w
+  col_sides <- switch(col_label_side, top = "top", bottom = "bottom",
+                      both = c("top", "bottom"), none = character(0))
+  col_df <- if (length(col_sides) && any(col_keep))
+    do.call(rbind, lapply(col_sides, function(s) {
+      top <- s == "top"
+      data.frame(
+        x   = col_centers[col_keep],
+        y   = if (top) 1 else 0,
+        lab = rn[col_keep],
+        vj  = if (col_vert) 0.5 else (if (top) -0.6 else 1.6),
+        hj  = if (col_vert) (if (top) 0 else 1) else 0.5,
+        stringsAsFactors = FALSE)
+    })) else NULL
+
+  pj          <- as.numeric(col_tot) / grand
+  row_centers <- 1 - (cumsum(pj) - pj / 2)
+  row_keep    <- pj >= min_label_h
+  row_sides <- switch(row_label_side, left = "left", right = "right",
+                      both = c("left", "right"), none = character(0))
+  row_df <- if (length(row_sides) && any(row_keep))
+    do.call(rbind, lapply(row_sides, function(s) data.frame(
+      y = row_centers[row_keep], x = if (s == "left") 0 else 1,
+      lab = cn[row_keep], hj = if (s == "left") 1.15 else -0.15,
+      stringsAsFactors = FALSE))) else NULL
+
+  fill_guide <- if (show_legend && legend_position != "none") {
+    ggplot2::guide_colourbar(
+      barheight = ggplot2::unit(legend_size * 6, "lines"),
+      barwidth  = ggplot2::unit(legend_size * 0.8, "lines"),
+      ticks.colour = "grey40", frame.colour = NA)
+  } else "none"
+  leg_pos <- if (show_legend) legend_position else "none"
+
+  p <- ggplot2::ggplot(tiles,
+      ggplot2::aes(xmin = .data$xmin, xmax = .data$xmax,
+                   ymin = .data$ymin, ymax = .data$ymax)) +
+    ggplot2::geom_rect(ggplot2::aes(fill = .data$stdres),
+                       colour = "white", linewidth = 1.1) +
+    ggplot2::geom_text(
+      ggplot2::aes(x = .data$xcent, y = .data$ycent, label = .data$lab,
+                   colour = .data$txt_col),
+      hjust = 0.5, vjust = 0.5, size = label_size)
+
+  if (!is.null(col_df))
+    p <- p + ggplot2::geom_text(data = col_df, inherit.aes = FALSE,
+      ggplot2::aes(x = .data$x, y = .data$y, label = .data$lab),
+      vjust = col_df$vj, hjust = col_df$hj, angle = col_angle,
+      size = label_size + 0.1, colour = "grey35")
+
+  if (!is.null(row_df))
+    p <- p + ggplot2::geom_text(data = row_df, inherit.aes = FALSE,
+      ggplot2::aes(x = .data$x, y = .data$y, label = .data$lab),
+      hjust = row_df$hj, vjust = 0.5, angle = row_angle,
+      size = label_size + 0.1, colour = "grey45")
+
+  # Reserve margin only on sides that actually carry labels. Vertical column
+  # labels need more room than horizontal ones so they clear the tiles.
+  col_e   <- if (col_vert) 0.16 else 0.08
+  left_e  <- if (row_label_side %in% c("left", "both"))   0.12 else 0.015
+  right_e <- if (row_label_side %in% c("right", "both"))  0.12 else 0.015
+  top_e   <- if (col_label_side %in% c("top", "both"))    col_e else 0.015
+  bot_e   <- if (col_label_side %in% c("bottom", "both")) col_e else 0.015
+
+  p +
+    ggplot2::scale_fill_gradientn(
+      name = legend_title, colours = palette, oob = scales::oob_squish,
+      limits = .mosaic_residual_limits(as.numeric(res), range),
+      breaks = .mosaic_residual_breaks(as.numeric(res), range), guide = fill_guide) +
+    ggplot2::scale_colour_identity() +
+    ggplot2::scale_x_continuous(
+      expand = ggplot2::expansion(mult = c(left_e, right_e))) +
+    ggplot2::scale_y_continuous(
+      expand = ggplot2::expansion(mult = c(bot_e, top_e))) +
+    ggplot2::coord_cartesian(clip = "off") +
+    ggplot2::labs(title = title) +
+    ggplot2::theme_void(base_size = 13) +
+    ggplot2::theme(
+      plot.background  = ggplot2::element_rect(fill = "#fafafa", colour = NA),
+      panel.background = ggplot2::element_rect(fill = "#fafafa", colour = NA),
+      plot.title = ggplot2::element_text(face = "bold", size = 15, hjust = 0,
+                                         margin = ggplot2::margin(b = 12, l = 4)),
+      plot.margin = ggplot2::margin(14, 18, 14, 14),
+      legend.position = leg_pos,
+      legend.title = ggplot2::element_text(size = legend_size * 11),
+      legend.text  = ggplot2::element_text(size = legend_size * 10))
 }
 
 
@@ -2051,6 +2319,23 @@ state_distribution.default <- function(x, ...) {
 #' @name state_freq
 NULL
 
+# Draw whatever kind of plot object a state_freq carries: a single ggplot,
+# a gtable / grob (per_facet, hierarchical marimekko), or a
+# nestimate_facet_list (one full-size ggplot per panel, e.g. 4+ panels or
+# include_macro). Centralised so print / plot / knit_print stay in sync.
+.draw_state_freq_plot <- function(p) {
+  if (is.null(p)) return(invisible(NULL))
+  if (inherits(p, "ggplot") || inherits(p, "nestimate_facet_list")) {
+    print(p)
+  } else if (inherits(p, "gtable") || grid::is.grob(p)) {
+    grid::grid.newpage()
+    grid::grid.draw(p)
+  } else {
+    print(p)
+  }
+  invisible(NULL)
+}
+
 #' @export
 #' @rdname state_freq
 print.state_freq <- function(x, digits = 1, max_states = 20L, ...) {
@@ -2107,26 +2392,14 @@ print.state_freq <- function(x, digits = 1, max_states = 20L, ...) {
 
   # Render the chart to the active graphics device so the table + plot
   # appear together (console: opens a window; knitr: embeds inline).
-  if (inherits(x$plot, "ggplot")) {
-    print(x$plot)
-  } else if (inherits(x$plot, "gtable")) {
-    grid::grid.newpage()
-    grid::grid.draw(x$plot)
-  }
+  .draw_state_freq_plot(x$plot)
   invisible(x)
 }
 
 #' @export
 #' @rdname state_freq
 plot.state_freq <- function(x, ...) {
-  if (inherits(x$plot, "ggplot")) {
-    print(x$plot)
-  } else if (inherits(x$plot, "gtable")) {
-    grid::grid.newpage()
-    grid::grid.draw(x$plot)
-  } else {
-    print(x$plot)
-  }
+  .draw_state_freq_plot(x$plot)
   invisible(NULL)
 }
 
@@ -2141,17 +2414,18 @@ knit_print.state_freq <- function(x, options = list(), ...) {
   if (!requireNamespace("knitr", quietly = TRUE)) {
     print(x); return(invisible(NULL))
   }
+  # Capture ONLY the textual summary (strip the plot so print() doesn't draw).
   table_text <- paste(utils::capture.output({
     old <- list(plot = x$plot); x$plot <- NULL
     print(x)
     x$plot <- old$plot
   }), collapse = "\n")
-  if (is.null(options$out.width)) options$out.width <- "70%"
-  parts <- list(
-    knitr::asis_output(paste0("\n```\n", table_text, "\n```\n")),
-    knitr::knit_print(x$plot, options = options, ...)
-  )
-  knitr::asis_output(paste(unlist(parts), collapse = "\n\n"))
+  # Draw the chart to the active chunk device so knitr captures it as a
+  # properly sized figure. A gtable (per_facet / hierarchical) must NOT be
+  # passed through paste()/unlist() -- that explodes the grob tree into tens
+  # of thousands of text fragments and never draws the plot.
+  .draw_state_freq_plot(x$plot)
+  knitr::asis_output(paste0("\n```\n", table_text, "\n```\n"))
 }
 
 

@@ -1,7 +1,6 @@
-#' @title Internal Helper Functions for Nestimate
-#' @name utils
-#' @description Internal utility functions used by other Nestimate functions.
-#' @keywords internal
+# Internal helpers. No Rd page: nothing here is exported. The roxygen block
+# below exists only to carry the NAMESPACE imports.
+
 #' @importFrom utils tail head
 NULL
 
@@ -148,7 +147,7 @@ NULL
 #'
 #' @param m A numeric matrix.
 #' @param value_col Name of the value column (e.g. "weight", "count").
-#' @param include One of `"nonzero"` (default) or `"positive"` — which entries
+#' @param include One of `"nonzero"` (default) or `"positive"` - which entries
 #'   to include.
 #' @param sort_by One of `"abs_value"` (default, descending) or `"none"`.
 #' @return A data.frame with columns `from`, `to`, and `<value_col>`.
@@ -225,7 +224,7 @@ utils::globalVariables(c(
 #'
 #' @return Logical indicating whether value is in range.
 #'
-#' @keywords internal
+#' @noRd
 check_val_in_range <- function(value, range_val) {
   if (is.null(range_val)) return(TRUE)
   if (is.na(value) || !is.numeric(value)) return(FALSE)
@@ -240,7 +239,7 @@ check_val_in_range <- function(value, range_val) {
 #'
 #' @return Median value or NA if vector is empty.
 #'
-#' @keywords internal
+#' @noRd
 safe_median <- function(x) {
   if (length(x) > 0) median(x, na.rm = TRUE) else NA_real_
 }
@@ -253,7 +252,7 @@ safe_median <- function(x) {
 #'
 #' @return Mean value or NA if vector is empty.
 #'
-#' @keywords internal
+#' @noRd
 safe_mean <- function(x) {
   if (length(x) > 0) mean(x, na.rm = TRUE) else NA_real_
 }
@@ -266,7 +265,7 @@ safe_mean <- function(x) {
 #'
 #' @return Standard deviation or NA if vector has fewer than 2 elements.
 #'
-#' @keywords internal
+#' @noRd
 safe_sd <- function(x) {
   if (length(x) > 1) sd(x, na.rm = TRUE) else NA_real_
 }
@@ -323,7 +322,7 @@ safe_sd <- function(x) {
     }
     return(df)
   }
-  ## Bare sequence matrix (character / logical) → wide data.frame.
+  ## Bare sequence matrix (character / logical) -> wide data.frame.
   if (is.matrix(data) && !is.numeric(data)) {
     return(as.data.frame(data, stringsAsFactors = FALSE))
   }
@@ -401,7 +400,7 @@ safe_sd <- function(x) {
 
 
 # ---------------------------------------------------------------------------
-# Higher-order → cograph_network bridge
+# Higher-order -> cograph_network bridge
 # ---------------------------------------------------------------------------
 
 #' Add cograph_network fields to a higher-order network object

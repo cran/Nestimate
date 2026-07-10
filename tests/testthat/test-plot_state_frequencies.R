@@ -187,33 +187,11 @@ test_that("mcml frequency methods reject unsupported dots", {
 # ---------------------------------------------------------------------------
 # plot_state_frequencies on htna
 # ---------------------------------------------------------------------------
-
-test_that("plot_state_frequencies works on htna", {
-  skip_if_not_installed("htna")
-  data(ai_long, package = "Nestimate")
-  data(human_long, package = "Nestimate")
-
-  ht <- htna::build_htna(list(AI = ai_long, Human = human_long),
-                          action = "code", session = "session_id",
-                          order = "code_order")
-  expect_s3_class(ht, "htna")
-  expect_false(is.null(ht$node_groups))
-
-  # Default for htna is now legend = "bottom" -> ggplot. Per-facet still
-  # available via legend = "per_facet".
-  skip_if_not_installed("gridExtra")
-  p_default <- plot_state_frequencies(ht)
-  expect_s3_class(p_default, "state_freq")
-  expect_true(inherits(p_default$plot, "gtable") ||
-              inherits(p_default$plot, "ggplot"))
-
-  # Explicit single-legend bottom -> ggplot.
-  p_single <- plot_state_frequencies(ht, legend = "bottom")
-  expect_s3_class(p_single$plot, "ggplot")
-
-  p_bars <- plot_state_frequencies(ht, style = "bars")
-  expect_s3_class(p_bars$plot, "ggplot")
-})
+# The end-to-end check against a real object from the htna package lives in
+# local_testing_and_equivalence/test-equiv-htna-plot.R: htna Imports Nestimate,
+# so Suggesting it here would create a dependency cycle and an "Unstated
+# dependencies in 'tests'" WARN. The htna-shaped S3 contract is covered without
+# that dependency in test-contract-htna.R.
 
 
 # ---------------------------------------------------------------------------
@@ -290,4 +268,30 @@ test_that("print.state_freq writes the canonical header", {
   expect_true(any(grepl("State frequencies", out, fixed = TRUE)))
   expect_true(any(grepl("Per-group totals", out, fixed = TRUE)))
   expect_true(any(grepl("Per-state proportions", out, fixed = TRUE)))
+})
+
+test_that("knit_print.state_freq does not explode a gtable/facet_list into text", {
+  skip_if_not_installed("knitr")
+  skip_if_not_installed("gridExtra")
+  fit <- build_mcml(
+    group_regulation_long,
+    clusters = list(Cognitive  = c("discuss", "synthesis", "consensus", "cohesion"),
+                    Regulation = c("plan", "monitor", "adapt", "coregulate"),
+                    Affective  = "emotion"),
+    actor = "Actor", action = "Action", time = "Time", type = "tna")
+
+  pdf(NULL); on.exit(dev.off(), add = TRUE)
+
+  # per_facet -> gtable; the old code unlisted the grob tree into thousands
+  # of lines. The textual asis payload must stay small (the plot is drawn,
+  # not dumped).
+  pf <- plot_state_frequencies(fit, legend = "per_facet")
+  expect_true(inherits(pf$plot, "gtable"))
+  out_pf <- as.character(Nestimate:::knit_print.state_freq(pf))
+  expect_lt(sum(nchar(out_pf)), 5000L)
+
+  # include_macro -> nestimate_facet_list; must also render, not error.
+  fl <- plot_state_frequencies(fit, include_macro = TRUE, legend = "per_facet")
+  expect_true(inherits(fl$plot, "nestimate_facet_list"))
+  expect_no_error(Nestimate:::knit_print.state_freq(fl))
 })

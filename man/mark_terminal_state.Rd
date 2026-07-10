@@ -2,7 +2,7 @@
 % Please edit documentation in R/sequence_terminal.R
 \name{mark_terminal_state}
 \alias{mark_terminal_state}
-\title{Mark terminal-NA cells with an explicit state label.}
+\title{Mark terminal-NA cells with an explicit state label}
 \usage{
 mark_terminal_state(data, state = "End", cols = NULL)
 }
@@ -32,7 +32,7 @@ This is the small piece of pre-processing required to turn
 right-censored sequence data into an absorbing-chain model. The
 chain on the resulting matrix has one extra state (\code{state})
 which is structurally absorbing because every cell after the
-actor's last observed step has been set to \code{state} — the chain
+actor's last observed step has been set to \code{state} - the chain
 stays there forever once entered.
 
 Use \code{\link[=chain_structure]{chain_structure()}} on the result to compute mean absorption

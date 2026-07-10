@@ -14,6 +14,9 @@ centrality_stability(
   method = "pearson",
   centrality_fn = NULL,
   loops = FALSE,
+  normalize = FALSE,
+  invert = TRUE,
+  normalize_diffusion = TRUE,
   seed = NULL
 )
 }
@@ -21,14 +24,14 @@ centrality_stability(
 \item{x}{A \code{netobject} from \code{\link{build_network}}.}
 
 \item{measures}{Character vector. Centrality measures to assess.
-Built-in: \code{"InStrength"}, \code{"OutStrength"}, \code{"Betweenness"},
-\code{"InCloseness"}, \code{"OutCloseness"}, \code{"Closeness"}.
-\code{"Closeness"} is defined only for undirected networks;
-\code{"InCloseness"}/\code{"OutCloseness"} only for directed
-networks (requesting the wrong one for the network's directedness
-is an error). Custom measures beyond these are valid only when a
-\code{centrality_fn} is supplied to resolve them.
-Default: \code{c("InStrength", "OutStrength", "Betweenness")}.}
+Defaults to \code{c("InStrength", "OutStrength", "Betweenness")}. Pass
+\code{"all"} for every built-in measure: \code{"OutStrength"},
+\code{"InStrength"}, \code{"ClosenessIn"}, \code{"ClosenessOut"},
+\code{"Closeness"}, \code{"Betweenness"}, \code{"BetweennessRSP"},
+\code{"Diffusion"}, and \code{"Clustering"}. The legacy aliases
+\code{"InCloseness"} and \code{"OutCloseness"} are also accepted. Custom
+measures beyond these are valid only when a \code{centrality_fn} is
+supplied to resolve them.}
 
 \item{iter}{Integer. Number of bootstrap iterations per drop
 proportion (default: 1000).}
@@ -59,6 +62,16 @@ return a named list (e.g., \code{list(my_metric = ...)}).}
 \item{loops}{Logical. If \code{FALSE} (default), self-loops (diagonal)
 are excluded from centrality computation. This does not modify the
 stored matrix.}
+
+\item{normalize}{Logical. Range-normalize all requested measures using the
+same transformation as \code{tna::centralities(normalize = TRUE)}.
+Default: \code{FALSE}.}
+
+\item{invert}{Logical. Invert weights for shortest-path measures?
+Default: \code{TRUE}, matching \code{tna}.}
+
+\item{normalize_diffusion}{Logical. Range-normalize \code{Diffusion} even
+when \code{normalize = FALSE}. Default: \code{TRUE}.}
 
 \item{seed}{Integer or NULL. RNG seed for reproducibility.}
 }

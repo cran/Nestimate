@@ -68,8 +68,16 @@ test_that("centrality.netobject returns correct directed defaults (L163-177)", {
   net <- build_network(seqs, method = "relative")
   c1 <- net_centrality(net)
   expect_true(is.data.frame(c1))
+  expect_s3_class(c1, "net_centrality")
   expect_equal(nrow(c1), 3)
-  expect_true(all(c("InStrength", "OutStrength", "Betweenness") %in% names(c1)))
+  # default is the compact trio
+  expect_identical(setdiff(names(c1), "state"),
+                   c("InStrength", "Betweenness", "Diffusion"))
+  # measures = "all" expands to every built-in measure
+  c_all <- net_centrality(net, measures = "all")
+  expect_true(all(c("InStrength", "OutStrength", "Betweenness",
+                    "BetweennessRSP", "Diffusion", "Clustering") %in%
+                    names(c_all)))
 })
 
 test_that("centrality.netobject returns correct undirected defaults (L163-177)", {
@@ -78,7 +86,12 @@ test_that("centrality.netobject returns correct undirected defaults (L163-177)",
   net_ud <- build_network(panel, method = "cor")
   c2 <- net_centrality(net_ud)
   expect_true(is.data.frame(c2))
-  expect_true(all(c("Closeness", "Betweenness") %in% names(c2)))
+  expect_s3_class(c2, "net_centrality")
+  # Betweenness is part of the default trio
+  expect_true("Betweenness" %in% names(c2))
+  # the full closeness family appears under measures = "all"
+  expect_true(all(c("Closeness", "Betweenness") %in%
+                    names(net_centrality(net_ud, measures = "all"))))
 })
 
 test_that("centrality.netobject_group returns list of data frames (L185-188)", {
@@ -91,6 +104,7 @@ test_that("centrality.netobject_group returns list of data frames (L185-188)", {
   nets <- build_network(seqs, method = "relative", group = "grp")
   c3 <- net_centrality(nets)
   expect_true(is.list(c3))
+  expect_s3_class(c3, "net_centrality_group")
   expect_equal(length(c3), 2)
   expect_true(all(vapply(c3, is.data.frame, logical(1))))
 })
@@ -128,6 +142,109 @@ test_that(".compute_centralities errors when external measure lacks centrality_f
   )
 })
 
+test_that("net_centrality matches tna centralities for all shared measures", {
+  skip_if_not_installed("tna")
+  measures <- c("OutStrength", "InStrength", "ClosenessIn", "ClosenessOut",
+                "Closeness", "Betweenness", "BetweennessRSP", "Diffusion",
+                "Clustering")
+  mat <- matrix(c(
+    0,   .20, 0,   .35,
+    .90, 0,   .40, .10,
+    .10, .30, 0,   .60,
+    .20, .15, .50, 0
+  ), nrow = 4L, byrow = TRUE,
+  dimnames = list(LETTERS[1:4], LETTERS[1:4]))
+  net <- .wrap_netobject(mat, method = "relative", directed = TRUE,
+                         data = NULL)
+
+  ours <- suppressMessages(net_centrality(
+    net, measures = measures, normalize_diffusion = FALSE
+  ))
+  ref <- tna::centralities(mat, measures = measures)
+
+  expect_equal(as.data.frame(ours)[, measures],
+               as.data.frame(ref)[, measures],
+               tolerance = 1e-10, ignore_attr = TRUE)
+})
+
+test_that("Diffusion is normalized by default but can match raw tna output", {
+  skip_if_not_installed("tna")
+  mat <- matrix(c(
+    0,   .20, 0,   .35,
+    .90, 0,   .40, .10,
+    .10, .30, 0,   .60,
+    .20, .15, .50, 0
+  ), nrow = 4L, byrow = TRUE,
+  dimnames = list(LETTERS[1:4], LETTERS[1:4]))
+  net <- .wrap_netobject(mat, method = "relative", directed = TRUE,
+                         data = NULL)
+
+  def <- suppressMessages(net_centrality(net, measures = "Diffusion"))
+  raw <- suppressMessages(net_centrality(
+    net, measures = "Diffusion", normalize_diffusion = FALSE
+  ))
+  ref_raw <- tna::centralities(mat, measures = "Diffusion")
+  ref_norm <- tna::centralities(mat, measures = "Diffusion",
+                                normalize = TRUE)
+
+  expect_equal(def$Diffusion, ref_norm$Diffusion,
+               tolerance = 1e-10, ignore_attr = TRUE)
+  expect_equal(raw$Diffusion, ref_raw$Diffusion,
+               tolerance = 1e-10, ignore_attr = TRUE)
+})
+
+test_that("net_centrality plots work for single and grouped outputs", {
+  seqs <- data.frame(
+    V1 = c("A","B","A","C","B","A"),
+    V2 = c("B","C","B","A","C","B"),
+    V3 = c("C","A","C","B","A","C"),
+    grp = c("X","X","X","Y","Y","Y")
+  )
+  net <- build_network(seqs[1:3], method = "relative")
+  cent <- suppressMessages(net_centrality(
+    net, measures = c("InStrength", "OutStrength", "Diffusion")
+  ))
+  expect_s3_class(plot(cent), "ggplot")
+  expect_s3_class(plot(cent, type = "line"), "ggplot")
+  expect_s3_class(plot(cent, type = "profile"), "ggplot")  # back-compat alias
+  expect_s3_class(plot(cent, type = "heatmap"), "ggplot")
+  expect_s3_class(plot(cent, type = "bar", drop_zero = TRUE), "ggplot")
+
+  nets <- build_network(seqs, method = "relative", group = "grp")
+  cents <- suppressMessages(net_centrality(
+    nets, measures = c("InStrength", "OutStrength", "Diffusion")
+  ))
+  expect_s3_class(plot(cents), "ggplot")
+  expect_s3_class(plot(cents, type = "line"), "ggplot")
+  expect_s3_class(plot(cents, type = "profile"), "ggplot")  # back-compat alias
+  expect_s3_class(plot(cents, type = "delta"), "ggplot")
+})
+
+test_that("centrality heatmap and delta views behave correctly", {
+  seqs <- data.frame(
+    V1 = c("A","B","A","C","B","A"),
+    V2 = c("B","C","B","A","C","B"),
+    V3 = c("C","A","C","B","A","C"),
+    grp = c("X","X","X","Y","Y","Y")
+  )
+  # drop_zero removes an all-zero measure panel
+  net <- build_network(seqs[1:3], method = "relative")
+  cent <- suppressMessages(net_centrality(
+    net, measures = c("OutStrength", "Betweenness")
+  ))
+  # Betweenness is all zero on this tiny ring -> dropped
+  p_keep <- plot(cent, type = "bar", drop_zero = FALSE)
+  p_drop <- plot(cent, type = "bar", drop_zero = TRUE)
+  expect_true(length(levels(p_keep$data$measure)) >=
+              length(levels(droplevels(p_drop$data$measure))))
+
+  # delta supports 3+ groups via deviation-from-mean
+  three <- within(seqs, grp <- c("X","X","Y","Y","Z","Z"))
+  nets3 <- build_network(three, method = "relative", group = "grp")
+  cents3 <- suppressMessages(net_centrality(nets3, measures = "OutStrength"))
+  expect_s3_class(plot(cents3, type = "delta", labels = TRUE), "ggplot")
+})
+
 # ---- Regression: non-square matrix $data (pre-2026-04-21 bug) ----
 
 test_that("centrality_stability works when $data is a raw numeric matrix", {
@@ -160,4 +277,28 @@ test_that("centrality_stability works when $data is a raw numeric matrix", {
   corrs <- cs$correlations
   if (is.data.frame(corrs)) corrs <- corrs$correlation
   expect_true(any(is.finite(unlist(corrs))))
+})
+
+test_that("centrality_stability default is the trio and accepts measures = 'all'", {
+  set.seed(1)
+  seqs <- as.data.frame(matrix(sample(c("A","B","C","D"), 160, TRUE), ncol = 4))
+  net <- build_network(seqs, method = "relative")
+
+  # Default measures. Kept at the 0.6.0 trio (OutStrength, not Diffusion):
+  # htna's CRAN release compares its own explicit trio against this default,
+  # so changing it breaks the reverse dependency. See CLAUDE.md, "Reverse
+  # Dependency: htna".
+  expect_identical(eval(formals(centrality_stability)$measures),
+                   c("InStrength", "OutStrength", "Betweenness"))
+  s_def <- suppressWarnings(suppressMessages(
+    centrality_stability(net, iter = 40, seed = 1)))
+  expect_identical(s_def$measures, c("InStrength", "OutStrength", "Betweenness"))
+
+  # "all" expands to every built-in measure (and no longer errors on
+  # degenerate resamples where Diffusion/RSP can be NA)
+  s_all <- suppressWarnings(suppressMessages(
+    centrality_stability(net, measures = "all", iter = 40, seed = 1)))
+  expect_true(all(c("OutStrength", "InStrength", "Closeness", "Betweenness",
+                    "BetweennessRSP", "Diffusion", "Clustering") %in%
+                    s_all$measures))
 })
