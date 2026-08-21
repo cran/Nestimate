@@ -1,3 +1,146 @@
+# Nestimate 0.8.5
+
+Bug-fix release. 0.8.4 was published on r-universe but never reached CRAN.
+
+## Plotting in non-UTF-8 locales
+
+* `plot()` on `net_entropy_bayes` and `net_sequence_comparison` results no
+  longer fails where the graphics device cannot represent the arrow glyph.
+  Edge labels and the comparison subtitle previously used `U+2192`/`U+2190`,
+  which a non-UTF-8 locale cannot convert; the graphics engine raised an error
+  (`conversion failure ... in 'mbcsToSbcs'`) rather than substituting a
+  character, so the plot could not be drawn at all. Both now use the ASCII
+  arrow notation (`A -> B`) already used by the higher-order network verbs.
+  Console output is unaffected.
+
+* `plot()` on `net_entropy_bayes` results no longer emits a deprecation warning
+  under ggplot2 4.0, which removed `geom_errorbarh()`.
+
+## Rendering entropy networks with cograph
+
+* `entropy_network()` now renders with its intended transition-network styling
+  on cograph 2.4.4, the current CRAN version. The object states its full style
+  through cograph's `meta$splot` producer contract instead of relying on
+  cograph recognising the `"entropy"` method name, so no cograph update is
+  required. Output is identical under cograph 2.4.4 and 2.4.5.
+
+## Documentation
+
+* The `print()` and `plot()` examples for the MMM clustering attribute now
+  reach it through `build_network()`, matching the 0.8.4 change that made
+  `cluster_mmm()` return the fitted `net_mmm` object.
+
+# Nestimate 0.8.4
+
+## Transition matrix entropy
+
+* New entropy suite around the entropy rate of a transition matrix
+  (Shannon 1948; Cover & Thomas 2006, ch. 4; the transition entropy of
+  Krejtz et al. 2015 and the real-time mobile transition matrix entropy of
+  Krejtz et al. 2025):
+  - `transition_entropy()` — entropy rate H (stationary distribution from
+    the eigendecomposition at lambda = 1), stationary entropy, redundancy,
+    per-state branching entropies, all with the normalized (scale-free)
+    variants; print/summary/plot and `netobject_group` dispatch.
+  - `entropy_network()` — the exact edge-level decomposition of H: each
+    edge carries its term pi_i P_ij log(1/P_ij); weights sum to H. Displays
+    the summands of the entropy-rate equation — no new quantity is
+    estimated. `scaling = "share"` relabels edges as percentages of H
+    (sum = 100). Additional weights: `"surprisal"` (optionally
+    `scaling = "chance"`) and `"production"` (irreversibility). The result
+    is a regular `netobject` that inherits its source network's styling and
+    ships an entropy house style via cograph's `meta$splot` producer
+    contract, which states the styling outright rather than relying on
+    cograph recognising the method name (cograph >= 2.4.4).
+  - `entropy_trajectory()` — sliding-window entropy over the transition
+    stream (the windowed design of Krejtz et al. 2025): tidy per-window
+    table, per-group trajectories, loess-trend plot; the per-window
+    estimator weights rows by observed occupancy (robust to non-ergodic
+    window fragments).
+  - `entropy_bayes()` — Dirichlet-posterior estimation: credible intervals
+    for H, per-state entropies, and per-edge contributions; edges flagged
+    credible when their share of H credibly exceeds `min_share`; `$model`
+    holds the pruned stable entropy network.
+* New vignette: *Transition Matrix Entropy*.
+
+## Mixed Markov clustering contract
+
+* `cluster_mmm()` now returns the fitted `net_mmm` clustering object, retaining
+  assignments, posterior probabilities, mixing proportions, fit criteria, and
+  fitted component models. Network materialization remains the responsibility
+  of `build_network(fit)` or the one-step
+  `cluster_network(..., cluster_by = "mmm")` workflow.
+* `as_htna()` gains a `net_mmm` method. An MMM fit created from an HTNA model is
+  materialized into an `htna_group` without rerunning the MMM fit, while the
+  original actor partition and clustering diagnostics are preserved.
+
+# Nestimate 0.8.3
+
+## HTNA expansion
+
+* `as_htna()` still rebuilds one full node-level network from the original
+  source, preserving every between-cluster transition, and now completes the
+  canonical HTNA contract. Its result inherits from `htna`, `netobject`, and
+  `cograph_network`; stores character actor labels in `$node_groups$group`, a
+  factor in `$nodes$groups`, and actor order in `$actor_levels`; and retains
+  actor-order metadata on `$node_groups` for lossless partition round trips,
+  plus the legacy `$nodes$cluster` and `"cluster_members"` metadata.
+
+# Nestimate 0.8.2
+
+## Session grouping
+
+* `prepare()` now identifies sessions from the observed combinations of the
+  `actor` and `session` columns instead of `base::interaction()`. Three
+  defects are fixed:
+
+  - **Integer overflow.** `interaction()` codes a combination over the
+    marginal level space, which exceeds `.Machine$integer.max` once both
+    columns pass 46,341 distinct values. The resulting `NA`s were pasted into
+    the literal string `"NA"`, merging unrelated events into one pseudo-session.
+    On 50,000 actor-session pairs this silently discarded 14% of sessions and
+    manufactured transitions that no input sequence contained, including
+    self-loops on terminal states.
+  - **Separator collisions.** Identifiers were pasted with `" | "` before being
+    used as a grouping and metadata merge key, so `("a | b", "c")` and
+    `("a", "b | c")` collapsed into a single session. Grouping now keys on the
+    original columns; the readable label is display-only and is exposed as
+    `.session_label` in `meta_data`.
+  - **Missing identifiers.** Missing values in a grouping column silently
+    changed the session count. They now raise an error naming the columns.
+
+  Group numbering reproduces `interaction()`'s ordering, so prepared row order
+  and finite same-seed bootstrap results are unchanged.
+
+* `time_threshold = FALSE` switches session-interval splitting off, so each
+  actor (or actor-session) forms a single sequence regardless of gap length.
+  Accepted by `prepare()`, `build_network()` and `build_mcml()`.
+
+## Testing
+
+* Added a randomized grouping sweep over 1,000 seeded datasets covering
+  actor/session column counts, identifier vocabularies including separator and
+  UTF-8 cases, time on and off, tied timestamps, explicit order columns,
+  shuffled input, and time-gap structures that split, do not split, or sit
+  exactly on the threshold. Verified against ground truth and against
+  `interaction()` for row-order compatibility.
+
+# Nestimate 0.8.1
+
+## HTNA interoperability
+
+* Distance clustering and mixed-Markov clustering now preserve HTNA inputs.
+  `build_clusters()` and `cluster_mmm()` carry the node-to-actor partition into
+  network materialization, while `cluster_network()` returns an `htna_group`
+  directly. Every child remains an `htna` object with
+  `$node_groups`, `$nodes$groups`, and `$actor_levels`; clustering assignments,
+  posterior probabilities, fit diagnostics, and other outer attributes remain
+  attached.
+
+* Added extensive randomized equivalence coverage across distance clustering,
+  mixed-Markov clustering, all transition-network estimators, actor-absent
+  clusters, and HTNA-versus-plain input paths.
+
 # Nestimate 0.8.0
 
 ## Documentation

@@ -125,12 +125,13 @@ grp_dist <- Nestimate::cluster_network(net, k = 2, cluster_by = "ward.D2")
 grp_dist
 
 ## ----cluster-mmm--------------------------------------------------------------
-grp_mmm <- cluster_mmm(net, k = 2)
+fit_mmm <- cluster_mmm(net, k = 2)
+grp_mmm <- build_network(fit_mmm)
 grp_mmm
 
 ## -----------------------------------------------------------------------------
 cluster_diagnostics(grp_dist)
-cluster_diagnostics(grp_mmm)
+cluster_diagnostics(fit_mmm)
 
 ## -----------------------------------------------------------------------------
 grp_dist[["Cluster 1"]]

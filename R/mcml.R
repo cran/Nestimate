@@ -1886,7 +1886,7 @@ as_tna.default <- function(x) {
 #' Build a grouped node-level network (htna) from data and a clustering
 #'
 #' Builds the full node-level network from the original data and attaches a
-#' cluster grouping, producing a single \code{netobject} in which every actor
+#' cluster grouping, producing a single \code{htna} network in which every actor
 #' is a node and cluster membership labels the actors. This is the node-level
 #' counterpart of \code{\link{build_mcml}}: where \code{build_mcml} collapses
 #' the network to a cluster-level (macro) summary, \code{as_htna} keeps every
@@ -1898,8 +1898,9 @@ as_tna.default <- function(x) {
 #' data is filtered to within-cluster nodes), so it does not retain a faithful
 #' node-level transition network. The only faithful source of node-level
 #' between-cluster transitions is the original data. \code{as_htna()} therefore
-#' rebuilds from data via \code{\link{build_network}}; an \code{mcml} can supply
-#' the cluster membership, but the data must be provided.
+#' rebuilds from data via \code{\link{build_network}}; an \code{mcml} supplies
+#' the cluster membership and either its retained source or explicitly supplied
+#' original data supplies the transitions.
 #'
 #' The result is a genuine \code{netobject}, so it supports inference
 #' (\code{\link{bootstrap_network}}, centrality, \code{\link{permutation}})
@@ -1909,7 +1910,9 @@ as_tna.default <- function(x) {
 #' @param x Data accepted by \code{\link{build_network}} (sequence data frame,
 #'   edgelist, transition matrix, \code{netobject}, or \code{tna}); or an
 #'   \code{mcml} object, in which case the original \code{data} must also be
-#'   supplied and the mcml provides the cluster membership.
+#'   supplied and the mcml provides the node-cluster membership; or a fitted
+#'   \code{net_mmm} object, which is materialized into one HTNA per sequence
+#'   cluster using its preserved actor partition.
 #' @param clusters Cluster assignment: a named list of node-name vectors, a
 #'   per-node membership vector, or a two-column data frame. When \code{NULL}
 #'   and \code{x} carries node groups (or is an \code{mcml}), those are used.
@@ -1917,9 +1920,15 @@ as_tna.default <- function(x) {
 #'   \code{"relative"} (row-normalized transitions).
 #' @param ... Further arguments forwarded to \code{\link{build_network}}
 #'   (e.g. \code{actor}, \code{action}, \code{time} for long-format data).
-#' @return A \code{netobject} (\code{cograph_network}) over all nodes, with a
-#'   \code{cluster} column on \code{$nodes}, \code{$node_groups} populated, and
-#'   the membership stored in the \code{"cluster_members"} attribute.
+#' @return For data and \code{mcml} inputs, a single \code{htna} (also a \code{netobject} and
+#'   \code{cograph_network}) over all nodes. Cluster labels are stored as a
+#'   factor in \code{$nodes$groups} and as character values in
+#'   \code{$node_groups$group}; \code{$actor_levels} records their order and
+#'   is also attached to \code{$node_groups} for lossless partition round trips.
+#'   For compatibility, the result also retains \code{$nodes$cluster} and the
+#'   membership in the \code{"cluster_members"} attribute. A fitted
+#'   \code{net_mmm} returns an \code{htna_group}, one materialized HTNA network
+#'   per sequence cluster, while preserving the MMM diagnostics.
 #' @seealso \code{\link{build_mcml}}, \code{\link{build_network}}; plot with
 #'   \code{cograph::plot_htna()}.
 #' @export
@@ -1967,6 +1976,24 @@ as_htna.mcml <- function(x, clusters = NULL, method = "relative",
 
 #' @rdname as_htna
 #' @export
+as_htna.net_mmm <- function(x, clusters = NULL, method = "relative", ...) {
+  if (!is.null(clusters)) {
+    stop("`clusters` is not used for a fitted `net_mmm`: its sequence ",
+         "clusters are already fitted and its HTNA actor partition is ",
+         "preserved separately.", call. = FALSE)
+  }
+
+  nets <- build_network(x, method = method, ...)
+  if (!inherits(nets, "htna_group")) {
+    stop("The fitted `net_mmm` does not carry an HTNA actor partition. ",
+         "Fit `cluster_mmm()` on an HTNA object, or materialize ordinary ",
+         "cluster networks with `build_network()`.", call. = FALSE)
+  }
+  nets
+}
+
+#' @rdname as_htna
+#' @export
 as_htna.default <- function(x, clusters = NULL, method = "relative", ...) {
   net <- build_network(x, method = method, ...)
   if (!inherits(net, "netobject")) {
@@ -1999,12 +2026,22 @@ as_htna.default <- function(x, clusters = NULL, method = "relative", ...) {
          paste(missing_nodes, collapse = ", "), call. = FALSE)
   }
 
-  net$nodes$cluster <- unname(map[node_names])
+  cluster_labels <- unname(map[node_names])
+  actor_levels <- names(members)
+
+  # Complete the same partition contract produced by htna::build_htna().
+  # Keep the older `cluster` column and attribute below for callers that used
+  # as_htna() before it carried the formal htna class.
+  net$nodes$cluster <- cluster_labels
+  net$nodes$groups <- factor(cluster_labels, levels = actor_levels)
   net$node_groups <- data.frame(
-    node = node_names, group = unname(map[node_names]),
+    node = node_names, group = cluster_labels,
     stringsAsFactors = FALSE
   )
+  attr(net$node_groups, "actor_levels") <- actor_levels
+  net$actor_levels <- actor_levels
   attr(net, "cluster_members") <- members
+  class(net) <- unique(c("htna", "netobject", "cograph_network", class(net)))
   net
 }
 
