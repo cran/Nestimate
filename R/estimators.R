@@ -10,8 +10,9 @@
 #' Strips TraMineR void (\code{\%}), missing (\code{*}), empty strings,
 #' \code{"NA"}, \code{"NaN"}, and actual \code{NA}s from state values.
 #'
-#' @param x Character vector of state values.
-#' @return Character vector with void/missing markers removed.
+#' @param x Character vector (or matrix) of state values.
+#' @return Same shape as \code{x}, with void/missing markers replaced by
+#'   \code{NA}.
 #' @noRd
 .clean_states <- function(x) {
   x[x %in% .void_markers] <- NA
@@ -156,8 +157,15 @@
 #' @param id Character vector. ID column(s).
 #' @param time Character. Time column name (long format).
 #' @param cols Character vector. State columns (wide format).
+#' @param alphabet Character vector or NULL. Explicit state set; when NULL the
+#'   observed states (plus any boundary markers) are used.
+#' @param weighted Logical. Weight each transition by 1 / sequence length.
+#' @param concat Integer. Number of consecutive rows concatenated into one
+#'   sequence (wide format).
+#' @param begin_state,end_state Character or NULL. Boundary-marker labels.
 #'
-#' @return Square integer matrix with row/column names = sorted unique states.
+#' @return Square matrix with row/column names = states; integer counts, or
+#'   doubles when \code{weighted = TRUE}.
 #' @noRd
 .count_transitions <- function(data,
                                format = "auto",
@@ -1171,9 +1179,13 @@
 #'   Default: exp(-abs(ti - tj) / lambda).
 #' @param time_matrix Matrix or NULL. Custom time values per cell.
 #' @param duration Numeric vector or NULL. Per-column durations.
+#' @param alphabet Character vector or NULL. Explicit state set.
+#' @param concat Integer. Rows concatenated into one sequence (wide format).
+#' @param begin_state,end_state Character or NULL. Boundary-marker labels.
 #' @param ... Additional arguments (ignored).
 #'
-#' @return A list with matrix, nodes, directed, cleaned_data.
+#' @return A list with \code{matrix}, \code{nodes}, \code{directed},
+#'   \code{cleaned_data} and \code{initial} (initial state probabilities).
 #' @noRd
 .estimator_attention <- function(data,
                                   format = "auto",
@@ -1357,8 +1369,11 @@
   S <- prepared$S
   n_obs <- prepared$n
 
-  net <- S
-  diag(net) <- 0
+  # Math delegated to psychnets (verified exact against the former
+  # in-package computation; see delegation-baseline.R in the local
+  # equivalence suite). The input layer above stays Nestimate's own.
+  fit <- psychnets::cor_network(cor_matrix = S, n = n_obs, threshold = 0)
+  net <- fit$weights
   net[abs(net) < threshold] <- 0
 
   nodes <- colnames(net)
@@ -1406,11 +1421,13 @@
     call. = FALSE)
   }
 
-  Wi <- solve(S)
-  colnames(Wi) <- rownames(Wi) <- colnames(S)
-
-  pcor <- .precision_to_pcor(Wi, threshold)
-  colnames(pcor) <- rownames(pcor) <- colnames(S)
+  # Math delegated to psychnets (max abs delta 5.6e-17 vs the former
+  # solve(S) path; see delegation-baseline.R). The singularity guards
+  # above stay Nestimate's own so the error surface is unchanged.
+  fit <- psychnets::pcor_network(cor_matrix = S, n = n_obs, threshold = 0)
+  Wi <- fit$precision
+  pcor <- fit$weights
+  pcor[abs(pcor) < threshold] <- 0
 
   nodes <- colnames(pcor)
   list(
@@ -1439,103 +1456,6 @@
   exp(seq(log(lambda_max), log(lambda_min), length.out = nlambda))
 }
 
-
-#' Select best lambda via EBIC using pure-R glasso fits with warm starts
-#'
-#' Two-tier strategy: the path is scanned at glasso's own \code{thr = 1e-4}
-#' tolerance (fast, and enough for EBIC selection since adjacent-lambda EBIC
-#' gaps dwarf 1e-4 fit noise and the lasso zeros inactive edges exactly), then
-#' the single selected lambda is re-fit to machine precision so the returned
-#' precision matrix is the certified global optimum (KKT ~1e-9, see
-#' \code{.glasso_kkt_violation}).
-#' @noRd
-.select_ebic <- function(S, lambda_path, n, gamma, penalize_diagonal,
-                         scan_tol = 1e-4, refit_tol = 1e-8) {
-  p <- ncol(S)
-  n_lambda <- length(lambda_path)
-  ebic_vals <- numeric(n_lambda)
-
-  w_prev <- NULL
-  beta_prev <- NULL
-  best_idx <- 1L
-  best_ebic <- Inf
-  have_best <- FALSE
-
-  for (i in seq_along(lambda_path)) {
-    lam <- lambda_path[i]
-
-    # Pure-R graphical lasso (see R/glasso_pure.R), warm-started down the path,
-    # at the fast scan tolerance.
-    fit <- tryCatch(
-      .glasso_fit(
-        S = S,
-        rho = lam,
-        penalize.diagonal = penalize_diagonal,
-        tol_outer = scan_tol, tol_inner = scan_tol,
-        w_init = w_prev,
-        beta_init = beta_prev
-      ),
-      error = function(e) NULL
-    )
-
-    if (is.null(fit)) {
-      ebic_vals[i] <- Inf # nocov start
-      next # nocov end
-    }
-
-    w_prev <- fit$w
-    beta_prev <- fit$beta
-
-    log_det <- determinant(fit$wi, logarithm = TRUE)
-    if (log_det$sign <= 0) {
-      ebic_vals[i] <- Inf # nocov start
-      next # nocov end
-    }
-    log_det_val <- as.numeric(log_det$modulus)
-
-    loglik <- (n / 2) * (log_det_val - sum(diag(S %*% fit$wi)))
-    npar <- sum(abs(fit$wi[upper.tri(fit$wi)]) > 1e-10)
-    ebic_vals[i] <- -2 * loglik + npar * log(n) +
-      4 * npar * gamma * log(p)
-
-    if (ebic_vals[i] < best_ebic) {
-      best_ebic <- ebic_vals[i]
-      best_idx <- i
-      have_best <- TRUE
-    }
-  }
-
-  if (!have_best) {
-    stop("All glasso fits failed. Check your input data.") # nocov
-  }
-
-  # Tight refit at the selected lambda -> certified optimum.
-  best_wi <- .glasso_fit(
-    S = S, rho = lambda_path[best_idx],
-    penalize.diagonal = penalize_diagonal,
-    tol_outer = refit_tol, tol_inner = refit_tol * 1e-2
-  )$wi
-  colnames(best_wi) <- rownames(best_wi) <- colnames(S)
-
-  list(
-    wi        = best_wi,
-    lambda    = lambda_path[best_idx],
-    ebic      = best_ebic,
-    ebic_path = ebic_vals
-  )
-}
-
-
-#' Convert precision matrix to partial correlations (qgraph-compatible)
-#' Uses cov2cor for numerical stability, matching qgraph::wi2net.
-#' @noRd
-.wi2net <- function(x) {
-  x <- -stats::cov2cor(x)
-  diag(x) <- 0
-  # forceSymmetric: copy upper triangle to lower (matches qgraph)
-  x[lower.tri(x)] <- t(x)[lower.tri(x)]
-  x
-}
 
 .precision_to_pcor <- function(Wi, threshold) {
   d <- sqrt(diag(Wi))
@@ -1575,30 +1495,21 @@
             lambda.min.ratio < 1)
   stopifnot(is.logical(penalize.diagonal), length(penalize.diagonal) == 1)
 
-  lambda_path <- .compute_lambda_path(S, nlambda, lambda.min.ratio)
-  selected <- .select_ebic(S, lambda_path, n_obs, gamma, penalize.diagonal)
+  # Math delegated to psychnets. Default branch is exact (max abs delta 0
+  # on weights/precision/lambda/EBIC path); penalize.diagonal is within
+  # 5.6e-17; refit = TRUE maps to psychnets refit = "unregularized" and is
+  # exact. See delegation-baseline.R. The input layer stays Nestimate's own.
+  fit <- psychnets::ebic_glasso(
+    cor_matrix = S, n = n_obs, gamma = gamma,
+    nlambda = as.integer(nlambda), lambda_min_ratio = lambda.min.ratio,
+    penalize_diagonal = penalize.diagonal,
+    refit = if (isTRUE(refit)) "unregularized" else TRUE,
+    native = TRUE
+  )
 
-  wi <- selected$wi
-
-  if (isTRUE(refit)) {
-    # Refit with zero-constrained unregularized glasso for unbiased estimates
-    net_pattern <- -.wi2net(wi)
-    zero_idx <- which(net_pattern == 0 & upper.tri(net_pattern), arr.ind = TRUE)
-    if (nrow(zero_idx) > 0L) {
-      refit_result <- .glasso_fit(
-        S, rho = 0, zero = zero_idx,
-        penalize.diagonal = penalize.diagonal)
-    } else {
-      refit_result <- .glasso_fit( # nocov start
-        S, rho = 0,
-        penalize.diagonal = penalize.diagonal) # nocov end
-    }
-    wi <- refit_result$wi
-  }
-
-  pcor <- .wi2net(wi)
+  wi <- fit$precision
+  pcor <- fit$weights
   pcor[abs(pcor) < threshold] <- 0
-  colnames(pcor) <- rownames(pcor) <- colnames(S)
 
   nodes <- colnames(pcor)
   list(
@@ -1608,10 +1519,10 @@
     cleaned_data = prepared$mat,
     precision_matrix = wi,
     cor_matrix = S,
-    lambda_selected = selected$lambda,
-    ebic_selected = selected$ebic,
-    lambda_path = lambda_path,
-    ebic_path = selected$ebic_path,
+    lambda_selected = fit$lambda,
+    ebic_selected = fit$ebic,
+    lambda_path = fit$lambda_path,
+    ebic_path = fit$ebic_path,
     gamma = gamma,
     n = n_obs,
     p = p
@@ -1712,135 +1623,6 @@
 }
 
 
-#' Numerically stable log(1 + exp(x))
-#'
-#' Avoids overflow for large x and precision loss for small x.
-#'
-#' @param x Numeric vector.
-#' @return Numeric vector of log(1 + exp(x)).
-#' @noRd
-.log1pexp <- function(x) {
-  out <- numeric(length(x))
-  big <- x > 20
-  small <- x < -20
-  mid <- !big & !small
-  out[big] <- x[big]
-  out[small] <- exp(x[small])
-  out[mid] <- log1p(exp(x[mid]))
-  out
-}
-
-
-#' Nodewise L1-penalized logistic regression with EBIC selection
-#'
-#' Core algorithm for Ising model estimation (IsingFit approach).
-#' For each node j, fits L1-penalized logistic regression of \code{X[,j]} on \code{X[,-j]}
-#' using glmnet, then selects lambda via EBIC.
-#'
-#' @param mat Numeric matrix of binary (0/1) values (n x p).
-#' @param gamma Numeric. EBIC hyperparameter (0 = BIC, higher = sparser).
-#' @param nlambda Integer. Number of lambda values in the regularization path.
-#'
-#' @return A list with:
-#'   \describe{
-#'     \item{coef_matrix}{p x p asymmetric coefficient matrix (row j = regression
-#'       of node j on others).}
-#'     \item{thresholds}{Numeric vector of intercepts (length p).}
-#'     \item{lambda_selected}{Numeric vector of selected lambda per node.}
-#'   }
-#' @noRd
-.ising_nodewise_ebic <- function(mat, gamma = 0.25, nlambda = 100L) {
-  n <- nrow(mat)
-  p <- ncol(mat)
-  n_predictors <- p - 1L
-  node_names <- colnames(mat)
-
-  coef_matrix <- matrix(0, nrow = p, ncol = p,
-                         dimnames = list(node_names, node_names))
-  thresholds <- numeric(p)
-  names(thresholds) <- node_names
-  lambda_selected <- numeric(p)
-  names(lambda_selected) <- node_names
-
-  for (j in seq_len(p)) {
-    y <- mat[, j]
-    X <- mat[, -j, drop = FALSE]
-
-    # Fit L1-penalized logistic regression
-    fit <- glmnet::glmnet(X, y, family = "binomial", nlambda = nlambda)
-
-    # Compute EBIC for each lambda in the path
-    # Nodewise EBIC (IsingFit): -2*loglik + k*log(n) + 2*gamma*k*log(p-1)
-    n_lam <- length(fit$lambda)
-    ebic_vals <- numeric(n_lam)
-
-    for (k in seq_len(n_lam)) {
-      beta_k <- fit$beta[, k]
-      intercept_k <- fit$a0[k]
-
-      # Linear predictor
-      eta <- as.vector(X %*% beta_k) + intercept_k
-
-      # Log-likelihood: sum(y * eta - log(1 + exp(eta)))
-      loglik <- sum(y * eta - .log1pexp(eta))
-
-      # Number of nonzero coefficients (excluding intercept)
-      n_edges <- sum(abs(beta_k) > 0)
-
-      # Nodewise EBIC = -2*loglik + k*log(n) + 2*gamma*k*log(p-1)
-      ebic_vals[k] <- -2 * loglik + n_edges * log(n) +
-        2 * n_edges * gamma * log(n_predictors)
-    }
-
-    # Select lambda minimizing EBIC
-    best_idx <- which.min(ebic_vals)
-    best_beta <- fit$beta[, best_idx]
-    best_intercept <- fit$a0[best_idx]
-
-    # Place coefficients in the row for node j
-    other_idx <- seq_len(p)[-j]
-    coef_matrix[j, other_idx] <- as.vector(best_beta)
-    thresholds[j] <- best_intercept
-    lambda_selected[j] <- fit$lambda[best_idx]
-  }
-
-  list(
-    coef_matrix = coef_matrix,
-    thresholds = thresholds,
-    lambda_selected = lambda_selected
-  )
-}
-
-
-#' Symmetrize asymmetric Ising coefficient matrix
-#'
-#' @param coef_matrix p x p asymmetric coefficient matrix from nodewise
-#'   regression.
-#' @param rule Character. Symmetrization rule: \code{"AND"} (default) or
-#'   \code{"OR"}.
-#'
-#' @return Symmetric p x p weight matrix with zero diagonal.
-#' @noRd
-.symmetrize_ising <- function(coef_matrix, rule = "AND") {
-  p <- nrow(coef_matrix)
-  sym <- matrix(0, nrow = p, ncol = p,
-                dimnames = dimnames(coef_matrix))
-
-  if (rule == "AND") {
-    # Edge only if BOTH directions nonzero; weight = average
-    both_nonzero <- (coef_matrix != 0) & (t(coef_matrix) != 0)
-    sym[both_nonzero] <- (coef_matrix[both_nonzero] +
-                            t(coef_matrix)[both_nonzero]) / 2
-  } else if (rule == "OR") {
-    # Simple average of both directions (matches IsingFit)
-    sym <- (coef_matrix + t(coef_matrix)) / 2
-  }
-
-  diag(sym) <- 0
-  sym
-}
-
-
 #' Ising Model Network Estimator
 #'
 #' Estimates an Ising model network using nodewise L1-penalized logistic
@@ -1866,12 +1648,10 @@
 #'     \item{directed}{Logical: always FALSE.}
 #'     \item{cleaned_data}{Cleaned binary data matrix.}
 #'     \item{thresholds}{Numeric vector of node thresholds (intercepts).}
-#'     \item{asymm_weights}{Asymmetric coefficient matrix before symmetrization.}
 #'     \item{rule}{Symmetrization rule used.}
 #'     \item{gamma}{EBIC hyperparameter used.}
 #'     \item{n}{Sample size.}
 #'     \item{p}{Number of variables.}
-#'     \item{lambda_selected}{Per-node selected lambda values.}
 #'   }
 #'
 #' @references
@@ -1901,30 +1681,28 @@
   stopifnot(is.integer(nlambda), length(nlambda) == 1, nlambda >= 2L)
   rule <- match.arg(rule, c("AND", "OR"))
 
-  # Prepare input
+  # Prepare input: listwise NA removal and the binary (0/1) check
   prepared <- .prepare_ising_input(data, id_col = id_col)
   mat <- prepared$mat
-  n <- prepared$n
-  p <- prepared$p
   nodes <- prepared$nodes
 
-  # Run nodewise logistic regression with EBIC
-  nodewise <- .ising_nodewise_ebic(mat, gamma = gamma, nlambda = nlambda)
-
-  # Symmetrize
-  sym_matrix <- .symmetrize_ising(nodewise$coef_matrix, rule = rule)
+  # Nodewise L1 logistic regression + EBIC + symmetrization is owned by
+  # psychnets. native = FALSE selects its glmnet engine, which reproduces
+  # Nestimate's former in-package estimator exactly.
+  fit <- psychnets::ising_fit(as.data.frame(mat), gamma = gamma, rule = rule,
+                              nlambda = nlambda, native = FALSE)
+  sym_matrix <- fit$weights
+  dimnames(sym_matrix) <- list(nodes, nodes)
 
   list(
     matrix = sym_matrix,
     nodes = nodes,
     directed = FALSE,
     cleaned_data = mat,
-    thresholds = nodewise$thresholds,
-    asymm_weights = nodewise$coef_matrix,
+    thresholds = stats::setNames(fit$thresholds, nodes),
     rule = rule,
     gamma = gamma,
-    n = n,
-    p = p,
-    lambda_selected = nodewise$lambda_selected
+    n = prepared$n,
+    p = prepared$p
   )
 }

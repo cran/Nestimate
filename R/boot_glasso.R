@@ -10,11 +10,14 @@
 #' to bootnet with richer output.
 #'
 #' @param x A data frame, numeric matrix (observations x variables), or
-#'   a \code{netobject} with \code{method = "glasso"}.
+#'   a \code{netobject} with \code{method = "glasso"}. For the \code{print()} and \code{plot()} methods: an object of class \code{boot_glasso}.
 #' @param iter Integer. Number of nonparametric bootstrap iterations
 #'   (default: 1000).
-#' @param cs_iter Integer. Number of case-dropping iterations per drop
-#'   proportion (default: 500).
+#' @param cs_iter Integer. Total number of case-dropping iterations
+#'   (default: 500). Following \pkg{bootnet}, each iteration draws one
+#'   drop proportion at random from \code{cs_drop}, so the iterations are
+#'   spread across the proportions rather than repeated \code{cs_iter}
+#'   times at each one.
 #' @param cs_drop Numeric vector. Drop proportions for CS-coefficient
 #'   computation (default: \code{seq(0.1, 0.9, by = 0.1)}).
 #' @param alpha Numeric. Significance level for CIs (default: 0.05).
@@ -60,9 +63,13 @@
 #'     ci_upper) per centrality measure.}
 #'   \item{cs_coefficient}{Named numeric vector of CS-coefficients per
 #'     centrality measure.}
-#'   \item{cs_data}{Data frame of case-dropping correlations (drop_prop,
-#'     measure, correlation).}
-#'   \item{edge_diff_p}{Symmetric matrix of pairwise edge difference p-values.}
+#'   \item{cs_data}{Data frame of case-dropping results, one row per
+#'     drop proportion by measure, with columns \code{drop_prop},
+#'     \code{measure}, \code{mean_cor}, \code{prop_above} (fraction of
+#'     that proportion's iterations correlating above 0.7) and
+#'     \code{n_samples} (iterations that landed on that proportion).}
+#'   \item{edge_diff_p}{Symmetric matrix of pairwise edge difference
+#'     p-values; \code{NULL} when the network has more than 500 edges.}
 #'   \item{centrality_diff_p}{Named list of symmetric p-value matrices per
 #'     centrality measure.}
 #'   \item{predictability_ci}{Data frame of node predictability CIs (node,
@@ -97,11 +104,20 @@
 #' mat <- matrix(rnorm(60), ncol = 4)
 #' colnames(mat) <- LETTERS[1:4]
 #' net <- build_network(as.data.frame(mat), method = "glasso")
-#' boot <- boot_glasso(net, iter = 100, cs_iter = 50, seed = 42,
+#' # iter = 20 keeps the example fast; a real analysis uses 1000 or more.
+#' boot <- boot_glasso(net, iter = 20, cs_iter = 10, seed = 42,
 #'   centrality = c("strength", "expected_influence"))
 #' print(boot)
 #' summary(boot, type = "edges")
 #' }
+#'
+#' @references
+#' Epskamp, S., Borsboom, D., & Fried, E. I. (2018). Estimating
+#' psychological networks and their accuracy: A tutorial paper.
+#' \emph{Behavior Research Methods} 50(1), 195-212.
+#' \doi{10.3758/s13428-017-0862-1}
+#' (source of the CS-coefficient and of the case-dropping,
+#' edge-difference and centrality-difference procedures reproduced here.)
 #'
 #' @seealso \code{\link{build_network}}, \code{\link{bootstrap_network}}
 #'
@@ -201,22 +217,25 @@ boot_glasso <- function(x,
   t_start <- proc.time()["elapsed"]
 
   # ---- Phase 1: Original estimation ----
+  # Solver delegated to psychnets. The lambda path is fixed once from the
+  # original S (fit_orig$lambda_path, identical to the former
+  # .compute_lambda_path) and reused across every resample; refit = FALSE
+  # reproduces the former select-from-path (no tight refit) semantics
+  # exactly (max abs delta 0 on the precision matrix).
   S <- cor(data_mat, method = cor_method)
-  lambda_path <- .compute_lambda_path(S, nlambda, 0.01)
 
-  gp_orig <- tryCatch(
-    .glassopath_fit(S = S, rholist = lambda_path,
-                    penalize.diagonal = FALSE),
+  fit_orig <- tryCatch(
+    psychnets::ebic_glasso(cor_matrix = S, n = n, gamma = gamma,
+                           nlambda = as.integer(nlambda),
+                           lambda_min_ratio = 0.01,
+                           refit = FALSE, native = TRUE),
     error = function(e) stop("glassopath failed on original data: ",
                               e$message, call. = FALSE)
   )
 
-  Wi_orig <- .select_ebic_from_path(gp_orig, S, n, gamma, p, lambda_path)
-  if (is.null(Wi_orig)) {
-    stop("EBIC selection failed on original data.", call. = FALSE) # nocov
-  }
-
-  lambda_selected <- .bg_find_selected_lambda(gp_orig, Wi_orig, lambda_path)
+  lambda_path <- fit_orig$lambda_path
+  Wi_orig <- fit_orig$precision
+  lambda_selected <- fit_orig$lambda
 
   pcor_orig <- .precision_to_pcor(Wi_orig, threshold = 0)
   pcor_orig <- (pcor_orig + t(pcor_orig)) / 2
@@ -413,7 +432,7 @@ boot_glasso <- function(x,
 
 # ---- Internal helpers ----
 
-#' Single bootstrap iteration: cor -> glassopath -> EBIC -> pcor -> centrality
+#' Single bootstrap iteration: cor -> EBIC-glasso (psychnets) -> pcor -> centrality
 #' @noRd
 .bg_estimate_once <- function(data_mat, p, gamma, nlambda, penalize_diag,
                                cor_method, lambda_path, centrality,
@@ -431,15 +450,20 @@ boot_glasso <- function(x,
   # columns in bootstrap sample)
   if (any(is.na(S_boot))) return(NULL) # nocov
 
-  gp <- tryCatch(
-    .glassopath_fit(S = S_boot, rholist = lambda_path,
-                    penalize.diagonal = penalize_diag),
+  # Solver delegated to psychnets; the fixed lambda_path from the original
+  # S is reused (never recomputed from the resample), refit = FALSE keeps
+  # the former select-from-path semantics. Iteration-level failures stay
+  # NULL by the bootstrap contract (they are counted and reported upstream).
+  fit <- tryCatch(
+    psychnets::ebic_glasso(cor_matrix = S_boot, n = n_boot, gamma = gamma,
+                           lambda_path = lambda_path,
+                           penalize_diagonal = penalize_diag,
+                           refit = FALSE, native = TRUE),
     error = function(e) NULL
   )
-  if (is.null(gp)) return(NULL) # nocov
+  if (is.null(fit)) return(NULL) # nocov
 
-  Wi <- .select_ebic_from_path(gp, S_boot, n_boot, gamma, p, lambda_path)
-  if (is.null(Wi)) return(NULL) # nocov
+  Wi <- fit$precision
 
   pcor <- .precision_to_pcor(Wi, threshold = 0)
   pcor <- (pcor + t(pcor)) / 2
@@ -459,16 +483,18 @@ boot_glasso <- function(x,
 
 #' Compute requested centrality measures
 #'
-#' strength and expected_influence use rowSums (fast, no dependencies).
-#' closeness and betweenness require a user-supplied \code{centrality_fn}.
+#' All four built-ins are dependency-free: strength and expected_influence
+#' use rowSums; betweenness and closeness use the internal Floyd-Warshall
+#' routines on the absolute partial correlations (undirected, inverted
+#' weights). Only measures outside those four need a \code{centrality_fn}.
 #'
 #' @param pcor Partial correlation matrix.
 #' @param p Number of nodes.
 #' @param nodes Character vector of node names.
 #' @param measures Character vector of requested measures.
 #' @param centrality_fn Optional function taking a weight matrix and
-#'   returning a named list of centrality vectors. Required for
-#'   measures other than strength/expected_influence.
+#'   returning a named list of centrality vectors. Required only for
+#'   measures outside strength/expected_influence/betweenness/closeness.
 #' @noRd
 .bg_compute_centrality <- function(pcor, p, nodes, measures,
                                     centrality_fn = NULL) {
@@ -640,7 +666,8 @@ boot_glasso <- function(x,
 #' prop_threshold (default 0.95).
 #'
 #' @param cors_per_prop List of numeric vectors, one per drop proportion.
-#'   Each vector contains per-iteration Spearman correlations.
+#'   Each vector contains the per-iteration Pearson correlations with the
+#'   original centralities (matching bootnet::cor0's default).
 #' @param cs_drop Numeric vector of drop proportions.
 #' @param cor_threshold Numeric. Correlation threshold (default 0.7).
 #' @param prop_threshold Numeric. Required proportion above threshold
@@ -663,19 +690,6 @@ boot_glasso <- function(x,
 }
 
 
-#' Find the selected lambda value
-#' @noRd
-.bg_find_selected_lambda <- function(gp, Wi_orig, lambda_path) {
-  # Find which lambda in the path produced the selected Wi
-  for (k in seq_along(lambda_path)) {
-    wi_k <- gp$wi[, , k]
-    if (max(abs(wi_k - Wi_orig)) < 1e-8) {
-      return(lambda_path[k])
-    }
-  }
-  # Fallback: return NA
-  NA_real_
-}
 
 
 #' Pairwise edge difference p-values
@@ -793,27 +807,14 @@ boot_glasso <- function(x,
 
 # ---- S3 Methods ----
 
-#' Print Method for boot_glasso
-#'
-#' @param x A \code{boot_glasso} object.
-#' @param ... Additional arguments (ignored).
-#'
-#' @return The input object, invisibly.
-#'
-#' @examples
-#' set.seed(1)
-#' dat <- as.data.frame(matrix(rnorm(60), ncol = 3))
-#' bg <- boot_glasso(dat, iter = 10, cs_iter = 5, centrality = "strength")
-#' print(bg)
-#' \donttest{
-#' set.seed(42)
-#' mat <- matrix(rnorm(60), ncol = 4)
-#' colnames(mat) <- LETTERS[1:4]
-#' boot <- boot_glasso(as.data.frame(mat), iter = 20, cs_iter = 10,
-#'   centrality = "strength", seed = 42)
-#' print(boot)
-#' }
-#'
+#' @rdname boot_glasso
+#' @param ... In \code{plot.boot_glasso()}: Additional arguments passed to plotting functions. For \code{type = "edge_diff"} and \code{type = "centrality_diff"}, accepts \code{order}: \code{"sample"} (default, sorted by value) or \code{"id"} (alphabetical). In \code{print.boot_glasso()} and \code{summary.boot_glasso()}: Additional arguments (ignored).
+#' @param object For the \code{summary()} method: an object of class \code{boot_glasso}.
+#' @param type In \code{summary.boot_glasso()}: Character. Summary type: \code{"edges"} (default), \code{"centrality"}, \code{"cs"}, \code{"predictability"}, or \code{"all"}. In \code{plot.boot_glasso()}: Character. Plot type: \code{"edges"} (default), \code{"stability"}, \code{"edge_diff"}, \code{"centrality_diff"}, or \code{"inclusion"}.
+#' @param measure Character. Centrality measure for \code{type = "centrality_diff"} (default: first available measure).
+#' @return In \code{print.boot_glasso()}: The input object, invisibly.
+#' @return In \code{summary.boot_glasso()}: For \code{type = "edges"}, the \code{edge_ci} data frame (\code{edge}, \code{weight}, \code{ci_lower}, \code{ci_upper}, \code{inclusion}) ordered by decreasing absolute weight; for \code{"cs"} the \code{cs_data} data frame; for \code{"predictability"} the \code{predictability_ci} data frame; for \code{"centrality"} a named list of one data frame per measure (\code{node}, \code{value}, \code{ci_lower}, \code{ci_upper}); for \code{"all"} a named list holding all four.
+#' @return In \code{plot.boot_glasso()}: A \code{ggplot} object (returned, and so printed when the call is made at the top level).
 #' @export
 print.boot_glasso <- function(x, ...) {
   cat(sprintf(
@@ -854,30 +855,7 @@ print.boot_glasso <- function(x, ...) {
 }
 
 
-#' Summary Method for boot_glasso
-#'
-#' @param object A \code{boot_glasso} object.
-#' @param type Character. Summary type: \code{"edges"} (default),
-#'   \code{"centrality"}, \code{"cs"}, \code{"predictability"}, or
-#'   \code{"all"}.
-#' @param ... Additional arguments (ignored).
-#'
-#' @return A data frame or list of data frames depending on \code{type}.
-#'
-#' @examples
-#' set.seed(1)
-#' dat <- as.data.frame(matrix(rnorm(60), ncol = 3))
-#' bg <- boot_glasso(dat, iter = 10, cs_iter = 5, centrality = "strength")
-#' summary(bg, type = "edges")
-#' \donttest{
-#' set.seed(42)
-#' mat <- matrix(rnorm(60), ncol = 4)
-#' colnames(mat) <- LETTERS[1:4]
-#' boot <- boot_glasso(as.data.frame(mat), iter = 20, cs_iter = 10,
-#'   centrality = "strength", seed = 42)
-#' summary(boot, type = "edges")
-#' }
-#'
+#' @rdname boot_glasso
 #' @export
 summary.boot_glasso <- function(object, type = "edges", ...) {
   type <- match.arg(type, c("edges", "centrality", "cs", "predictability",
@@ -912,38 +890,9 @@ summary.boot_glasso <- function(object, type = "edges", ...) {
 }
 
 
-#' Plot Method for boot_glasso
-#'
-#' @description
-#' Plots bootstrap results for GLASSO networks.
-#'
-#' @param x A \code{boot_glasso} object.
-#' @param type Character. Plot type: \code{"edges"} (default),
-#'   \code{"stability"}, \code{"edge_diff"}, \code{"centrality_diff"},
-#'   or \code{"inclusion"}.
-#' @param measure Character. Centrality measure for
-#'   \code{type = "centrality_diff"} (default: first available measure).
-#' @param ... Additional arguments passed to plotting functions. For
-#'   \code{type = "edge_diff"} and \code{type = "centrality_diff"},
-#'   accepts \code{order}: \code{"sample"} (default, sorted by value)
-#'   or \code{"id"} (alphabetical).
-#'
-#' @return A \code{ggplot} object, invisibly.
-#'
-#' @examples
-#' set.seed(1)
-#' dat <- as.data.frame(matrix(rnorm(60), ncol = 3))
-#' bg <- boot_glasso(dat, iter = 10, cs_iter = 5, centrality = "strength")
-#' plot(bg, type = "edges")
-#' \donttest{
-#' set.seed(42)
-#' mat <- matrix(rnorm(60), ncol = 4)
-#' colnames(mat) <- LETTERS[1:4]
-#' boot <- boot_glasso(as.data.frame(mat), iter = 20, cs_iter = 10,
-#'   centrality = "strength", seed = 42)
-#' plot(boot, type = "edges")
-#' }
-#'
+#' @rdname boot_glasso
+#' @section Methods:
+#' * \code{plot.boot_glasso()}: Plots bootstrap results for GLASSO networks.
 #' @export
 plot.boot_glasso <- function(x, type = "edges", measure = NULL, ...) {
   type <- match.arg(type, c("edges", "stability", "edge_diff",

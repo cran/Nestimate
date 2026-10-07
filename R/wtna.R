@@ -28,10 +28,18 @@
 #'   computation. If NULL, treats all rows as one group. Default: NULL.
 #'
 #' @return For \code{method = "transition"} or \code{"cooccurrence"}: a
-#'   \code{netobject} (see \code{\link{build_network}}).
+#'   \code{c("netobject", "cograph_network")} object (see
+#'   \code{\link{build_network}}) with \code{method} set to
+#'   \code{"wtna_transition"} or \code{"wtna_cooccurrence"},
+#'   \code{directed = TRUE} only for transitions, and the windowing
+#'   settings (\code{type}, \code{window_size}, \code{mode}, \code{codes},
+#'   \code{actor}) recorded in \code{$params}. Transition networks also
+#'   carry \code{$initial}, the per-actor-averaged initial state
+#'   distribution.
 #'
-#'   For \code{method = "both"}: a \code{wtna_mixed} object with elements
-#'   \code{$transition} and \code{$cooccurrence}, each a \code{netobject}.
+#'   For \code{method = "both"}: a \code{wtna_mixed} object - a list with
+#'   elements \code{$transition} and \code{$cooccurrence} (each a
+#'   \code{netobject} as above) and \code{$method = "wtna_both"}.
 #'
 #' @details
 #' \strong{Transitions}: Uses \code{crossprod(X[-n,], X[-1,])} to count
@@ -538,26 +546,10 @@ wtna <- function(data,
 
 
 
-#' Print Method for wtna_mixed
-#'
-#' @param x A \code{wtna_mixed} object.
-#' @param ... Additional arguments (ignored).
-#' @return The input object, invisibly.
-#' @examples
-#' oh <- matrix(c(1,0,0, 0,1,0, 0,0,1, 1,0,0), nrow = 4, byrow = TRUE,
-#'              dimnames = list(NULL, c("A","B","C")))
-#' mixed <- wtna(oh, method = "both")
-#' print(mixed)
-#'
-#' \donttest{
-#' oh <- data.frame(
-#'   A = c(1,0,1,0,1,0,1,0),
-#'   B = c(0,1,0,1,0,1,0,1),
-#'   C = c(1,1,0,0,1,1,0,0)
-#' )
-#' mixed <- wtna(oh, method = "both")
-#' print(mixed)
-#' }
+#' @rdname wtna
+#' @param x For the \code{print()} method: an object of class \code{wtna_mixed}.
+#' @param ... In \code{print.wtna_mixed()}: Additional arguments (ignored).
+#' @return In \code{print.wtna_mixed()}: The input object, invisibly.
 #' @export
 print.wtna_mixed <- function(x, ...) {
   cat("Mixed Window TNA (transition + co-occurrence)\n")

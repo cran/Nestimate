@@ -2,6 +2,7 @@
 % Please edit documentation in R/certainty.R
 \name{certainty}
 \alias{certainty}
+\alias{print.net_certainty}
 \title{Analytic certainty of network edges (Bayesian Dirichlet-Multinomial)}
 \usage{
 certainty(
@@ -12,17 +13,19 @@ certainty(
   consistency_range = c(0.75, 1.25),
   edge_threshold = NULL
 )
+
+\method{print}{net_certainty}(x, ...)
 }
 \arguments{
 \item{x}{A \code{netobject} from \code{\link{build_network}} using a
 transition-probability method (\code{"relative"} / \code{"tna"}), or a
-\code{netobject_group}.}
+\code{netobject_group}. For the \code{print()} method: an object of class \code{net_certainty}.}
 
 \item{prior}{Numeric. Dirichlet prior concentration added to every cell
 (default \code{0.5}, the Jeffreys prior).}
 
 \item{ci_level}{Numeric in (0,1). Tail level for credible intervals and the
-stability decision (default \code{0.05}, i.e. a 95\\% interval). Named to
+stability decision (default \code{0.05}, i.e. a 95\% interval). Named to
 match \code{bootstrap_network()}.}
 
 \item{inference}{Character. \code{"stability"} (default) tests whether the
@@ -36,15 +39,25 @@ for stability inference (default \code{c(0.75, 1.25)}).}
 \item{edge_threshold}{Numeric or NULL. Fixed threshold for
 \code{inference = "threshold"}. If NULL, defaults to the 10th percentile of
 non-zero edge weights.}
+
+\item{...}{In \code{print.net_certainty()}: Additional arguments (ignored).}
 }
 \value{
-An object of class \code{c("net_certainty", "net_bootstrap")} with the
-same fields as \code{\link{bootstrap_network}}: \code{original}, \code{mean},
+For a \code{netobject}: an object of class
+\code{c("net_certainty", "net_bootstrap")} with the same fields as
+\code{\link{bootstrap_network}}: \code{original}, \code{mean},
 \code{sd}, \code{p_values}, \code{significant}, \code{ci_lower},
 \code{ci_upper}, \code{cr_lower}, \code{cr_upper}, \code{summary},
 \code{model}, \code{method}, \code{params}, \code{ci_level},
 \code{inference}, \code{consistency_range}, \code{edge_threshold}, plus
-\code{prior} and \code{iter = NA} (no iterations).
+\code{prior}, \code{ci_method = "analytic"} and \code{iter = NA} (no
+iterations).
+
+For a \code{netobject_group}: a named list of those objects, one per
+constituent network, of class
+\code{c("net_certainty_group", "net_bootstrap_group", "list")}.
+
+In \code{print.net_certainty()}: The input object, invisibly.
 }
 \description{
 Closed-form alternative to \code{\link{bootstrap_network}} for transition

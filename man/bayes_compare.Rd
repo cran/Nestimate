@@ -2,6 +2,11 @@
 % Please edit documentation in R/bayes_compare.R
 \name{bayes_compare}
 \alias{bayes_compare}
+\alias{print.net_bayes}
+\alias{summary.net_bayes}
+\alias{plot.net_bayes}
+\alias{print.net_bayes_group}
+\alias{summary.net_bayes_group}
 \title{Bayesian Dirichlet-Multinomial comparison of two transition networks}
 \usage{
 bayes_compare(
@@ -14,12 +19,22 @@ bayes_compare(
   bound_threshold = 0.001,
   seed = NULL
 )
+
+\method{print}{net_bayes}(x, ...)
+
+\method{summary}{net_bayes}(object, ...)
+
+\method{plot}{net_bayes}(x, significant_only = TRUE, title = NULL, ...)
+
+\method{print}{net_bayes_group}(x, ...)
+
+\method{summary}{net_bayes_group}(object, ...)
 }
 \arguments{
 \item{x}{A \code{netobject} (from \code{\link{build_network}}), a
 \code{netobject_group}, an \code{mcml} object, or a
 \code{\link{net_edge_betweenness}} object. Must use a transition
-method (\code{"relative"} / \code{"frequency"} and their aliases).}
+method (\code{"relative"} / \code{"frequency"} and their aliases). For the \code{print()} and \code{plot()} methods: an object of class \code{net_bayes} or \code{net_bayes_group}.}
 
 \item{y}{A second object of the same kind as \code{x}, or \code{NULL}.
 When \code{x} is a \code{netobject_group} and \code{y} is \code{NULL},
@@ -43,6 +58,14 @@ credible-interval bound nearest zero exceeds this in absolute value
 but negligibly small.}
 
 \item{seed}{Integer or NULL. RNG seed for reproducible credible intervals.}
+
+\item{...}{In \code{plot.net_bayes()}: Additional arguments passed to \code{cograph::splot()} when cograph is available. In \code{print.net_bayes()}, \code{print.net_bayes_group()}, \code{summary.net_bayes()} and \code{summary.net_bayes_group()}: Additional arguments (ignored).}
+
+\item{object}{For the \code{summary()} method: an object of class \code{net_bayes} or \code{net_bayes_group}.}
+
+\item{significant_only}{Logical. Show only credibly-different edges (default \code{TRUE}).}
+
+\item{title}{Optional plot title.}
 }
 \value{
 An object of class
@@ -58,14 +81,18 @@ the analogue of the permutation observed difference.}
 \item{difference_matrix}{Alias of \code{diff} for cograph
 \code{netdifference} helpers.}
 \item{diff_sig}{Difference where \code{sig}, else 0.}
-\item{p_values}{P-value matrix (the two-sided Bayesian p-equivalent).}
+\item{p_values}{The two-sided Bayesian p-equivalent, in the field a
+\code{net_permutation} consumer reads as p-values (see
+\code{p_bayes}).}
 \item{effect_size}{Posterior mean difference over its posterior SD.}
 \item{ci_lower, ci_upper}{Credible-interval bound matrices.}
 \item{p_difference}{Probability of the difference: the share of
 posterior mass on the dominant side of zero, in \eqn{[0.5, 1]}
 (\eqn{P(\mathrm{High} > \mathrm{Low})} for a positive difference).}
-\item{p_bayes}{Alias of \code{p_values} (two-sided Bayesian p,
-\eqn{2(1-\mathrm{p\_difference})}).}
+\item{p_bayes}{Alias of \code{p_values}: the two-sided Bayesian
+p-\emph{equivalent} \eqn{2(1-\mathrm{p\_difference})}. It summarises
+posterior mass, not a frequentist tail probability, so it is not a
+p-value and should not be reported as one.}
 \item{prob_x, prob_y}{Posterior mean transition-probability matrices.}
 \item{sig}{Logical significance matrix (CI excludes zero, mean and
 nearest bound exceed their thresholds).}
@@ -78,6 +105,14 @@ nearest bound exceed their thresholds).}
 \code{adjust = "none"}).}
 \item{prior, draws, ci, mean_threshold, bound_threshold}{Bayesian settings.}
 }
+
+In \code{print.net_bayes()} and \code{print.net_bayes_group()}: The input object, invisibly.
+
+In \code{summary.net_bayes()}: A data frame with edge-level posterior differences and intervals.
+
+In \code{plot.net_bayes()}: Invisibly, the cograph network returned by \code{cograph::splot()} when cograph is available; otherwise a fallback \code{ggplot} object.
+
+In \code{summary.net_bayes_group()}: A combined data frame with a \code{comparison} column.
 }
 \description{
 Compares two transition networks estimated by \code{\link{build_network}}
@@ -110,6 +145,13 @@ posterior mean betweenness matrices, and \code{observed_diff} the plug-in
 difference of the two input networks. Both inputs must use the same
 \code{invert} setting.
 }
+\section{Methods}{
+
+\itemize{
+\item \code{plot.net_bayes()}: Draws a differential transition network as a directed chord diagram. Edge colour encodes the signed posterior mean difference (\code{x} stronger vs \code{y} stronger) and edge width its magnitude.
+}
+}
+
 \examples{
 s1 <- data.frame(V1 = c("A","B","C"), V2 = c("B","C","A"))
 s2 <- data.frame(V1 = c("A","C","B"), V2 = c("C","B","A"))

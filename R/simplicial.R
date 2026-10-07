@@ -34,13 +34,14 @@
 #' object so \code{persistent_homology()} can read them directly.
 #'
 #' @param x A square matrix, \code{tna}, \code{netobject},
-#'   \code{net_hon}, \code{net_hypa}, or \code{net_mogen}.
+#'   \code{net_hon}, \code{net_hypa}, or \code{net_mogen}. For the \code{print()} and \code{plot()} methods: an object of class \code{simplicial_complex}.
 #' @param type Construction type: \code{"clique"} (default), \code{"pathway"},
 #'   or \code{"vr"} (alias \code{"rips"}).
 #' @param threshold For \code{type = "clique"}: minimum non-zero absolute
 #'   edge weight to include an edge (default 0). Edges below this are
 #'   ignored; zero-weight non-edges are never included. Ignored for
-#'   \code{type = "vr"} - use \code{max_scale} instead.
+#'   \code{type = "vr"} (use \code{max_scale} instead) and for
+#'   \code{type = "pathway"}.
 #' @param max_dim Maximum simplex dimension (default 10). Must be a single
 #'   non-negative integer. A k-simplex has k+1 nodes.
 #' @param max_pathways For \code{type = "pathway"}: maximum number of
@@ -54,10 +55,29 @@
 #'   in the filtration. \code{NULL} (default) uses \code{max(d)}.
 #' @param ... Additional arguments passed to \code{build_hon()} when
 #'   \code{x} is a \code{tna}/\code{netobject} with \code{type = "pathway"}.
-#'
-#' @return A \code{simplicial_complex} object. For \code{type = "vr"} an
-#'   additional \code{$filtration} numeric vector is attached (parallel to
-#'   \code{$simplices}).
+#' In \code{plot.simplicial_complex()}: Ignored. In \code{print.simplicial_complex()}: Additional arguments (unused).
+#' @return A \code{simplicial_complex} object - a list with:
+#' \describe{
+#'   \item{simplices}{List of integer vectors, one per simplex, each holding
+#'     the (sorted) node indices it spans. Every face of every simplex is
+#'     present, including all 0-simplices (isolated vertices included).}
+#'   \item{nodes}{Character vector of node labels; \code{simplices} index
+#'     into it.}
+#'   \item{n_nodes, n_simplices}{Integer counts.}
+#'   \item{dimension}{Integer. Highest simplex dimension present
+#'     (a k-simplex has k+1 nodes).}
+#'   \item{f_vector}{Named integer vector \code{dim_0}, \code{dim_1}, ... -
+#'     the number of simplices of each dimension.}
+#'   \item{density}{Numeric. \code{n_simplices} divided by the number of
+#'     simplices a complete complex on \code{n_nodes} would have up to
+#'     \code{dimension}.}
+#'   \item{mean_dim}{Numeric. Mean simplex dimension.}
+#'   \item{type}{\code{"clique"}, \code{"pathway"}, or \code{"vr"}.}
+#' }
+#'   For \code{type = "vr"} two further elements are attached:
+#'   \code{$filtration} (numeric, parallel to \code{$simplices}: the value at
+#'   which each simplex enters) and \code{$max_scale} (the cap actually
+#'   used). \code{persistent_homology()} consumes them directly.
 #'
 #' @examples
 #' mat <- matrix(c(0,.6,.5,.6,0,.4,.5,.4,0), 3, 3)
@@ -784,6 +804,10 @@ euler_characteristic <- function(sc) {
 #'
 #' @param x A square matrix, \code{tna}, or \code{netobject}. For
 #'   \code{type = "vr"}, must be a non-negative distance matrix.
+#'   A \code{simplicial_complex} carrying a \code{$filtration} vector (as
+#'   returned by \code{build_simplicial(type = "vr")}) is also accepted and
+#'   is used directly: its stored filtration values are reduced as they are,
+#'   so \code{type} is taken from the complex rather than this argument. For the \code{print()} and \code{plot()} methods: an object of class \code{persistent_homology}.
 #' @param n_steps Number of grid points for the reported Betti curve
 #'   (default 20). The persistence diagram itself is exact - it does not
 #'   depend on \code{n_steps}.
@@ -798,17 +822,22 @@ euler_characteristic <- function(sc) {
 #' \describe{
 #'   \item{betti_curve}{Data frame: \code{threshold}, \code{dimension},
 #'     \code{betti}.}
-#'   \item{persistence}{Data frame of birth-death pairs:
-#'     \code{dimension}, \code{birth}, \code{death}, \code{persistence}.
-#'     Sorted by descending persistence.}
+#'   \item{persistence}{Data frame of birth-death pairs, one row per
+#'     homology class: \code{dimension}, \code{birth}, \code{death},
+#'     \code{persistence}. Sorted by descending persistence. Essential
+#'     classes are included, with \code{death = 0} and
+#'     \code{persistence = birth} in clique mode, and \code{death = Inf},
+#'     \code{persistence = Inf} in VR mode (the plot method caps those for
+#'     display only).}
 #'   \item{thresholds}{Numeric vector of grid thresholds.}
 #'   \item{mode}{Either \code{"clique"} or \code{"vr"}.}
 #' }
 #'
 #' @references
 #' Edelsbrunner, H., Letscher, D., & Zomorodian, A. (2000). Topological
-#' persistence and simplification. \emph{Discrete & Computational Geometry}
-#' \strong{28}, 511-533.
+#' persistence and simplification. In \emph{Proceedings of the 41st Annual
+#' Symposium on Foundations of Computer Science}, 454-463. Journal version:
+#' \emph{Discrete & Computational Geometry} (2002) \strong{28}, 511-533.
 #'
 #' @examples
 #' mat <- matrix(c(0,.6,.5,.6,0,.4,.5,.4,0), 3, 3)
@@ -1076,9 +1105,11 @@ q_analysis <- function(sc) {
 #' @param mat A square adjacency matrix.
 #' @param threshold Edge weight threshold.
 #'
-#' @return A list with \code{$cliques_match} (logical),
-#'   \code{$n_simplices_ours}, \code{$n_simplices_igraph},
-#'   \code{$betti}, and \code{$euler}.
+#' @return Invisibly, a list with \code{cliques_match} (logical: do the
+#'   simplices match \code{igraph::cliques()} exactly),
+#'   \code{n_simplices_ours}, \code{n_simplices_igraph}, \code{betti},
+#'   \code{euler}, and \code{f_vector}. The comparison is also printed to
+#'   the console.
 #' @examplesIf requireNamespace("igraph", quietly = TRUE)
 #' mat <- matrix(c(0,.6,.5,.6,0,.4,.5,.4,0), 3, 3)
 #' colnames(mat) <- rownames(mat) <- c("A","B","C")
@@ -1138,16 +1169,10 @@ verify_simplicial <- function(mat, threshold = 0) {
 # Print methods
 # =========================================================================
 
-#' Print a simplicial complex
-#' @param x A \code{simplicial_complex} object.
-#' @param ... Additional arguments (unused).
-#' @return The input object, invisibly.
-#' @examples
-#' mat <- matrix(c(0,.6,.5,.6,0,.4,.5,.4,0), 3, 3)
-#' colnames(mat) <- rownames(mat) <- c("A","B","C")
-#' sc <- build_simplicial(mat, threshold = 0.3)
-#' print(sc)
-#'
+#' @rdname build_simplicial
+#' @param combined When `TRUE` (default), the four panels are stitched into a 2x2 gtable via `gridExtra::arrangeGrob` and drawn. When `FALSE`, returns a named list of the four ggplots (`f_vector`, `betti`, `degree`, `degree_heatmap`) so each can be printed, saved, or re-laid-out independently.
+#' @return In \code{print.simplicial_complex()}: The input object, invisibly.
+#' @return In \code{plot.simplicial_complex()}: A grid grob (invisibly) when `combined = TRUE`; a named list of four ggplots when `combined = FALSE`.
 #' @export
 print.simplicial_complex <- function(x, ...) {
   labels <- c("clique" = "Clique Complex",
@@ -1184,16 +1209,11 @@ print.simplicial_complex <- function(x, ...) {
   invisible(x)
 }
 
-#' Print persistent homology results
-#' @param x A \code{persistent_homology} object.
-#' @param ... Additional arguments (unused).
-#' @return The input object, invisibly.
-#' @examples
-#' mat <- matrix(c(0,.6,.5,.6,0,.4,.5,.4,0), 3, 3)
-#' colnames(mat) <- rownames(mat) <- c("A","B","C")
-#' ph <- persistent_homology(mat, n_steps = 10)
-#' print(ph)
-#'
+#' @rdname persistent_homology
+#' @param ... In \code{plot.persistent_homology()}: Ignored. In \code{print.persistent_homology()}: Additional arguments (unused).
+#' @param combined When `TRUE` (default), the two panels are stitched side-by-side via `gridExtra::arrangeGrob`. When `FALSE`, returns a named list (`betti_curve`, `persistence`) of ggplots.
+#' @return In \code{print.persistent_homology()}: The input object, invisibly.
+#' @return In \code{plot.persistent_homology()}: A grid grob (invisibly) when `combined = TRUE`; a named list of two ggplots when `combined = FALSE`.
 #' @export
 print.persistent_homology <- function(x, ...) {
   cat("Persistent Homology\n")
@@ -1224,17 +1244,12 @@ print.persistent_homology <- function(x, ...) {
   invisible(x)
 }
 
-#' Print Q-analysis results
-#' @param x A \code{q_analysis} object.
-#' @param ... Additional arguments (unused).
-#' @return The input object, invisibly.
-#' @examples
-#' mat <- matrix(c(0,.6,.5,.6,0,.4,.5,.4,0), 3, 3)
-#' colnames(mat) <- rownames(mat) <- c("A","B","C")
-#' sc <- build_simplicial(mat, threshold = 0.3)
-#' qa <- q_analysis(sc)
-#' print(qa)
-#'
+#' @rdname q_analysis
+#' @param x For the \code{print()} and \code{plot()} methods: an object of class \code{q_analysis}.
+#' @param ... In \code{plot.q_analysis()}: Ignored. In \code{print.q_analysis()}: Additional arguments (unused).
+#' @param combined When `TRUE` (default), the two panels are stitched side-by-side via `gridExtra::arrangeGrob`. When `FALSE`, returns a named list (`q_vector`, `structure_vector`) of ggplots.
+#' @return In \code{print.q_analysis()}: The input object, invisibly.
+#' @return In \code{plot.q_analysis()}: A grid grob (invisibly) when `combined = TRUE`; a named list of two ggplots when `combined = FALSE`.
 #' @export
 print.q_analysis <- function(x, ...) {
   cat(sprintf("Q-Analysis (max q = %d)\n", x$max_q))
@@ -1280,29 +1295,9 @@ print.q_analysis <- function(x, ...) {
     )
 }
 
-#' Plot a Simplicial Complex
-#'
-#' Produces a multi-panel summary: f-vector, simplicial degree ranking,
-#' and degree-by-dimension heatmap.
-#'
-#' @param x A \code{simplicial_complex} object.
-#' @param combined When `TRUE` (default), the four panels are stitched into
-#'   a 2x2 gtable via `gridExtra::arrangeGrob` and drawn. When `FALSE`,
-#'   returns a named list of the four ggplots (`f_vector`, `betti`,
-#'   `degree`, `degree_heatmap`) so each can be printed, saved, or
-#'   re-laid-out independently.
-#' @param ... Ignored.
-#' @return A grid grob (invisibly) when `combined = TRUE`; a named list of
-#'   four ggplots when `combined = FALSE`.
-#'
-#' @examples
-#' \donttest{
-#' mat <- matrix(c(0,.6,.5,.6,0,.4,.5,.4,0), 3, 3)
-#' colnames(mat) <- rownames(mat) <- c("A","B","C")
-#' sc <- build_simplicial(mat, threshold = 0.3)
-#' if (requireNamespace("gridExtra", quietly = TRUE)) plot(sc)
-#' }
-#'
+#' @rdname build_simplicial
+#' @section Methods:
+#' * \code{plot.simplicial_complex()}: Produces a four-panel summary: f-vector, Betti numbers, simplicial degree ranking, and degree-by-dimension heatmap.
 #' @export
 plot.simplicial_complex <- function(x, combined = TRUE, ...) {
   stopifnot(is.logical(combined), length(combined) == 1L)
@@ -1383,33 +1378,9 @@ plot.simplicial_complex <- function(x, combined = TRUE, ...) {
   invisible(combined_grob)
 }
 
-#' Plot Persistent Homology
-#'
-#' Two panels: Betti curve (threshold vs Betti number) and persistence
-#' diagram (birth vs death). Persistence pairs come from full boundary-
-#' matrix reduction; essential classes are shown at the filtration boundary
-#' (\code{death = 0} in clique mode, \code{death = max_scale} in VR mode).
-#'
-#' @param x A \code{persistent_homology} object.
-#' @param combined When `TRUE` (default), the two panels are stitched
-#'   side-by-side via `gridExtra::arrangeGrob`. When `FALSE`, returns a
-#'   named list (`betti_curve`, `persistence`) of ggplots.
-#' @param ... Ignored.
-#' @return A grid grob (invisibly) when `combined = TRUE`; a named list
-#'   of two ggplots when `combined = FALSE`.
-#'
-#' @examples
-#' \donttest{
-#' seqs <- data.frame(
-#'   V1 = c("A","B","C","A","B"),
-#'   V2 = c("B","C","A","B","C"),
-#'   V3 = c("C","A","B","C","A")
-#' )
-#' net <- build_network(seqs, method = "relative")
-#' ph  <- persistent_homology(net)
-#' if (requireNamespace("gridExtra", quietly = TRUE)) plot(ph)
-#' }
-#'
+#' @rdname persistent_homology
+#' @section Methods:
+#' * \code{plot.persistent_homology()}: Two panels: Betti curve (threshold vs Betti number) and persistence diagram (birth vs death). Persistence pairs come from full boundary- matrix reduction; essential classes are shown at the filtration boundary (\code{death = 0} in clique mode; in VR mode their stored \code{death = Inf} is capped for display at the largest finite value in the diagram or on the threshold grid, so they still render).
 #' @export
 plot.persistent_homology <- function(x, combined = TRUE, ...) {
   stopifnot(is.logical(combined), length(combined) == 1L)
@@ -1483,32 +1454,9 @@ plot.persistent_homology <- function(x, combined = TRUE, ...) {
   invisible(combined_grob)
 }
 
-#' Plot Q-Analysis
-#'
-#' Two panels: Q-vector (components at each connectivity level) and
-#' structure vector (max simplex dimension per node).
-#'
-#' @param x A \code{q_analysis} object.
-#' @param combined When `TRUE` (default), the two panels are stitched
-#'   side-by-side via `gridExtra::arrangeGrob`. When `FALSE`, returns a
-#'   named list (`q_vector`, `structure_vector`) of ggplots.
-#' @param ... Ignored.
-#' @return A grid grob (invisibly) when `combined = TRUE`; a named list
-#'   of two ggplots when `combined = FALSE`.
-#'
-#' @examples
-#' \donttest{
-#' seqs <- data.frame(
-#'   V1 = c("A","B","C","A","B"),
-#'   V2 = c("B","C","A","B","C"),
-#'   V3 = c("C","A","B","C","A")
-#' )
-#' net <- build_network(seqs, method = "relative")
-#' sc  <- build_simplicial(net, type = "clique")
-#' qa  <- q_analysis(sc)
-#' plot(qa)
-#' }
-#'
+#' @rdname q_analysis
+#' @section Methods:
+#' * \code{plot.q_analysis()}: Two panels: Q-vector (components at each connectivity level) and structure vector (max simplex dimension per node).
 #' @export
 plot.q_analysis <- function(x, combined = TRUE, ...) {
   stopifnot(is.logical(combined), length(combined) == 1L)

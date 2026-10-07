@@ -15,8 +15,11 @@
 #' \code{\link{bootstrap_network}}).
 #'
 #' @param ... One or more \code{netobject}s (from \code{\link{build_network}}).
-#'   If unnamed, each model is auto-named from its \code{$method}.
-#'   A \code{netobject_group} is flattened into its constituent models.
+#'   If unnamed, each model is auto-named from its \code{$method}; duplicate
+#'   names are made unique with \code{make.unique()}. A
+#'   \code{netobject_group} is flattened into its constituent models (named
+#'   by group), and an \code{mcml} or \code{cograph_network} is converted
+#'   first. In \code{plot.net_reliability()} and \code{print.net_reliability()}: Additional arguments (ignored). In \code{summary.net_reliability()}: Ignored.
 #' @param iter Integer. Number of split-half iterations (default: 1000).
 #' @param split Numeric. Fraction of sequences assigned to the first half
 #'   (default: 0.5).
@@ -45,6 +48,7 @@
 #'   V2 = c("B","C","A","B")), method = "relative")
 #' rel <- network_reliability(net, iter = 10)
 #' \donttest{
+#' set.seed(1)
 #' seqs <- data.frame(
 #'   V1 = sample(LETTERS[1:4], 30, TRUE), V2 = sample(LETTERS[1:4], 30, TRUE),
 #'   V3 = sample(LETTERS[1:4], 30, TRUE), V4 = sample(LETTERS[1:4], 30, TRUE)
@@ -347,30 +351,14 @@ network_reliability <- function(..., iter = 1000L, split = 0.5,
 
 # ---- S3 Methods ----
 
-#' Print Method for net_reliability
-#'
-#' @param x A \code{net_reliability} object.
-#' @param ... Additional arguments (ignored).
-#'
-#' @return The input object, invisibly.
-#'
-#' @examples
-#' net <- build_network(data.frame(V1 = c("A","B","C","A"),
-#'   V2 = c("B","C","A","B")), method = "relative")
-#' rel <- network_reliability(net, iter = 10)
-#' print(rel)
-#' \donttest{
-#' set.seed(1)
-#' seqs <- data.frame(
-#'   V1 = sample(c("A","B","C"), 30, TRUE),
-#'   V2 = sample(c("A","B","C"), 30, TRUE),
-#'   V3 = sample(c("A","B","C"), 30, TRUE)
-#' )
-#' net <- build_network(seqs, method = "relative")
-#' rel <- network_reliability(net, iter = 20, seed = 1)
-#' print(rel)
-#' }
-#'
+#' @rdname network_reliability
+#' @param x For the \code{print()} and \code{plot()} methods: an object of class \code{net_reliability}.
+#' @param object For the \code{summary()} method: an object of class \code{net_reliability}.
+#' @param bins Integer. Number of histogram bins per panel (default 60).
+#' @param combined When \code{TRUE} (default), all four metrics are shown in one ggplot via \code{facet_wrap(~ metric)}. When \code{FALSE}, returns a named list of four single-panel ggplots, one per metric.
+#' @return In \code{print.net_reliability()}: The input object, invisibly.
+#' @return In \code{summary.net_reliability()}: A tidy data frame with columns \code{model}, \code{metric}, \code{mean}, \code{sd} summarising the split-half iterations.
+#' @return In \code{plot.net_reliability()}: A \code{ggplot} object (invisibly), or a named list of four ggplots when \code{combined = FALSE}.
 #' @export
 print.net_reliability <- function(x, ...) {
   cat(sprintf("Split-Half Reliability (%d iterations, split = %.0f%%",
@@ -403,52 +391,16 @@ print.net_reliability <- function(x, ...) {
 }
 
 
-#' Summary Method for net_reliability
-#'
-#' @param object A \code{net_reliability} object.
-#' @param ... Ignored.
-#' @return A tidy data frame with columns \code{model}, \code{metric},
-#'   \code{mean}, \code{sd} summarising the split-half iterations.
-#' @inherit network_reliability examples
+#' @rdname network_reliability
 #' @export
 summary.net_reliability <- function(object, ...) {
   object$summary
 }
 
 
-#' Plot Method for net_reliability
-#'
-#' @description
-#' Density plots of split-half metrics faceted by metric type.
-#' Multi-model comparisons show overlaid densities colored by model.
-#'
-#' @param x A \code{net_reliability} object.
-#' @param bins Integer. Number of histogram bins per panel (default 60).
-#' @param combined When \code{TRUE} (default), all four metrics are shown
-#'   in one ggplot via \code{facet_wrap(~ metric)}. When \code{FALSE},
-#'   returns a named list of four single-panel ggplots, one per metric.
-#' @param ... Additional arguments (ignored).
-#'
-#' @return A \code{ggplot} object (invisibly), or a named list of four
-#'   ggplots when \code{combined = FALSE}.
-#'
-#' @examples
-#' net <- build_network(data.frame(V1 = c("A","B","C","A"),
-#'   V2 = c("B","C","A","B")), method = "relative")
-#' rel <- network_reliability(net, iter = 10)
-#' plot(rel)
-#' \donttest{
-#' set.seed(1)
-#' seqs <- data.frame(
-#'   V1 = sample(c("A","B","C"), 30, TRUE),
-#'   V2 = sample(c("A","B","C"), 30, TRUE),
-#'   V3 = sample(c("A","B","C"), 30, TRUE)
-#' )
-#' net <- build_network(seqs, method = "relative")
-#' rel <- network_reliability(net, iter = 20, seed = 1)
-#' plot(rel)
-#' }
-#'
+#' @rdname network_reliability
+#' @section Methods:
+#' * \code{plot.net_reliability()}: Density plots of split-half metrics faceted by metric type. Multi-model comparisons show overlaid densities colored by model.
 #' @export
 plot.net_reliability <- function(x, bins = 60L, combined = TRUE, ...) {
   stopifnot(is.logical(combined), length(combined) == 1L)

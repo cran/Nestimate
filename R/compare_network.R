@@ -24,7 +24,10 @@
 #' matrices and scaled before comparison; the choice of scaling determines
 #' how weights from different estimators are placed on a common footing.
 #'
-#' @param x A `netobject`, `cograph_network`, or numeric square matrix.
+#' @param x A `netobject`, `cograph_network`, or numeric square matrix, or a
+#'   `netobject_group` whose members `i` and `j` are compared. For the
+#'   \code{print()} and \code{plot()} methods: an object of class
+#'   \code{net_comparison}.
 #' @param y A `netobject`, `cograph_network`, or numeric square matrix.
 #' @param scaling Scaling applied to both weight matrices before comparison.
 #'   One of:
@@ -51,15 +54,23 @@
 #'   compatible with `network = TRUE` because the side-by-side metrics use
 #'   Nestimate's base-R Floyd-Warshall, which handles negative weights.
 #' @param measures Character vector of centrality measures to compare. Empty
-#'   by default (no centrality block). Valid names are \code{"InStrength"},
-#'   \code{"OutStrength"}, and \code{"Betweenness"}. Unknown names are
-#'   ignored with a warning.
+#'   by default (no centrality block). Any built-in measure is valid:
+#'   \code{"OutStrength"}, \code{"InStrength"}, \code{"ClosenessIn"},
+#'   \code{"ClosenessOut"}, \code{"Closeness"}, \code{"Betweenness"},
+#'   \code{"BetweennessRSP"}, \code{"Diffusion"}, \code{"Clustering"},
+#'   \code{"InCloseness"}, \code{"OutCloseness"}. Unknown names are ignored
+#'   with a warning.
 #' @param network Logical. Include side-by-side network metrics from
 #'   `summary()`? Default `TRUE`.
-#' @param ... Ignored.
+#' @param ... Ignored. In \code{plot.net_comparison()} and \code{print.net_comparison()}: Ignored.
 #' @return A `net_comparison` object: a named list with `matrices`,
 #'   `difference_matrix`, `edge_metrics`, `summary_metrics`, optionally
 #'   `network_metrics`, `centrality_differences`, `centrality_correlations`.
+#' @examples
+#' nets <- build_network(group_regulation_long, method = "relative",
+#'                       actor = "Actor", action = "Action", time = "Time",
+#'                       group = "Achiever")
+#' compare_model(nets)
 #' @export
 compare_model <- function(x, ...) UseMethod("compare_model")
 
@@ -85,21 +96,12 @@ compare_model.matrix <- function(x, y, scaling = "none", measures = character(0)
   .compare_impl(.weights_of(x), .weights_of(y), scaling, measures, network)
 }
 
-#' Compare two networks within a netobject_group
-#'
-#' Selects two members of a `netobject_group` (by index or name) and
-#' dispatches to `compare_model.netobject()`.
-#'
-#' @param x A `netobject_group`.
-#' @param i Integer or character. Index or name of the first network.
-#'   Default `1L`.
-#' @param j Integer or character. Index or name of the second network.
-#'   Default `2L`.
-#' @param scaling See `compare_model()`.
-#' @param measures See `compare_model()`.
-#' @param network See `compare_model()`.
-#' @param ... Passed to `compare_model.netobject()`.
-#' @return A `net_comparison` object.
+#' @rdname compare_model
+#' @section Methods:
+#' * \code{compare_model.netobject_group()}: Selects two members of a `netobject_group` (by index or name) and dispatches to `compare_model.netobject()`. See also \code{\link{compare_networks}}, the N-way successor with tidy tables and a \code{plot()} that draws one view per call.
+#' * \code{plot.net_comparison()}: Visualises a `net_comparison` object. Currently supports the edge-weight scatterplot (default), with the diagonal reference (perfect agreement) and the OLS regression line annotated by Pearson, Spearman, and Kendall correlations.
+#' @param i,j For a `netobject_group`: index or name of the two member
+#'   networks to compare. Defaults `1L` and `2L`.
 #' @export
 compare_model.netobject_group <- function(x, i = 1L, j = 2L, scaling = "none",
                                     measures = character(0), network = TRUE,
@@ -475,6 +477,11 @@ compare_model.netobject_group <- function(x, i = 1L, j = 2L, scaling = "none",
 
 # ---- print method ----
 
+#' @rdname compare_model
+#' @return In \code{print.net_comparison()}: \code{x}, invisibly.
+#' @param type Character. One of `"scatter"` (default - edge-weight scatter with OLS fit and correlation overlay), `"heatmap"` (n by n grid of x - y differences using the diverging palette), `"diff_hist"` (histogram of |x - y| absolute differences with rug + density), `"weight_dist"` (overlaid distributions of |x| and |y| edge weights), or `"all"` (2 by 2 grid of all four panels; requires the gridExtra package).
+#' @param combined When `type = "all"` and `combined = TRUE` (default), the four panels are stitched into a 2x2 gtable. When `FALSE`, returns a named list of the four ggplots so each can be printed, saved, or re-laid-out independently. Ignored for other `type` values.
+#' @return In \code{plot.net_comparison()}: A `ggplot` object; for `type = "all"` with `combined = TRUE` a `gtable` arranged 2 by 2; for `type = "all"` with `combined = FALSE` a named list of four ggplots.
 #' @export
 print.net_comparison <- function(x, ...) {
   cat("Network comparison\n")
@@ -506,29 +513,7 @@ print.net_comparison <- function(x, ...) {
 
 # ---- plot method ----
 
-#' Plot a network comparison
-#'
-#' Visualises a `net_comparison` object. Currently supports the edge-weight
-#' scatterplot (default), with the diagonal reference (perfect agreement)
-#' and the OLS regression line annotated by Pearson, Spearman, and Kendall
-#' correlations.
-#'
-#' @param x A `net_comparison` object from [compare_model()].
-#' @param type Character. One of `"scatter"` (default - edge-weight scatter
-#'   with OLS fit and correlation overlay), `"heatmap"` (n by n grid of
-#'   x - y differences using the diverging palette), `"diff_hist"`
-#'   (histogram of |x - y| absolute differences with rug + density),
-#'   `"weight_dist"` (overlaid distributions of |x| and |y| edge weights),
-#'   or `"all"` (2 by 2 grid of all four panels; requires the gridExtra
-#'   package).
-#' @param combined When `type = "all"` and `combined = TRUE` (default),
-#'   the four panels are stitched into a 2x2 gtable. When `FALSE`, returns
-#'   a named list of the four ggplots so each can be printed, saved, or
-#'   re-laid-out independently. Ignored for other `type` values.
-#' @param ... Ignored.
-#' @return A `ggplot` object; for `type = "all"` with `combined = TRUE`
-#'   a `gtable` arranged 2 by 2; for `type = "all"` with `combined = FALSE`
-#'   a named list of four ggplots.
+#' @rdname compare_model
 #' @export
 plot.net_comparison <- function(x,
                                 type = c("scatter", "heatmap",

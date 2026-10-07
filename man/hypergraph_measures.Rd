@@ -13,9 +13,9 @@ hypergraph_measures(hg)
 \item{hg}{A \code{net_hypergraph} (from \code{\link[=build_hypergraph]{build_hypergraph()}} or
 \code{\link[=bipartite_groups]{bipartite_groups()}}).}
 
-\item{x}{A \code{hypergraph_measures} object.}
+\item{x}{For the \code{print()} method: an object of class \code{hypergraph_measures}.}
 
-\item{...}{Additional arguments (ignored).}
+\item{...}{In \code{print.hypergraph_measures()}: Additional arguments (ignored).}
 }
 \value{
 An object of class \code{hypergraph_measures} (a named list) with
@@ -57,7 +57,7 @@ in at least one hyperedge.}
 \item{\code{n_nodes}, \code{n_hyperedges}}{Convenience scalars.}
 }
 
-The input \code{x} invisibly.
+In \code{print.hypergraph_measures()}: The input \code{x} invisibly.
 }
 \description{
 Computes a comprehensive structural-statistics suite for a
@@ -95,9 +95,9 @@ m$jaccard             # symmetric overlap between sessions
 
 }
 \references{
-Lee, G., Choe, M., & Shin, K. (2024). A survey on hypergraph
-representation, learning and mining. \emph{Data Mining & Knowledge
-Discovery} 37, 1-39.
+Lee, G., Choe, M., & Shin, K. (2021). How do hyperedges overlap in
+real-world hypergraphs? Patterns, measures, and generators.
+\emph{Proceedings of the Web Conference 2021}, 3396-3407.
 
 Do, M. T., Yoon, S., Hooi, B., & Shin, K. (2020). Structural patterns
 and generative models of real-world hypergraphs. arXiv:2006.07060.

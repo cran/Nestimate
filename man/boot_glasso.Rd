@@ -2,6 +2,9 @@
 % Please edit documentation in R/boot_glasso.R
 \name{boot_glasso}
 \alias{boot_glasso}
+\alias{print.boot_glasso}
+\alias{summary.boot_glasso}
+\alias{plot.boot_glasso}
 \title{Bootstrap for Regularized Partial Correlation Networks}
 \usage{
 boot_glasso(
@@ -18,16 +21,25 @@ boot_glasso(
   ncores = 1L,
   seed = NULL
 )
+
+\method{print}{boot_glasso}(x, ...)
+
+\method{summary}{boot_glasso}(object, type = "edges", ...)
+
+\method{plot}{boot_glasso}(x, type = "edges", measure = NULL, ...)
 }
 \arguments{
 \item{x}{A data frame, numeric matrix (observations x variables), or
-a \code{netobject} with \code{method = "glasso"}.}
+a \code{netobject} with \code{method = "glasso"}. For the \code{print()} and \code{plot()} methods: an object of class \code{boot_glasso}.}
 
 \item{iter}{Integer. Number of nonparametric bootstrap iterations
 (default: 1000).}
 
-\item{cs_iter}{Integer. Number of case-dropping iterations per drop
-proportion (default: 500).}
+\item{cs_iter}{Integer. Total number of case-dropping iterations
+(default: 500). Following \pkg{bootnet}, each iteration draws one
+drop proportion at random from \code{cs_drop}, so the iterations are
+spread across the proportions rather than repeated \code{cs_iter}
+times at each one.}
 
 \item{cs_drop}{Numeric vector. Drop proportions for CS-coefficient
 computation (default: \code{seq(0.1, 0.9, by = 0.1)}).}
@@ -66,6 +78,14 @@ return a named list (e.g., \code{list(my_metric = ...)}).}
 (default: 1, sequential).}
 
 \item{seed}{Integer or NULL. RNG seed for reproducibility.}
+
+\item{...}{In \code{plot.boot_glasso()}: Additional arguments passed to plotting functions. For \code{type = "edge_diff"} and \code{type = "centrality_diff"}, accepts \code{order}: \code{"sample"} (default, sorted by value) or \code{"id"} (alphabetical). In \code{print.boot_glasso()} and \code{summary.boot_glasso()}: Additional arguments (ignored).}
+
+\item{object}{For the \code{summary()} method: an object of class \code{boot_glasso}.}
+
+\item{type}{In \code{summary.boot_glasso()}: Character. Summary type: \code{"edges"} (default), \code{"centrality"}, \code{"cs"}, \code{"predictability"}, or \code{"all"}. In \code{plot.boot_glasso()}: Character. Plot type: \code{"edges"} (default), \code{"stability"}, \code{"edge_diff"}, \code{"centrality_diff"}, or \code{"inclusion"}.}
+
+\item{measure}{Character. Centrality measure for \code{type = "centrality_diff"} (default: first available measure).}
 }
 \value{
 An object of class \code{"boot_glasso"} containing:
@@ -83,9 +103,13 @@ edges zeroed.}
 ci_upper) per centrality measure.}
 \item{cs_coefficient}{Named numeric vector of CS-coefficients per
 centrality measure.}
-\item{cs_data}{Data frame of case-dropping correlations (drop_prop,
-measure, correlation).}
-\item{edge_diff_p}{Symmetric matrix of pairwise edge difference p-values.}
+\item{cs_data}{Data frame of case-dropping results, one row per
+drop proportion by measure, with columns \code{drop_prop},
+\code{measure}, \code{mean_cor}, \code{prop_above} (fraction of
+that proportion's iterations correlating above 0.7) and
+\code{n_samples} (iterations that landed on that proportion).}
+\item{edge_diff_p}{Symmetric matrix of pairwise edge difference
+p-values; \code{NULL} when the network has more than 500 edges.}
 \item{centrality_diff_p}{Named list of symmetric p-value matrices per
 centrality measure.}
 \item{predictability_ci}{Data frame of node predictability CIs (node,
@@ -109,6 +133,12 @@ matrices.}
 \item{lambda_selected}{Selected lambda for original data.}
 \item{timing}{Named numeric vector with timing in seconds.}
 }
+
+In \code{print.boot_glasso()}: The input object, invisibly.
+
+In \code{summary.boot_glasso()}: For \code{type = "edges"}, the \code{edge_ci} data frame (\code{edge}, \code{weight}, \code{ci_lower}, \code{ci_upper}, \code{inclusion}) ordered by decreasing absolute weight; for \code{"cs"} the \code{cs_data} data frame; for \code{"predictability"} the \code{predictability_ci} data frame; for \code{"centrality"} a named list of one data frame per measure (\code{node}, \code{value}, \code{ci_lower}, \code{ci_upper}); for \code{"all"} a named list holding all four.
+
+In \code{plot.boot_glasso()}: A \code{ggplot} object (returned, and so printed when the call is made at the top level).
 }
 \description{
 Fast, single-call bootstrap for EBICglasso partial correlation networks.
@@ -117,6 +147,13 @@ analysis, edge/centrality difference tests, predictability CIs, and
 thresholded network into one function. Designed as a faster alternative
 to bootnet with richer output.
 }
+\section{Methods}{
+
+\itemize{
+\item \code{plot.boot_glasso()}: Plots bootstrap results for GLASSO networks.
+}
+}
+
 \examples{
 set.seed(1)
 dat <- as.data.frame(matrix(rnorm(60), ncol = 3))
@@ -127,12 +164,21 @@ set.seed(42)
 mat <- matrix(rnorm(60), ncol = 4)
 colnames(mat) <- LETTERS[1:4]
 net <- build_network(as.data.frame(mat), method = "glasso")
-boot <- boot_glasso(net, iter = 100, cs_iter = 50, seed = 42,
+# iter = 20 keeps the example fast; a real analysis uses 1000 or more.
+boot <- boot_glasso(net, iter = 20, cs_iter = 10, seed = 42,
   centrality = c("strength", "expected_influence"))
 print(boot)
 summary(boot, type = "edges")
 }
 
+}
+\references{
+Epskamp, S., Borsboom, D., & Fried, E. I. (2018). Estimating
+psychological networks and their accuracy: A tutorial paper.
+\emph{Behavior Research Methods} 50(1), 195-212.
+\doi{10.3758/s13428-017-0862-1}
+(source of the CS-coefficient and of the case-dropping,
+edge-difference and centrality-difference procedures reproduced here.)
 }
 \seealso{
 \code{\link{build_network}}, \code{\link{bootstrap_network}}

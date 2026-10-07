@@ -233,6 +233,13 @@ bottleneck_distance <- function(d1, d2, dimension = NULL,
 #' \eqn{t}. Landscapes are stable under bottleneck distance and form a
 #' Banach-space embedding of persistence diagrams.
 #'
+#' Essential classes are excluded: a tent function is undefined for an
+#' infinitely-lived class on a finite grid, so pairs with
+#' \code{death = Inf} (VR mode) and pairs with \code{death = 0} but
+#' \code{birth > 0} (the clique-mode encoding of an essential class) are
+#' dropped before the landscape is built. When no finite pair remains in
+#' the requested dimension, every landscape function is zero on the grid.
+#'
 #' @param ph A \code{persistent_homology} object or a data.frame with
 #'   columns \code{dimension}, \code{birth}, \code{death}.
 #' @param k_max Maximum landscape index to compute (default 5). Must be a
@@ -332,17 +339,11 @@ persistence_landscape <- function(ph, k_max = 5L, dimension = 1L,
   ), class = "persistence_landscape")
 }
 
-#' Print Persistence Landscape
-#'
-#' @param x A \code{persistence_landscape} object.
-#' @param ... Ignored.
-#' @return The input, invisibly.
-#' @examples
-#' mat <- matrix(c(0, .6, .5, .6, 0, .4, .5, .4, 0), 3, 3)
-#' rownames(mat) <- colnames(mat) <- c("A","B","C")
-#' ph <- persistent_homology(mat, n_steps = 5)
-#' pl <- persistence_landscape(ph, k_max = 3, dimension = 0)
-#' print(pl)
+#' @rdname persistence_landscape
+#' @param x For the \code{print()} and \code{plot()} methods: an object of class \code{persistence_landscape}.
+#' @param ... In \code{plot.persistence_landscape()} and \code{print.persistence_landscape()}: Ignored.
+#' @return In \code{print.persistence_landscape()}: The input, invisibly.
+#' @return In \code{plot.persistence_landscape()}: A ggplot.
 #' @export
 print.persistence_landscape <- function(x, ...) {
   cat(sprintf("Persistence Landscape (dimension %d, k_max = %d)\n",
@@ -359,19 +360,7 @@ print.persistence_landscape <- function(x, ...) {
   invisible(x)
 }
 
-#' Plot Persistence Landscape
-#'
-#' @param x A \code{persistence_landscape} object.
-#' @param ... Ignored.
-#' @return A ggplot.
-#' @examples
-#' \donttest{
-#' mat <- matrix(c(0, .6, .5, .6, 0, .4, .5, .4, 0), 3, 3)
-#' rownames(mat) <- colnames(mat) <- c("A","B","C")
-#' ph <- persistent_homology(mat, n_steps = 5)
-#' pl <- persistence_landscape(ph, k_max = 3, dimension = 0)
-#' plot(pl)
-#' }
+#' @rdname persistence_landscape
 #' @export
 plot.persistence_landscape <- function(x, ...) {
   df <- x$landscape

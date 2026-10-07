@@ -16,7 +16,9 @@
 #'   \code{net_mmm}, or \code{tna}. When clustering info is available,
 #'   one panel is drawn per cluster.
 #' @param group Optional grouping vector (length \code{nrow(x)}) producing
-#'   one panel per group. Ignored if \code{x} is a \code{net_clustering}.
+#'   one panel per group. \code{NULL} (default) falls back to the cluster
+#'   assignments carried by a \code{net_clustering} / \code{net_mmm} /
+#'   \code{netobject_group} input; supplying \code{group} overrides them.
 #' @param scale \code{"proportion"} (default) divides each column by its
 #'   total so bands fill 0..1. \code{"count"} keeps raw counts.
 #' @param geom \code{"area"} (default) draws stacked polygons;
@@ -34,10 +36,15 @@
 #'   so the time axes stay aligned; \code{TRUE} crops each group to its
 #'   own length quantile (panels can differ in width). See
 #'   \code{\link{sequence_plot}}.
-#' @param state_colors Vector of colours, one per state. Defaults to
-#'   Okabe-Ito.
-#' @param na_color Colour for the \code{NA} band.
-#' @param frame If \code{TRUE} (default), draw a box around each panel.
+#' @param state_colors Colours for the state fills. Either an unnamed
+#'   vector, one colour per state in level order, or a named lookup
+#'   (\code{c(plan = "#0072B2")}) where only the states you name are
+#'   overridden and the rest keep the default Okabe-Ito palette. Names this
+#'   plot does not draw are dropped with a message, so one palette can be
+#'   reused across figures.
+#' @param na_color Colour for the \code{NA} band. Default \code{"grey90"}.
+#' @param frame \code{FALSE} (default) draws no panel box; \code{TRUE} draws
+#'   a box around each panel.
 #' @param width,height Optional device dimensions. See
 #'   \code{\link{sequence_plot}}.
 #' @param main Plot title.
@@ -67,13 +74,23 @@
 #' @param legend_border Swatch border colour.
 #' @param legend_bty \code{"n"} (borderless) or \code{"o"} (boxed).
 #'
-#' @return Invisibly, a list with \code{counts}, \code{proportions},
-#'   \code{levels}, \code{palette}, and \code{groups}.
+#' @return Invisibly, a list describing the drawn figure:
+#'   \describe{
+#'     \item{counts}{Named list, one entry per group, each a
+#'       (state x time point) numeric matrix of cell counts. Rows are named
+#'       by \code{levels}; columns are the retained time points.}
+#'     \item{proportions}{Same shape as \code{counts}, each column divided
+#'       by its total.}
+#'     \item{levels}{Character vector of state labels in plotting order,
+#'       with \code{"NA"} appended when \code{na = TRUE}.}
+#'     \item{palette}{Character vector of fill colours, parallel to
+#'       \code{levels}.}
+#'     \item{groups}{Character vector of group labels (\code{"all"} when
+#'       ungrouped), parallel to \code{counts} / \code{proportions}.}
+#'   }
 #' @seealso \code{\link{sequence_plot}}, \code{\link{build_clusters}}
 #' @examples
-#' \donttest{
 #' distribution_plot(as.data.frame(trajectories))
-#' }
 #' @export
 distribution_plot <- function(x,
                               group          = NULL,
@@ -128,6 +145,10 @@ distribution_plot <- function(x,
   stopifnot(is.numeric(legend_size), length(legend_size) == 1L,
             legend_size > 0)
 
+  # A palette attached with set_state_colors() is the object's own default;
+  # an explicit `state_colors` still wins for this one figure.
+  state_colors <- state_colors %||% .stored_state_colors(x)
+
   # Extract data and group from various input types
   extracted <- .extract_seqplot_input(x, group)
   x <- extracted$data
@@ -148,7 +169,8 @@ distribution_plot <- function(x,
   # trim_clusterwise crops each group to its own length quantile.
   global_cut <- .trim_cut(full_codes, trim)
 
-  palette       <- .state_palette(state_colors, K_core)
+  .report_unused_colors(state_colors, levels_all)
+  palette       <- .state_palette(state_colors, K_core, levels_all)
   full_palette  <- if (na) c(palette, na_color) else palette
   legend_labels <- if (na) c(levels_all, "NA") else levels_all
 

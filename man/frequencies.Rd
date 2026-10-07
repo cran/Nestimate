@@ -2,7 +2,8 @@
 % Please edit documentation in R/frequencies.R
 \name{frequencies}
 \alias{frequencies}
-\title{Sequence Data Conversion Functions}
+\alias{summary.nest_transition_counts}
+\title{Build a Transition Frequency Matrix}
 \usage{
 frequencies(
   data,
@@ -12,6 +13,8 @@ frequencies(
   cols = NULL,
   format = c("auto", "long", "wide")
 )
+
+\method{summary}{nest_transition_counts}(object, ...)
 }
 \arguments{
 \item{data}{Data frame containing sequence data in long or wide format.}
@@ -31,17 +34,23 @@ format). If NULL, all non-ID columns are used. Default: NULL.}
 
 \item{format}{Character. Format of input data: "auto" (detect automatically),
 "long", or "wide". Default: "auto".}
+
+\item{object}{For the \code{summary()} method: an object of class \code{nest_transition_counts}.}
+
+\item{...}{In \code{summary.nest_transition_counts()}: Additional arguments (ignored).}
 }
 \value{
-A square integer matrix of transition frequencies where
+A square integer matrix of transition frequencies, of class
+\code{c("nest_transition_counts", "matrix", "array")}, where
 \code{mat[i, j]} is the number of times state i was followed by state j.
-Row and column names are the sorted unique states. Can be passed directly
-to \code{tna::tna()}.
+Row and column names are the sorted unique states. It behaves as an
+ordinary matrix and can be passed directly to \code{tna::tna()}; the
+class stamp only adds a \code{summary()} method, which returns the same
+counts as a tidy \code{from}/\code{to}/\code{count} data frame.
+
+In \code{summary.nest_transition_counts()}: A tidy data frame with columns \code{from}, \code{to}, \code{count}, with one row per non-zero transition.
 }
 \description{
-Functions for converting sequence data (long or wide format) into
-transition frequency matrices and other useful representations.
-
 Convert long or wide format sequence data into a transition frequency matrix.
 Counts how many times each transition from state_i to state_j occurs across
 all sequences.

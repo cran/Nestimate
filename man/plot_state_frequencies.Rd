@@ -2,14 +2,24 @@
 % Please edit documentation in R/plot_state_frequencies.R
 \name{plot_state_frequencies}
 \alias{plot_state_frequencies}
+\alias{print.nestimate_facet_plot}
+\alias{print.nestimate_facet_list}
 \alias{plot_state_frequencies.netobject}
 \alias{plot_state_frequencies.htna}
 \alias{plot_state_frequencies.mcml}
 \alias{plot_state_frequencies.netobject_group}
 \alias{plot_state_frequencies.default}
+\alias{state_freq}
+\alias{print.state_freq}
+\alias{plot.state_freq}
+\alias{as.data.frame.state_freq}
 \title{Plot State Frequency Distributions}
 \usage{
 plot_state_frequencies(x, ...)
+
+\method{print}{nestimate_facet_plot}(x, ...)
+
+\method{print}{nestimate_facet_list}(x, ...)
 
 \method{plot_state_frequencies}{netobject}(
   x,
@@ -88,12 +98,25 @@ plot_state_frequencies(x, ...)
 )
 
 \method{plot_state_frequencies}{default}(x, ...)
+
+\method{print}{state_freq}(x, digits = 1, max_states = 20L, ...)
+
+\method{plot}{state_freq}(x, ...)
+
+\method{as.data.frame}{state_freq}(x, ...)
 }
 \arguments{
 \item{x}{A \code{netobject}, \code{netobject_group}, \code{mcml}, or
-\code{htna} object.}
+\code{htna} object. For the \code{print()}, \code{plot()} and
+\code{as.data.frame()} methods: the \code{state_freq} object returned by
+\code{plot_state_frequencies()}; for the \code{print()} methods of the
+per-facet figure, an object of class \code{nestimate_facet_plot} or
+\code{nestimate_facet_list}.}
 
-\item{...}{Reserved for future use.}
+\item{...}{Reserved for future use. In \code{as.data.frame.state_freq()},
+\code{plot.state_freq()}, \code{print.state_freq()},
+\code{print.nestimate_facet_list()} and \code{print.nestimate_facet_plot()}:
+ignored.}
 
 \item{style}{One of:
 \itemize{
@@ -129,9 +152,11 @@ vocabularies differ per panel, so each gets its own legend);
 \code{"bottom"} for single-network and \code{netobject_group}
 treemaps (shared state vocabulary, one shared legend).
 Override with any of \code{"bottom"}, \code{"top"}, \code{"right"},
-\code{"left"}, \code{"none"}, or \code{"per_facet"}. The
-\code{"per_facet"} option requires the \pkg{gridExtra} package and
-returns a \code{gtable}.}
+\code{"left"}, \code{"none"}, or \code{"per_facet"}. \code{"per_facet"}
+is silently demoted to \code{"bottom"} when every group shares the same
+state vocabulary (repeating one legend per panel would be redundant);
+when it does take effect it returns a \code{gtable} (requiring the
+\pkg{gridExtra} package) or a list of ggplots, per \code{combine}.}
 
 \item{legend_dir}{Legend internal layout: \code{"auto"} (default --
 horizontal for top/bottom, vertical for left/right), or force
@@ -144,9 +169,10 @@ horizontal for top/bottom, vertical for left/right), or force
 \item{sort_states}{One of \code{"frequency"} (default -- most frequent
 first), \code{"alpha"}, or \code{"none"}.}
 
-\item{colors}{Optional character vector overriding the default
-Okabe-Ito state palette. Length must be at least the number of unique
-states.}
+\item{colors}{Optional colors overriding the default Okabe-Ito state
+palette. Either an unnamed vector applied in state order (length at
+least the number of unique states), or a named lookup
+(\code{c(plan = "#0072B2")}) overriding only the states you name.}
 
 \item{label_size}{Numeric size of inline labels (max size when
 \pkg{ggfittext} is installed -- text auto-shrinks per tile).}
@@ -156,7 +182,8 @@ full names; \code{TRUE} truncates to the first 3 characters via
 \code{base::abbreviate()} (which extends the truncation as needed to
 keep names unique after collision); a positive integer sets the
 target minimum length explicitly (e.g. \code{abbreviate = 4}).
-Affects tile labels, legend, and the returned \code{$table}.}
+Affects tile labels, the legend, and the tidy table returned by
+\code{as.data.frame()}.}
 
 \item{include_macro}{For \code{mcml} only: prepend a \code{"macro"}
 reference column showing aggregate state frequencies across all
@@ -178,15 +205,31 @@ picks 1, 2, or 3 columns based on the number of panels.}
 semantic groups. When supplied, panels (or bars) are coloured / annotated
 by group rather than by individual state, so state-level palettes can
 collapse onto a smaller categorical legend.}
+
+\item{digits}{Number of decimal places for proportion / share columns.
+Default 1.}
+
+\item{max_states}{Cap on rows shown per group in the per-state table
+(default 20); the surplus is folded into a single \code{"(+k more)"}
+row. The full, uncapped table is returned by
+\code{as.data.frame(x)}.}
 }
 \value{
 A \code{state_freq} object: a list with the rendered \code{$plot}
-(a \code{ggplot} or \code{gtable}), the tidy \code{$table} (a
+(a \code{ggplot}; a \code{gtable} or a list of ggplots under
+\code{legend = "per_facet"}, per \code{combine}), the tidy \code{$table} (a
 \code{data.frame} with columns \code{group}, \code{state}, \code{count},
-\code{proportion}), and the call's \code{$style}, \code{$metric},
-\code{$source_class}. The class supports \code{print()} (shows the
-tidy table in the console), \code{plot()} (renders the chart), and
-\code{as.data.frame()} (returns the table).
+\code{proportion}, one row per (group, state) cell), and the call's
+\code{$style}, \code{$metric}, \code{$source_class}. The class supports
+\code{print()} (prints the tidy table and draws the chart),
+\code{plot()} (draws the chart alone), and \code{as.data.frame()}
+(returns the tidy table) -- see the section below.
+
+\code{print()} returns \code{x} invisibly (after printing the
+table and drawing the chart); \code{plot()} returns \code{invisible(NULL)}
+after drawing; \code{as.data.frame()} returns the tidy
+\code{data.frame}, one row per (group, state) cell with columns
+\code{group}, \code{state}, \code{count}, \code{proportion}.
 }
 \description{
 Visualise state (node) frequency distributions across groups for any
@@ -210,8 +253,16 @@ Single-panel when no groups exist; faceted when groups are present.
 The bar style produces horizontal bars (state on the y-axis), faceted by
 group when groups exist. All variants use the Okabe-Ito palette.
 }
+\section{The state_freq object}{
+
+\code{plot_state_frequencies()} returns a \code{state_freq} object holding
+both the rendered chart and the tidy frequency table. \code{print()} shows
+the table in the console \emph{and} draws the chart on the active graphics
+device, \code{plot()} draws the chart alone, and \code{as.data.frame()}
+returns the tidy table for downstream piping.
+}
+
 \examples{
-\donttest{
 if (requireNamespace("ggplot2", quietly = TRUE)) {
   data(group_regulation_long, package = "Nestimate")
   nw <- build_network(group_regulation_long,
@@ -222,6 +273,5 @@ if (requireNamespace("ggplot2", quietly = TRUE)) {
   print(res)            # tidy frequency table in the console
   plot(res)             # ggplot chart
   head(as.data.frame(res))
-}
 }
 }

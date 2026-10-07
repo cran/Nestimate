@@ -2,9 +2,15 @@
 % Please edit documentation in R/ph_distances.R
 \name{persistence_landscape}
 \alias{persistence_landscape}
+\alias{print.persistence_landscape}
+\alias{plot.persistence_landscape}
 \title{Persistence Landscape}
 \usage{
 persistence_landscape(ph, k_max = 5L, dimension = 1L, t_grid = NULL)
+
+\method{print}{persistence_landscape}(x, ...)
+
+\method{plot}{persistence_landscape}(x, ...)
 }
 \arguments{
 \item{ph}{A \code{persistent_homology} object or a data.frame with
@@ -18,6 +24,10 @@ the landscape for. Default 1.}
 
 \item{t_grid}{Numeric vector of evaluation points. \code{NULL} (default)
 uses an even grid of 200 points covering the union of pair intervals.}
+
+\item{x}{For the \code{print()} and \code{plot()} methods: an object of class \code{persistence_landscape}.}
+
+\item{...}{In \code{plot.persistence_landscape()} and \code{print.persistence_landscape()}: Ignored.}
 }
 \value{
 A \code{persistence_landscape} object with:
@@ -27,6 +37,10 @@ A \code{persistence_landscape} object with:
 \item{k_max}{Integer scalar.}
 \item{t_grid}{Numeric vector.}
 }
+
+In \code{print.persistence_landscape()}: The input, invisibly.
+
+In \code{plot.persistence_landscape()}: A ggplot.
 }
 \description{
 Computes the persistence landscape (Bubenik 2015) from a persistence
@@ -36,6 +50,13 @@ The \eqn{k}-th landscape function \eqn{\lambda^{(k)}(t)} is the
 \eqn{k}-th largest of \eqn{\{\Lambda_{(b_i,d_i)}(t)\}_i} at each
 \eqn{t}. Landscapes are stable under bottleneck distance and form a
 Banach-space embedding of persistence diagrams.
+
+Essential classes are excluded: a tent function is undefined for an
+infinitely-lived class on a finite grid, so pairs with
+\code{death = Inf} (VR mode) and pairs with \code{death = 0} but
+\code{birth > 0} (the clique-mode encoding of an essential class) are
+dropped before the landscape is built. When no finite pair remains in
+the requested dimension, every landscape function is zero on the grid.
 }
 \examples{
 mat <- matrix(c(0, .6, .5, .6, 0, .4, .5, .4, 0), 3, 3)

@@ -2,6 +2,11 @@
 % Please edit documentation in R/mmm.R
 \name{build_mmm}
 \alias{build_mmm}
+\alias{print.net_mmm}
+\alias{summary.net_mmm}
+\alias{plot.net_mmm}
+\alias{print.net_mmm_clustering}
+\alias{plot.net_mmm_clustering}
 \title{Fit a Mixed Markov Model}
 \usage{
 build_mmm(
@@ -16,10 +21,27 @@ build_mmm(
   covariate_effect = c("em", "posthoc"),
   estimator = c("auto", "firth", "multinom", "chisq")
 )
+
+\method{print}{net_mmm}(x, digits = 3L, ...)
+
+\method{summary}{net_mmm}(object, ...)
+
+\method{plot}{net_mmm}(x, type = c("posterior", "covariates"), combined = TRUE, ...)
+
+\method{print}{net_mmm_clustering}(x, digits = 3L, ...)
+
+\method{plot}{net_mmm_clustering}(
+  x,
+  type = c("posterior", "covariates", "predictors"),
+  combined = TRUE,
+  ...
+)
 }
 \arguments{
-\item{data}{A data.frame (wide format), \code{netobject}, or
-\code{tna} model. For tna objects, extracts the stored data.}
+\item{data}{A data.frame (wide format), \code{netobject},
+\code{cograph_network}, or \code{tna} model. For tna and
+cograph_network objects the stored (integer-encoded) data is
+extracted and decoded to state labels.}
 
 \item{k}{Integer. Whole finite number of mixture components, >= 2.
 Default: 2.}
@@ -66,6 +88,18 @@ Firth's penalised likelihood via \code{brglm2::brmultinom} (finite
 under separation); \code{"multinom"} forces \code{nnet::multinom}
 (warns about separation risk); \code{"chisq"} runs descriptive
 tests (no logit). See \code{\link{build_clusters}} for full details.}
+
+\item{x}{For the \code{print()} and \code{plot()} methods: an object of class \code{net_mmm} or \code{net_mmm_clustering}.}
+
+\item{digits}{In \code{print.net_mmm()}: Integer. Decimal places for floating-point statistics. Default \code{3}. Non-breaking: \code{print(x)} keeps the same alignment as before. In \code{print.net_mmm_clustering()}: Integer. Decimal places for floating-point statistics. Default \code{3}.}
+
+\item{...}{In \code{plot.net_mmm()}, \code{plot.net_mmm_clustering()}, \code{print.net_mmm()}, \code{print.net_mmm_clustering()} and \code{summary.net_mmm()}: Unsupported. Supplying unused arguments raises an error.}
+
+\item{object}{For the \code{summary()} method: an object of class \code{net_mmm}.}
+
+\item{type}{In \code{plot.net_mmm()}: Character. Plot type: \code{"posterior"} (default) or \code{"covariates"}. In \code{plot.net_mmm_clustering()}: Character. One of \code{"posterior"} (default; histogram of max posterior probability per sequence, coloured by cluster), \code{"covariates"} or its alias \code{"predictors"} (covariate forest plot when \code{cluster_mmm()} was run with \code{covariates}).}
+
+\item{combined}{In \code{plot.net_mmm()}: Logical. For \code{type = "covariates"} only: when \code{TRUE} (default), covariate forest panels are combined into a single faceted plot; when \code{FALSE}, a list of separate ggplots is returned. In \code{plot.net_mmm_clustering()}: Logical. For \code{type} in \code{"covariates"} or \code{"predictors"} only: when \code{TRUE} (default), forest panels are combined into a single faceted plot; when \code{FALSE}, a list of separate ggplots is returned.}
 }
 \value{
 An object of class \code{net_mmm} with components:
@@ -81,10 +115,35 @@ component transition matrix.}
 \item{assignments}{Integer vector of hard assignments (1..k).}
 \item{quality}{List: \code{avepp} (per-class), \code{avepp_overall},
 \code{entropy}, \code{relative_entropy},
-\code{classification_error}.}
+\code{classification_error}, \code{class_entropy}.}
 \item{log_likelihood, BIC, AIC, ICL}{Model fit statistics.}
+\item{n_params}{Number of free parameters behind BIC/AIC/ICL. With
+\code{covariate_effect = "em"} it grows by \code{(k - 1) * p} for
+\code{p} covariate columns.}
+\item{iterations, converged}{EM iterations used by the retained fit
+and whether it met \code{tol}.}
 \item{states}{Character vector of state names.}
+\item{n_sequences}{Number of sequences actually fitted (rows with
+missing covariates are dropped under
+\code{covariate_effect = "em"}).}
+\item{covariates}{The post-hoc covariate analysis (list), or NULL
+when \code{covariates = NULL}.}
+\item{network_method, build_args, htna_partition}{Provenance kept
+from \code{netobject} / HTNA input so per-cluster networks can be
+rebuilt the same way; NULL otherwise.}
+\item{metadata}{The \code{netobject}'s per-sequence metadata, one row
+per fitted sequence in the row order of \code{posterior}, so
+\code{\link{session_ids}} can name each sequence; NULL for other
+input.}
 }
+
+In \code{print.net_mmm()} and \code{print.net_mmm_clustering()}: The input object, invisibly.
+
+In \code{summary.net_mmm()}: A per-component summary \code{data.frame}. The class and visibility depend on whether the model was fitted with covariates: \describe{ \item{No covariates}{A plain \code{data.frame} with one row per component and columns \code{component}, \code{prior}, \code{n_assigned}, \code{mean_posterior}, \code{avepp}, returned \emph{visibly} (so it auto-prints after the printed summary block).} \item{With covariates}{A \code{tidy_covariates}/\code{data.frame} (the tidied covariate table, with the per-component stats attached), returned \emph{invisibly}.} } In both cases the printed summary (model fit, per-cluster transition matrices, optional covariate profiles) is emitted as a side effect.
+
+In \code{plot.net_mmm()}: A \code{ggplot} object, invisibly; for \code{type = "covariates"} with \code{combined = FALSE}, a list of \code{ggplot} objects named by cluster (invisibly).
+
+In \code{plot.net_mmm_clustering()}: A \code{ggplot} object, invisibly; for \code{type = "covariates"} / \code{"predictors"} with \code{combined = FALSE}, a list of \code{ggplot} objects named by cluster (invisibly).
 }
 \description{
 Discovers latent subgroups with different transition dynamics using
@@ -108,6 +167,15 @@ be treated as missing, recode them to \code{NA} before calling
 EM treats as an uninformative initial distribution), or left-trim the
 leading missings so each sequence's first column carries an observed
 state.
+}
+
+\section{Methods}{
+
+\itemize{
+\item \code{plot.net_mmm_clustering()}: Plot routines for the MMM clustering metadata attached to the \code{netobject_group} that \code{\link{build_network}} materializes from a \code{\link{cluster_mmm}} fit (or that \code{\link{cluster_network}} returns directly with \code{cluster_by = "mmm"}). Mirrors the type-driven surface of \code{\link{plot.net_clustering}} but covers only the metrics the EM fit produces -- there is no distance matrix on an MMM clustering, so \code{"silhouette"} / \code{"mds"} / \code{"heatmap"} aren't defined here and the dispatcher raises a clear error if you ask for one of those on an MMM result.
+\item \code{print.net_mmm()}: Compact summary of a Mixed Markov Model fit. Header carries dimensions and information criteria; cluster table carries N, mixing share, and per-cluster average posterior probability (AvePP). Layout matches \code{\link{print.net_clustering}} so distance- and model-based clusterings can be compared at a glance.
+\item \code{print.net_mmm_clustering()}: Prints the clustering metadata attached to the \code{netobject_group} that \code{\link{build_network}} materializes from a \code{\link{cluster_mmm}} fit (\code{attr(grp, "clustering")}). Layout mirrors \code{\link{print.net_clustering}}: a one-line dimension header, a quality line with AvePP / entropy / classification error, information criteria, and a per-cluster table.
+}
 }
 
 \examples{

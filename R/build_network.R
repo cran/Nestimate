@@ -7,12 +7,25 @@
 #' estimator registry, so custom estimators can also be used.
 #'
 #' @param data Data frame (sequences or per-observation frequencies) or a
-#'   square symmetric matrix (correlation or covariance).
-#' @param method Character. Required. Name of a registered estimator.
+#'   square symmetric matrix (correlation or covariance). A fitted
+#'   \code{net_clustering} or \code{net_mmm} object is also accepted: the
+#'   per-cluster networks are (re)built and a \code{netobject_group} is
+#'   returned.
+#' @param method Character. Required, except when \code{data} is a
+#'   \code{net_clustering} or \code{net_mmm} object, where the fitted
+#'   object's own network method is used. Name of a registered estimator.
 #'   Built-in methods: \code{"relative"}, \code{"frequency"},
 #'   \code{"co_occurrence"}, \code{"cor"}, \code{"pcor"}, \code{"glasso"},
 #'   \code{"ising"}, \code{"mgm"}, \code{"attention"}, \code{"wtna"},
-#'   \code{"wtna_cooccurrence"}.
+#'   \code{"wtna_cooccurrence"}, \code{"ngram"}, \code{"gap"},
+#'   \code{"reverse"}. The last three mirror \code{tna::build_model()}
+#'   types \code{"n-gram"} (adjacent pairs counted once per n-gram window
+#'   containing them; \code{params = list(n_gram = 2)}), \code{"gap"}
+#'   (pairs up to \code{max_gap + 1} positions apart, weighted by
+#'   \code{1 / distance}; \code{params = list(max_gap = 1)}) and
+#'   \code{"reverse"} (reply network: the transpose of \code{"frequency"};
+#'   \code{params = list(weighted = FALSE)}). All three return raw weights;
+#'   add \code{scaling = "normalize"} for row probabilities.
 #'   Aliases: \code{"tna"} and \code{"transition"} map to \code{"relative"};
 #'   \code{"ftna"} and \code{"counts"} map to \code{"frequency"};
 #'   \code{"cna"} and \code{"wcna"} map to \code{"co_occurrence"};
@@ -22,7 +35,9 @@
 #'   \code{"isingfit"} maps to \code{"ising"};
 #'   \code{"atna"} maps to \code{"attention"};
 #'   \code{"mixed"} and \code{"mixed_graphical"} map to \code{"mgm"};
-#'   \code{"wtna_transition"} maps to \code{"wtna"}.
+#'   \code{"wtna_transition"} maps to \code{"wtna"};
+#'   \code{"co-occurrence"} maps to \code{"co_occurrence"};
+#'   \code{"n-gram"} and \code{"n_gram"} map to \code{"ngram"}.
 #' @param params Named list. Method-specific parameters passed to the estimator
 #'   function (e.g. \code{list(gamma = 0.5)} for glasso, or
 #'   \code{list(format = "wide")} for transition methods). This is the key
@@ -33,9 +48,9 @@
 #'   / \code{end_state}, of which \code{start} / \code{end} are the public
 #'   form -- see those arguments).
 #'   Column-like entries in \code{params} (\code{action}, \code{id},
-#'   \code{id_col}, \code{time}, \code{session}, \code{order}, \code{codes},
-#'   and \code{group}) are resolved before format detection and must name
-#'   existing columns. If the same column role is supplied both directly and
+#'   \code{id_col}, \code{actor}, \code{time}, \code{session}, \code{order},
+#'   \code{cols}, \code{codes}, and \code{group}) are resolved before format
+#'   detection and must name existing columns. If the same column role is supplied both directly and
 #'   through \code{params}, the names must agree.
 #' @param start Boundary marker prepended to every sequence as an explicit
 #'   start state (a pure source: no incoming edges, every sequence's first
@@ -43,7 +58,8 @@
 #'   adds nothing; \code{TRUE} uses the label \code{"Start"}; a single string
 #'   uses that string as the label. Only valid for the transition methods
 #'   (\code{relative}, \code{frequency}, \code{co_occurrence},
-#'   \code{attention}); errors otherwise.
+#'   \code{attention}, \code{ngram}, \code{gap}, \code{reverse}); errors
+#'   otherwise (\code{wtna} included).
 #' @param end Boundary marker placed in the single cell after each sequence's
 #'   last observed (non-\code{NA}) state, as an explicit terminal state (a
 #'   pure sink: no outgoing edges, no self-loop -- distinct from
@@ -62,9 +78,11 @@
 #'   Default: \code{NULL} (no scaling).
 #' @param threshold Numeric. Absolute values below this are set to zero in the
 #'   result matrix. Default: 0 (no thresholding).
-#' @param level Character or NULL. Multilevel decomposition for association
-#'   methods. One of \code{NULL}, \code{"between"}, \code{"within"},
-#'   \code{"both"}. Requires \code{id_col}. Default: \code{NULL}.
+#' @param level Character or NULL. Multilevel decomposition for the undirected
+#'   association methods (\code{cor}, \code{pcor}, \code{glasso}); a directed
+#'   estimator errors. One of \code{NULL}, \code{"between"}, \code{"within"},
+#'   \code{"both"}. Requires an id column, supplied either as \code{actor} or
+#'   as \code{params$id} / \code{params$id_col}. Default: \code{NULL}.
 #' @param actor Character. Name of the actor/person ID column for sequence
 #'   grouping. Default: \code{NULL}.
 #' @param action Character. Name of the action/state column (long format).
@@ -90,6 +108,10 @@
 #'   format session splitting. Set to \code{FALSE} to switch session-interval
 #'   splitting off, so each actor (or actor-session) forms a single sequence.
 #'   Default: \code{900}.
+#' @param timezone Character. Olson time zone used to interpret naive
+#'   timestamps in long-format data (offset-bearing timestamps such as
+#'   \code{...Z} or \code{+02:00} are converted from their offset). Passed to
+#'   \code{\link{prepare}}. Default: \code{"UTC"}.
 #' @param predictability Logical. If \code{TRUE} (default), compute and store
 #'   node predictability (R-squared) for undirected association methods
 #'   (glasso, pcor, cor). Stored in \code{$predictability} and auto-displayed
@@ -107,10 +129,12 @@
 #'   are auto-detected as state via the values-in-nodes rule. Cannot overlap
 #'   with \code{state_cols}. Default: \code{NULL}.
 #' @param ... Additional arguments passed to the estimator function.
-#'
+#' In \code{print.netobject()}, \code{print.netobject_group()} and \code{print.netobject_ml()}: Additional arguments (ignored). In \code{print.summary.netobject()}, \code{print.summary.netobject_group()}, \code{summary.netobject()} and \code{summary.netobject_group()}: Ignored.
 #' @return An object of class \code{c("netobject", "cograph_network")} containing:
 #' \describe{
-#'   \item{data}{The input data used for estimation, as a data frame.}
+#'   \item{data}{The state columns of the cleaned input data, as a data frame.}
+#'   \item{metadata}{Data frame of the non-state columns of the cleaned input
+#'     (and, for long input, the per-sequence metadata), or NULL.}
 #'   \item{weights}{The estimated network weight matrix.}
 #'   \item{nodes}{Data frame with columns \code{id}, \code{label}, \code{name},
 #'     \code{x}, \code{y}. Node labels are in \code{$nodes$label}.}
@@ -124,6 +148,9 @@
 #'   \item{n_nodes}{Number of nodes.}
 #'   \item{n_edges}{Number of non-zero edges.}
 #'   \item{level}{Decomposition level used (or NULL).}
+#'   \item{build_args}{The resolved column/format arguments (\code{actor},
+#'     \code{action}, \code{time}, \code{session}, \code{order}, \code{codes},
+#'     \code{format}, \code{window_size}, \code{mode}) used for this build.}
 #'   \item{meta}{List with \code{source}, \code{layout}, and \code{tna} metadata
 #'     (cograph-compatible).}
 #'   \item{node_groups}{Node groupings data frame, or NULL.}
@@ -132,12 +159,19 @@
 #'     \code{predictability = TRUE}). NULL for directed methods.}
 #' }
 #' Method-specific extras (e.g. \code{precision_matrix}, \code{cor_matrix},
-#' \code{frequency_matrix}, \code{lambda_selected}, etc.) are preserved
-#' from the estimator output.
+#' \code{frequency_matrix}, \code{initial}, \code{lambda_selected}, etc.) are
+#' preserved from the estimator output.
 #'
 #' When \code{level = "both"}, returns an object of class
 #' \code{"netobject_ml"} with \code{$between} and \code{$within}
-#' sub-networks and a \code{$method} field.
+#' sub-networks and a \code{$method} field. \code{level = "between"} or
+#' \code{"within"} returns a single \code{netobject} estimated on the
+#' decomposed data.
+#'
+#' When \code{group} is supplied (or \code{data} is a \code{net_clustering} /
+#' \code{net_mmm} object), returns an object of class
+#' \code{"netobject_group"}: a named list of \code{netobject}s, one per group,
+#' carrying the grouping column in \code{attr(x, "group_col")}.
 #'
 #' @details
 #' The function works as follows:
@@ -203,6 +237,7 @@ build_network <- function(data,
                           threshold = 0,
                           level = NULL,
                           time_threshold = 900,
+                          timezone = "UTC",
                           predictability = TRUE,
                           state_cols = NULL,
                           metadata_cols = NULL,
@@ -384,7 +419,8 @@ build_network <- function(data,
   begin_label <- .resolve_boundary(start, "Start", "start")
   end_label   <- .resolve_boundary(end,   "End",   "end")
   if (!is.null(begin_label) || !is.null(end_label)) {
-    boundary_methods <- c("relative", "frequency", "co_occurrence", "attention")
+    boundary_methods <- c("relative", "frequency", "co_occurrence", "attention",
+                          "ngram", "gap", "reverse")
     if (!method %in% boundary_methods) {
       stop("`start`/`end` boundary markers are only supported for the ",
            "transition methods (", paste(boundary_methods, collapse = ", "),
@@ -435,14 +471,19 @@ build_network <- function(data,
   # ---- Group dispatch: per-group networks ----
   if (!is.null(group)) {
     stopifnot(is.character(group))
-    transition_methods <- c("relative", "frequency", "co_occurrence", "attention")
+    transition_methods <- c("relative", "frequency", "co_occurrence", "attention",
+                            "ngram", "gap", "reverse")
     if (method %in% transition_methods && is.data.frame(data) &&
         is.null(.param_get(params, "alphabet"))) {
       if (!is.null(action) && action %in% names(data)) {
         vals <- .clean_states(as.character(data[[action]]))
       } else {
-        exclude <- c(group, actor, session)
-        state_names <- setdiff(names(data), exclude)
+        exclude <- c(group, actor, session, metadata_cols)
+        state_names <- if (!is.null(state_cols)) {
+          intersect(state_cols, names(data))
+        } else {
+          setdiff(names(data), exclude)
+        }
         vals <- .clean_states(as.character(unlist(data[, state_names, drop = FALSE])))
       }
       params$alphabet <- sort(unique(c(
@@ -475,7 +516,7 @@ build_network <- function(data,
         group = NULL, format = format, window_size = window_size,
         mode = mode, scaling = scaling, threshold = threshold,
         level = level, time_threshold = time_threshold,
-        predictability = predictability,
+        timezone = timezone, predictability = predictability,
         state_cols = state_cols, metadata_cols = metadata_cols,
         params = child_params, ...
       )
@@ -517,19 +558,14 @@ build_network <- function(data,
   # ---- Long format: prepare event log data ----
   if (format == "long" && !is.null(action) && is.data.frame(data) &&
       action %in% names(data)) {
-    if (is.null(actor)) {
-      warning(
-        "A network with one long sequence is not recommended and can't be ",
-        "validated using bootstrap and other confirmatory testings.",
-        call. = FALSE
-      )
-    }
+    if (is.null(actor)) .single_sequence_notice(type = "message")
     prep_args <- list(data = data, action = action)
     if (!is.null(actor)) prep_args$actor <- actor
     if (!is.null(time)) prep_args$time <- time
     if (!is.null(session)) prep_args$session <- session # nocov start
     if (!is.null(order)) prep_args$order <- order # nocov end
     prep_args$time_threshold <- time_threshold
+    prep_args$timezone <- timezone
 
     prepared <- do.call(prepare, prep_args)
     data <- prepared$sequence_data
@@ -571,6 +607,18 @@ build_network <- function(data,
   } else {
     # Wide sequence data: pass format through
     if (!"format" %in% names(params)) params$format <- format
+    # Explicit column roles decide what the estimator reads. Without this a
+    # declared metadata column was counted as a sequence position (its values
+    # became states) and was only moved to $metadata after estimation.
+    if (is.data.frame(data) && is.null(params$cols) &&
+        (!is.null(state_cols) || !is.null(metadata_cols))) {
+      params$cols <- if (!is.null(state_cols)) {
+        state_cols
+      } else {
+        setdiff(names(data), c(metadata_cols, actor,
+                               .param_get(params, "id")))
+      }
+    }
   }
 
   # ---- Auto-convert sequences to frequencies for association methods ----
@@ -595,6 +643,13 @@ build_network <- function(data,
       data <- freq_data[, setdiff(names(freq_data), drop), drop = FALSE]
       params$format <- "wide"
     }
+  }
+
+  # Declared metadata columns are not variables of an association network
+  # (cor, pcor, glasso, ising, mgm); without this they entered as nodes.
+  if (method %in% c("cor", "pcor", "glasso", "ising", "mgm") &&
+      is.data.frame(data) && !is.null(metadata_cols)) {
+    data <- data[, setdiff(names(data), metadata_cols), drop = FALSE]
   }
 
   # ---- Multilevel decomposition ----
@@ -686,7 +741,7 @@ build_network <- function(data,
     net_matrix <- .apply_scaling(
       net_matrix, scaling,
       include_zeros = method %in% c("relative", "frequency", "co_occurrence",
-                                    "attention")
+                                    "attention", "ngram", "gap", "reverse")
     )
   }
 
@@ -987,26 +1042,14 @@ build_network <- function(data,
 
 # ---- S3 methods ----
 
-#' Print Method for Network Object
-#'
-#' @param x A \code{netobject}.
-#' @param ... Additional arguments (ignored).
-#'
-#' @return The input object, invisibly.
-#'
-#' @examples
-#' seqs <- data.frame(V1 = c("A","B","C","A"), V2 = c("B","C","A","B"))
-#' net <- build_network(seqs, method = "relative")
-#' print(net)
-#' \donttest{
-#' seqs <- data.frame(
-#'   V1 = c("A","B","A","C"), V2 = c("B","C","B","A"),
-#'   V3 = c("C","A","C","B")
-#' )
-#' net <- build_network(seqs, method = "relative")
-#' print(net)
-#' }
-#'
+#' @rdname build_network
+#' @param x For the \code{print()} method: an object of class \code{netobject}, \code{netobject_group} or \code{netobject_ml} (or its \code{summary()}).
+#' @param digits Integer. Decimal places for the weight summary. Default \code{3}. Non-breaking: \code{print(x)} keeps the same shape as before, with the addition of a weight-range column.
+#' @param object For the \code{summary()} method: an object of class \code{netobject} or \code{netobject_group}.
+#' @param combined Logical. Combine into one wide data.frame? Default `TRUE`.
+#' @return In \code{print.netobject()}, \code{print.netobject_group()} and \code{print.netobject_ml()}: The input object, invisibly.
+#' @return In \code{summary.netobject()}: A `data.frame` with columns `metric` and `value`, of class `c("summary.netobject", "data.frame")`.
+#' @return In \code{summary.netobject_group()}: Either a `data.frame` (one column per group) or a named list of `summary.netobject` objects, of class `c("summary.netobject_group", ...)`.
 #' @export
 print.netobject <- function(x, ...) {
   method_labels <- c(
@@ -1106,40 +1149,11 @@ print.netobject <- function(x, ...) {
 }
 
 
-#' Print Method for Group Network Object
-#'
-#' Compact summary of a \code{netobject_group}. Header surfaces the source
-#' (a clustering attached by \code{\link{cluster_network}} or
-#' \code{\link{cluster_mmm}}, or a plain split by \code{group_col}). The
-#' per-group table carries node and edge counts, weight range, and -- when
-#' a clustering attribute is present -- N and percentage of sequences per
-#' cluster (matching the layout used by \code{\link{print.net_clustering}}
-#' and \code{\link{print.net_mmm}}).
-#'
-#' @param x A \code{netobject_group}.
-#' @param digits Integer. Decimal places for the weight summary. Default
-#'   \code{3}. Non-breaking: \code{print(x)} keeps the same shape as
-#'   before, with the addition of a weight-range column.
-#' @param ... Additional arguments (ignored).
-#'
-#' @return The input object, invisibly.
-#'
-#' @examples
-#' seqs <- data.frame(V1 = c("A","B","A","B"), V2 = c("B","A","B","A"),
-#'                    grp = c("X","X","Y","Y"))
-#' nets <- build_network(seqs, method = "relative", group = "grp")
-#' print(nets)
-#' \donttest{
-#' seqs <- data.frame(
-#'   V1 = c("A","B","A","C","B","A"),
-#'   V2 = c("B","C","B","A","C","B"),
-#'   V3 = c("C","A","C","B","A","C"),
-#'   grp = c("X","X","X","Y","Y","Y")
-#' )
-#' nets <- build_network(seqs, method = "relative", group = "grp")
-#' print(nets)
-#' }
-#'
+#' @rdname build_network
+#' @section Methods:
+#' * \code{print.netobject_group()}: Compact summary of a \code{netobject_group}. Header surfaces the source (a clustering attached by \code{\link{cluster_network}} or \code{\link{cluster_mmm}}, or a plain split by \code{group_col}). The per-group table carries node and edge counts, weight range, and -- when a clustering attribute is present -- N and percentage of sequences per cluster (matching the layout used by \code{\link{print.net_clustering}} and \code{\link{print.net_mmm}}).
+#' * \code{summary.netobject()}: Computes node count, edge count, density, mean shortest-path distance, mean and SD of in/out strength, mean and SD of in/out degree, in/out degree centralization (Freeman), and reciprocity. Mirrors the metric set returned by `tna::summary.tna()` so a Nestimate netobject and the equivalent tna model report numerically identical descriptive metrics.
+#' * \code{summary.netobject_group()}: Returns one summary per constituent network. With `combined = TRUE` (default) the per-group tables are joined into a single wide `data.frame` with one column per group; with `combined = FALSE` returns a named list.
 #' @export
 print.netobject_group <- function(x, digits = 3L, ...) {
   digits <- as.integer(digits)
@@ -1218,32 +1232,7 @@ print.netobject_group <- function(x, digits = 3L, ...) {
 }
 
 
-#' Print Method for Multilevel Network Object
-#'
-#' @param x A \code{netobject_ml}.
-#' @param ... Additional arguments (ignored).
-#'
-#' @return The input object, invisibly.
-#'
-#' @examples
-#' set.seed(1)
-#' obs <- data.frame(id = rep(1:3, each = 5),
-#'                   A = rnorm(15), B = rnorm(15), C = rnorm(15))
-#' net_ml <- build_network(obs, method = "cor",
-#'                          params = list(id = "id"), level = "both")
-#' print(net_ml)
-#' \donttest{
-#' set.seed(1)
-#' obs <- data.frame(
-#'   id  = rep(1:5, each = 8),
-#'   A   = rnorm(40), B = rnorm(40),
-#'   C   = rnorm(40), D = rnorm(40)
-#' )
-#' net_ml <- build_network(obs, method = "cor",
-#'                          params = list(id = "id"), level = "both")
-#' print(net_ml)
-#' }
-#'
+#' @rdname build_network
 #' @export
 print.netobject_ml <- function(x, ...) {
   cat(sprintf("Multilevel Network (method: %s)\n", x$method))
@@ -1279,18 +1268,24 @@ print.netobject_ml <- function(x, ...) {
 #' For \code{method = "cor"}, predictability is the multiple R\eqn{^2} from
 #' regressing each node on its network neighbors (nodes with non-zero edges).
 #'
-#' @param object A \code{netobject} or \code{netobject_ml} object.
+#' @param object A \code{netobject}, \code{netobject_ml}, or
+#'   \code{netobject_group} object.
 #' @param data Optional data frame of the original variables used to estimate
-#'   the network. Required for \code{method = "cor"} (multiple-R\eqn{^2} regression
-#'   of each node on its neighbours); ignored for the precision-matrix path used
-#'   by \code{glasso}/\code{pcor}, which has no need of the raw data.
+#'   the network. R\eqn{^2} never needs it (it comes from the precision or
+#'   correlation matrix stored on the object). It is used only for the
+#'   \code{RMSE} column and defaults to \code{object$data}; when neither is
+#'   available \code{RMSE} is \code{NA}.
 #' @param ... Additional arguments (ignored).
 #'
-#' @return For \code{netobject}: a named numeric vector of R\eqn{^2} values
-#'   (one per node, between 0 and 1).
+#' @return For \code{netobject}: a data frame with one row per node and columns
+#'   \code{node} (character), \code{R2} (numeric, between 0 and 1) and
+#'   \code{RMSE} (numeric, \code{NA} when no data is available).
 #'
 #'   For \code{netobject_ml}: a list with elements \code{$between} and
-#'   \code{$within}, each a named numeric vector.
+#'   \code{$within}, each such a data frame.
+#'
+#'   For \code{netobject_group}: a named list of such data frames, one per
+#'   group.
 #'
 #' @references
 #' Haslbeck, J. M. B., & Waldorp, L. J. (2018). How well do network models
@@ -1312,7 +1307,8 @@ predictability <- function(object, ...) {
 
 
 #' @rdname predictability
-#' @return A named numeric vector of predictability values per node.
+#' @return A data frame with one row per node and columns \code{node},
+#'   \code{R2} and \code{RMSE}.
 #' @export
 predictability.netobject <- function(object, data = NULL, ...) {
   labels <- object$nodes$label
@@ -1385,7 +1381,8 @@ predictability.netobject <- function(object, data = NULL, ...) {
 
 
 #' @rdname predictability
-#' @return A list with \code{within} and \code{between} predictability vectors.
+#' @return A list with \code{between} and \code{within} predictability data
+#'   frames.
 #' @export
 predictability.netobject_ml <- function(object, ...) {
   list(
@@ -1396,7 +1393,7 @@ predictability.netobject_ml <- function(object, ...) {
 
 
 #' @rdname predictability
-#' @return A named list of per-group predictability vectors.
+#' @return A named list of per-group predictability data frames.
 #' @export
 predictability.netobject_group <- function(object, ...) {
   lapply(object, predictability)

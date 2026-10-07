@@ -3,7 +3,8 @@
 #' @description
 #' Extract the transition probability matrix from a TNA model object.
 #'
-#' @param model A TNA model object or a list containing a 'weights' element.
+#' @param model A \code{netobject}, TNA model object, \code{mcml} object, a
+#'   list containing a \code{weights} element, or a bare weight matrix.
 #' @param type Character. Type of matrix to return:
 #' \describe{
 #'   \item{"raw"}{The raw weight matrix as stored in the model.}
@@ -11,7 +12,14 @@
 #' }
 #' Default: "raw".
 #'
-#' @return A square numeric matrix with row and column names as state names.
+#' @return For a single network: a square numeric matrix with row and column
+#'   names as state names, of class
+#'   \code{c("nest_transition_matrix", "matrix", "array")}. It behaves as an
+#'   ordinary matrix; the class stamp only adds a \code{summary()} method
+#'   returning a tidy \code{from}/\code{to}/\code{weight} data frame.
+#'
+#'   For an \code{mcml} object: a named list of such matrices, with
+#'   \code{macro} first and then one element per cluster.
 #'
 #' @details
 #' TNA models store transition weights in different locations depending on the
@@ -91,13 +99,10 @@ extract_transition_matrix <- function(model, type = c("raw", "scaled")) {
 }
 
 
-#' Summary Method for Transition Matrices
-#'
-#' @param object A \code{nest_transition_matrix} returned by
-#'   \code{\link{extract_transition_matrix}}.
-#' @param ... Additional arguments (ignored).
-#' @return A tidy data frame with columns \code{from}, \code{to},
-#'   \code{weight}, with one row per non-zero entry.
+#' @rdname extract_transition_matrix
+#' @param object For the \code{summary()} method: an object of class \code{nest_transition_matrix}.
+#' @param ... In \code{summary.nest_transition_matrix()}: Additional arguments (ignored).
+#' @return In \code{summary.nest_transition_matrix()}: A tidy data frame with columns \code{from}, \code{to}, \code{weight}, with one row per non-zero entry.
 #' @export
 summary.nest_transition_matrix <- function(object, ...) {
   .matrix_to_long_df(unclass(object), value_col = "weight")
@@ -109,15 +114,24 @@ summary.nest_transition_matrix <- function(object, ...) {
 #' @description
 #' Extract the initial state probability vector from a TNA model object.
 #'
-#' @param model A TNA model object or a list containing an 'initial' element.
+#' @param model A \code{netobject}, TNA model object, \code{mcml} object, or
+#'   a list containing an \code{initial} element.
 #'
-#' @return A named numeric vector of initial state probabilities.
+#' @return For a single network: a named numeric vector of initial state
+#'   probabilities summing to 1, of class
+#'   \code{c("nest_initial_probs", "numeric")}. The class stamp only adds a
+#'   \code{summary()} method returning a tidy \code{state}/\code{prob} data
+#'   frame.
+#'
+#'   For an \code{mcml} object: a named list of such vectors, with
+#'   \code{macro} first and then one element per cluster (taken from each
+#'   layer's \code{$inits}, unstamped).
 #'
 #' @details
 #' Initial probabilities represent the probability of starting a sequence in
 #' each state. If the model doesn't have explicit initial probabilities,
-#' this function attempts to estimate them from the data or use uniform
-#' probabilities.
+#' this function falls back to a uniform distribution over the states of the
+#' transition matrix and warns.
 #'
 #' @examples
 #' seqs <- data.frame(V1 = c("A","B","A"), V2 = c("B","A","C"), V3 = c("A","C","B"))
@@ -195,13 +209,10 @@ extract_initial_probs <- function(model) {
 }
 
 
-#' Summary Method for Initial Probability Vectors
-#'
-#' @param object A \code{nest_initial_probs} named numeric vector returned
-#'   by \code{\link{extract_initial_probs}}.
-#' @param ... Additional arguments (ignored).
-#' @return A tidy data frame with columns \code{state} and \code{prob},
-#'   sorted by decreasing probability.
+#' @rdname extract_initial_probs
+#' @param object For the \code{summary()} method: an object of class \code{nest_initial_probs}.
+#' @param ... In \code{summary.nest_initial_probs()}: Additional arguments (ignored).
+#' @return In \code{summary.nest_initial_probs()}: A tidy data frame with columns \code{state} and \code{prob}, sorted by decreasing probability.
 #' @export
 summary.nest_initial_probs <- function(object, ...) {
   v <- unclass(object)
@@ -223,18 +234,23 @@ summary.nest_initial_probs <- function(object, ...) {
 #' Extract an edge list from a TNA model, representing the network as a
 #' data frame of from-to-weight tuples.
 #'
-#' @param model A TNA model object or a matrix of weights.
+#' @param model A \code{netobject}, TNA model object, \code{mcml} object, or
+#'   a matrix of weights.
 #' @param threshold Numeric. Minimum weight to include an edge. Default: 0.
 #' @param include_self Logical. Whether to include self-loops. Default: FALSE.
 #' @param sort_by Character. Column to sort by: "weight" (descending),
 #'   "from", "to", or NULL for no sorting. Default: "weight".
 #'
-#' @return A data frame with columns:
+#' @return For a single network: a data frame with one row per retained edge
+#'   and columns:
 #' \describe{
 #'   \item{from}{Source state name.}
 #'   \item{to}{Target state name.}
 #'   \item{weight}{Edge weight (transition probability).}
 #' }
+#'
+#'   For an \code{mcml} object: a named list of such data frames, with
+#'   \code{macro} first and then one element per cluster.
 #'
 #' @details
 #' This function converts the transition matrix into an edge list format,

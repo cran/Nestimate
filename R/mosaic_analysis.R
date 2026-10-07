@@ -61,7 +61,7 @@
 #'   ColorBrewer RdBu ramp by default (override with \code{palette}). Column
 #'   labels auto-rotate to vertical when there are more than 6 columns; pass
 #'   \code{col_label_angle} to force an angle.
-#'
+#' In \code{plot.mosaic_analysis()}: Styling overrides forwarded to the flat renderer. In \code{print.mosaic_analysis()} and \code{summary.mosaic_analysis()}: Ignored.
 #' @return An object of class \code{"mosaic_analysis"}: a list with
 #' \describe{
 #'   \item{plot}{The flat mosaic \code{ggplot} object.}
@@ -76,16 +76,19 @@
 #'   \item{table}{The filtered contingency \code{table}.}
 #'   \item{removed}{List of dropped \code{var1} / \code{var2} categories.}
 #'   \item{n_original, n_filtered}{Row counts before/after filtering.}
+#'   \item{vars}{Named character vector \code{c(var1 = , var2 = )}.}
+#'   \item{plot_parts, plot_args}{The residual matrix, table, and styling
+#'     arguments retained so \code{plot()} can re-render without re-testing.}
 #' }
+#' Use \code{print()} for the test summary and \code{summary()} for the tidy
+#' per-cell table.
 #'
 #' @examples
-#' df <- data.frame(
-#'   gender = sample(c("F", "M"), 200, replace = TRUE),
-#'   level  = sample(c("Low", "Mid", "High"), 200, replace = TRUE)
-#' )
-#' res <- mosaic_analysis(df, "gender", "level", min_count = 5)
-#' res$stats
-#' res$counts
+#' data(group_regulation_long, package = "Nestimate")
+#' res <- mosaic_analysis(group_regulation_long, "Course", "Action",
+#'                        min_count = 20)
+#' res
+#' head(summary(res))
 #' \donttest{
 #' plot(res, tile_label = "percent")
 #' }
@@ -222,26 +225,14 @@ mosaic_analysis <- function(data, var1, var2, min_count = 10L,
 }
 
 
-#' Plot method for mosaic_analysis objects
-#'
-#' @description
-#' Re-renders the flat mosaic from the stored contingency table and residuals,
-#' so styling can be changed without re-running the test. Any flat-mosaic
-#' styling argument (\code{tile_label}, \code{pct_base}, \code{col_label_side},
-#' \code{legend_size}, ...) may be overridden via \code{...}.
-#'
-#' @param x A \code{mosaic_analysis} object.
-#' @param ... Styling overrides forwarded to the flat renderer.
-#' @return The \code{ggplot} object, invisibly (drawn as a side effect).
-#' @examples
-#' df <- data.frame(
-#'   a = sample(c("X", "Y", "Z"), 200, replace = TRUE),
-#'   b = sample(c("P", "Q"), 200, replace = TRUE)
-#' )
-#' res <- mosaic_analysis(df, "a", "b", min_count = 5)
-#' \donttest{
-#' plot(res, tile_label = "percent", legend_position = "bottom")
-#' }
+#' @rdname mosaic_analysis
+#' @section Methods:
+#' * \code{plot.mosaic_analysis()}: Re-renders the flat mosaic from the stored contingency table and residuals, so styling can be changed without re-running the test. Any flat-mosaic styling argument (\code{tile_label}, \code{pct_base}, \code{col_label_side}, \code{legend_size}, ...) may be overridden via \code{...}.
+#' @param x For the \code{plot()} and \code{print()} methods: an object of class \code{mosaic_analysis}.
+#' @param object For the \code{summary()} method: an object of class \code{mosaic_analysis}.
+#' @return In \code{plot.mosaic_analysis()}: The re-rendered flat mosaic \code{ggplot} object, invisibly; the plot is drawn on the active device as a side effect.
+#' @return In \code{print.mosaic_analysis()}: \code{x}, invisibly.
+#' @return In \code{summary.mosaic_analysis()}: The tidy per-cell \code{data.frame}: one row per (var1, var2) cell, with the two variable columns (named after \code{var1} / \code{var2}) plus \code{observed}, \code{expected}, \code{residual} and \code{pct}. The one-row test summary is attached as the \code{"stats"} attribute.
 #' @export
 plot.mosaic_analysis <- function(x, ...) {
   args <- utils::modifyList(x$plot_args, list(...))
@@ -253,11 +244,7 @@ plot.mosaic_analysis <- function(x, ...) {
 }
 
 
-#' Print method for mosaic_analysis objects
-#'
-#' @param x A \code{mosaic_analysis} object.
-#' @param ... Ignored.
-#' @return \code{x}, invisibly.
+#' @rdname mosaic_analysis
 #' @export
 print.mosaic_analysis <- function(x, ...) {
   cat(sprintf("Mosaic analysis: %s x %s\n", x$vars[["var1"]], x$vars[["var2"]]))
@@ -280,12 +267,7 @@ print.mosaic_analysis <- function(x, ...) {
 }
 
 
-#' Summary method for mosaic_analysis objects
-#'
-#' @param object A \code{mosaic_analysis} object.
-#' @param ... Ignored.
-#' @return The tidy per-cell \code{counts} data.frame, with the \code{stats}
-#'   row attached as an attribute.
+#' @rdname mosaic_analysis
 #' @export
 summary.mosaic_analysis <- function(object, ...) {
   out <- object$counts

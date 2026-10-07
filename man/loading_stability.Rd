@@ -2,12 +2,18 @@
 % Please edit documentation in R/mcml_pc.R
 \name{loading_stability}
 \alias{loading_stability}
+\alias{print.pc_loading_stability}
+\alias{plot.pc_loading_stability}
 \title{Composite-Weight Stability Under Case Resampling}
 \usage{
 loading_stability(x, iter = 200L, ci_level = 0.05, seed = NULL)
+
+\method{print}{pc_loading_stability}(x, digits = 3, ...)
+
+\method{plot}{pc_loading_stability}(x, ...)
 }
 \arguments{
-\item{x}{An \code{mcml_pc} object that carries raw data.}
+\item{x}{An \code{mcml_pc} object that carries raw data. For the \code{print()} and \code{plot()} methods: an object of class \code{pc_loading_stability}.}
 
 \item{iter}{Integer. Bootstrap replicates (default 200; node-level
 re-estimation makes this heavier than a plain bootstrap).}
@@ -16,6 +22,10 @@ re-estimation makes this heavier than a plain bootstrap).}
 (default 0.05).}
 
 \item{seed}{Integer or NULL. RNG seed.}
+
+\item{digits}{Number of digits to display (default 3).}
+
+\item{...}{In \code{plot.pc_loading_stability()} and \code{print.pc_loading_stability()}: Additional arguments (ignored).}
 }
 \value{
 An object of class \code{"pc_loading_stability"}: a list with
@@ -25,6 +35,10 @@ An object of class \code{"pc_loading_stability"}: a list with
 in which the item's sign differed from the observed one),
 \code{boot_weights} (iter x n_nodes matrix), \code{iter}, and
 \code{ci_level}. Has print and plot methods.
+
+In \code{print.pc_loading_stability()}: \code{x}, invisibly.
+
+In \code{plot.pc_loading_stability()}: A ggplot object.
 }
 \description{
 \strong{Experimental.} Bootstraps the item weights of a
@@ -34,16 +48,24 @@ connectivity-based composite weights are recomputed. Wide intervals
 mean the weighting (and therefore the \code{"loadings"} macro
 network) should not be over-interpreted.
 }
+\section{Methods}{
+
+\itemize{
+\item \code{plot.pc_loading_stability()}: Signed composite weights with bootstrap percentile intervals, faceted by cluster.
+}
+}
+
 \examples{
-\donttest{
 set.seed(1)
-df <- as.data.frame(matrix(rnorm(600), 100, 6))
-names(df) <- c("a1", "a2", "a3", "b1", "b2", "b3")
+f <- stats::rnorm(100)
+g <- stats::rnorm(100)
+df <- data.frame(a1 = f + stats::rnorm(100), a2 = f + stats::rnorm(100),
+                 a3 = f + stats::rnorm(100), b1 = g + stats::rnorm(100),
+                 b2 = g + stats::rnorm(100), b3 = g + stats::rnorm(100))
 cl <- list(A = c("a1", "a2", "a3"), B = c("b1", "b2", "b3"))
 fit <- build_mcml_pc(df, cl, aggregation = "loadings",
                      method = "cor")
-ls <- loading_stability(fit, iter = 50, seed = 1)
-ls$summary
-}
+stability <- loading_stability(fit, iter = 50, seed = 1)
+stability
 
 }

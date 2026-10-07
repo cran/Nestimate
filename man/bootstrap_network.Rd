@@ -2,6 +2,12 @@
 % Please edit documentation in R/bootstrap_network.R
 \name{bootstrap_network}
 \alias{bootstrap_network}
+\alias{print.net_bootstrap}
+\alias{summary.net_bootstrap}
+\alias{print.net_bootstrap_group}
+\alias{summary.net_bootstrap_group}
+\alias{print.wtna_boot_mixed}
+\alias{summary.wtna_boot_mixed}
 \title{Bootstrap a Network Estimate}
 \usage{
 bootstrap_network(
@@ -13,13 +19,29 @@ bootstrap_network(
   edge_threshold = NULL,
   seed = NULL,
   boundary = c("inclusive", "strict"),
-  ci_method = c("percentile", "basic")
+  ci_method = c("percentile", "basic"),
+  actor = NULL
 )
+
+\method{print}{net_bootstrap}(x, ...)
+
+\method{summary}{net_bootstrap}(object, ...)
+
+\method{print}{net_bootstrap_group}(x, ...)
+
+\method{summary}{net_bootstrap_group}(object, ...)
+
+\method{print}{wtna_boot_mixed}(x, ...)
+
+\method{summary}{wtna_boot_mixed}(object, ...)
 }
 \arguments{
 \item{x}{A \code{netobject} from \code{\link{build_network}}.
 The data, method, params, scaling, threshold, and level are all
-extracted from this object.}
+extracted from this object. A \code{cograph_network} is coerced
+first; a \code{netobject_group} or \code{mcml} bootstraps every
+constituent network, and a \code{wtna_mixed} bootstraps both of its
+components (see \strong{Value}). For the \code{print()} method: an object of class \code{net_bootstrap}, \code{net_bootstrap_group} or \code{wtna_boot_mixed}.}
 
 \item{iter}{Integer. Number of bootstrap iterations (default: 1000).}
 
@@ -53,6 +75,17 @@ observed weight, \eqn{(2\hat{\theta} - q_{1-\alpha/2},
 which corrects first-order bootstrap bias but can produce bounds
 outside the natural weight range near boundaries (e.g., below 0 for
 transition probabilities close to 0).}
+
+\item{actor}{Character or NULL. Name of the column identifying the actor
+each sequence belongs to (e.g. \code{"student_id"} for sessions nested
+in students, \code{"Group"} for students nested in teams), looked up in
+the network's \code{$metadata} or wide sequence data. When supplied,
+whole actors are resampled; see the section \emph{Nested data and
+actor}. Default \code{NULL}: sequences are resampled individually.}
+
+\item{...}{In \code{print.net_bootstrap()}, \code{print.wtna_boot_mixed()}, \code{summary.net_bootstrap()} and \code{summary.wtna_boot_mixed()}: Additional arguments (ignored). In \code{print.net_bootstrap_group()} and \code{summary.net_bootstrap_group()}: Ignored.}
+
+\item{object}{For the \code{summary()} method: an object of class \code{net_bootstrap}, \code{net_bootstrap_group} or \code{wtna_boot_mixed}.}
 }
 \value{
 An object of class \code{"net_bootstrap"} containing:
@@ -66,11 +99,39 @@ An object of class \code{"net_bootstrap"} containing:
 \item{ci_upper}{Upper CI bound matrix.}
 \item{cr_lower}{Consistency range lower bound (stability only).}
 \item{cr_upper}{Consistency range upper bound (stability only).}
-\item{summary}{Long-format data frame of edge-level statistics.}
+\item{summary}{Long-format data frame, one row per non-zero original
+edge (undirected networks keep one row per unordered pair), with
+columns \code{from}, \code{to}, \code{weight}, \code{mean},
+\code{sd}, \code{p_value}, \code{sig}, \code{ci_lower},
+\code{ci_upper}, plus \code{cr_lower} and \code{cr_upper} when
+\code{inference = "stability"}.}
 \item{model}{Pruned \code{netobject} (non-significant edges zeroed).}
-\item{method, params, iter, ci_level, inference}{Bootstrap config.}
+\item{method, params, iter, ci_level, inference, ci_method}{Bootstrap
+config.}
 \item{consistency_range, edge_threshold}{Inference parameters.}
+\item{actor, n_actors}{The \code{actor} column and its number of
+actors; \code{NULL} without \code{actor}.}
+\item{clustering}{Only with \code{actor}. One-row data frame:
+\code{n_sequences}, \code{n_actors}, \code{icc}, \code{icc_ci_lower},
+\code{icc_ci_upper}, \code{deff_edges}.}
+\item{clustering_edges}{Only with \code{actor}. One row per edge of
+\code{summary}: \code{from}, \code{to}, \code{icc},
+\code{sd_actor}, \code{sd_sequence}, \code{deff}.}
 }
+A \code{netobject_group} or \code{mcml} input returns a
+\code{"net_bootstrap_group"} (named list of \code{net_bootstrap}
+results); a \code{wtna_mixed} input returns a \code{"wtna_boot_mixed"}
+with \code{$transition} and \code{$cooccurrence} results.
+
+In \code{print.net_bootstrap()} and \code{print.wtna_boot_mixed()}: The input object, invisibly.
+
+In \code{summary.net_bootstrap()}: The \code{$summary} data frame: one row per non-zero original edge, with columns \code{from}, \code{to}, \code{weight}, \code{mean}, \code{sd}, \code{p_value}, \code{sig}, \code{ci_lower}, \code{ci_upper}, plus \code{cr_lower} and \code{cr_upper} when the bootstrap used \code{inference = "stability"}.
+
+In \code{print.net_bootstrap_group()}: \code{x} invisibly.
+
+In \code{summary.net_bootstrap_group()}: The per-group summaries stacked into one data frame: the columns of \code{\link{summary.net_bootstrap}} prefixed by a \code{group} column naming the network each row came from.
+
+In \code{summary.wtna_boot_mixed()}: A list with \code{$transition} and \code{$cooccurrence} summary data frames.
 }
 \description{
 Non-parametric bootstrap for any network estimated by
@@ -93,11 +154,34 @@ If a transition network contains only one sequence, the function warns that
 such a network is not recommended for bootstrap or other confirmatory
 testing.
 }
+\section{Nested data and \code{actor}}{
+
+The bootstrap resamples sequences as independent units. When sequences
+are nested in actors (sessions in students, students in teams),
+\code{actor} names the column identifying the actor, and whole actors
+are resampled with replacement, keeping all their sequences together:
+the cluster bootstrap that resamples at the top level only (Davison &
+Hinkley, 1997, section 3.8; Field & Welsh, 2007). The number of
+sequences per replicate then varies with the actors drawn.
+
+With \code{actor}, the result also reports the nesting effect. The ICC
+is the proportion of the total variance that lies between actors (Shrout
+& Fleiss, 1979); an ICC close to 0 indicates little evidence of a nesting
+effect. It is computed as in \code{\link{permutation}}. The design effect
+is the ratio of the variance under the nested design to the variance had
+the sequences been sampled independently (Kish, 1965): here, the variance
+of the edge weights over actor-level replicates divided by their variance
+over sequence-level replicates drawn in the same run, reported as the
+median over edges. \code{actor} is available for transition networks
+(\code{"relative"}, \code{"frequency"}, \code{"co_occurrence"}).
+}
+
 \examples{
 net <- build_network(data.frame(V1 = c("A","B","C"), V2 = c("B","C","A")),
   method = "relative")
 boot <- bootstrap_network(net, iter = 10)
 \donttest{
+set.seed(1)
 seqs <- data.frame(
   V1 = sample(LETTERS[1:4], 30, TRUE), V2 = sample(LETTERS[1:4], 30, TRUE),
   V3 = sample(LETTERS[1:4], 30, TRUE), V4 = sample(LETTERS[1:4], 30, TRUE)
@@ -106,8 +190,28 @@ net <- build_network(seqs, method = "relative")
 boot <- bootstrap_network(net, iter = 100)
 print(boot)
 summary(boot)
+
+# Students nested in teams: resample whole teams
+teams <- build_network(group_regulation_long, method = "relative",
+                       actor = "Actor", action = "Action", time = "Time",
+                       group = "Achiever")
+bootstrap_network(teams, iter = 100, actor = "Group", seed = 1)
 }
 
+}
+\references{
+Davison, A. C., & Hinkley, D. V. (1997). \emph{Bootstrap Methods and
+Their Application}. Cambridge University Press.
+
+Field, C. A., & Welsh, A. H. (2007). Bootstrapping clustered data.
+\emph{Journal of the Royal Statistical Society: Series B}, 69(3),
+369-390.
+
+Kish, L. (1965). \emph{Survey Sampling}. Wiley.
+
+Shrout, P. E., & Fleiss, J. L. (1979). Intraclass correlations: Uses in
+assessing rater reliability. \emph{Psychological Bulletin}, 86(2),
+420-428.
 }
 \seealso{
 \code{\link{certainty}} for the closed-form Bayesian counterpart

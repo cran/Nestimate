@@ -19,10 +19,10 @@
 #'
 #' @param x A `netobject`, `cograph_network`, `netobject_group`, or `mcml`.
 #'   For the group types this function iterates over each element and
-#'   returns a named list.
+#'   returns a named list. For the \code{print()} and \code{plot()} methods: an object of class \code{net_casedrop_reliability} or \code{net_casedrop_reliability_group} (or its \code{summary()}).
 #' @param iter Integer. Iterations per drop proportion. Default `1000`.
 #' @param drop_prop Numeric vector of proportions to evaluate. Each entry
-#'   must lie strictly between 0 and 1. Default `seq(0.1, 0.9, by = 0.1)`.
+#'   must lie strictly between 0 and 1. Default `seq(0.1, 0.9, by = 0.1)`. In \code{summary.net_casedrop_reliability_group()}: Drop proportion at which to report the four metrics (mean +/- sd per network). Must be one of the drop proportions the object was built with. Defaults to the object's median grid value (the stored grid is used, not an assumed `0.7`); pass an explicit value not in the grid to get an error listing the available proportions.
 #' @param threshold Numeric in `[0, 1]`. Minimum edge-vector correlation
 #'   for an iteration to count as stable. Default `0.7`.
 #' @param certainty Numeric in `[0, 1]`. Required fraction of iterations
@@ -41,10 +41,27 @@
 #'   \item{`cs`}{Scalar CS-coefficient - the maximum drop proportion for
 #'     which the edge-vector correlation remains >= `threshold` in at
 #'     least `certainty` of iterations. Zero if no proportion qualifies.}
+#'   \item{`summary`}{Tidy data frame, one row per metric by drop
+#'     proportion, with columns `metric` (`"mean_abs_dev"`,
+#'     `"median_abs_dev"`, `"correlation"`, `"max_abs_dev"`),
+#'     `drop_prop`, `mean`, `sd`, `median`, `mad`, `q025`, `q975`.}
+#'   \item{`metrics`}{Named list of four `iter` x `length(drop_prop)`
+#'     matrices, one per metric, holding the raw per-iteration values.}
 #'   \item{`correlations`}{`iter` x `length(drop_prop)` matrix of per-
-#'     iteration correlations.}
-#'   \item{`drop_prop`, `threshold`, `certainty`, `iter`, `method`}{Inputs.}
+#'     iteration correlations (the `correlation` entry of `metrics`).}
+#'   \item{`drop_prop`, `threshold`, `certainty`, `iter`, `method`,
+#'     `include_diag`}{Inputs.}
+#'   \item{`n_cases`}{Number of cases resampled from (sequences for
+#'     transition methods, rows of `$data` otherwise).}
+#'   \item{`n_edges`}{Length of the edge vector assessed.}
 #' }
+#' A `netobject_group` or `mcml` input instead returns a
+#' `net_casedrop_reliability_group`: a named list of one result per
+#' constituent network.
+#'
+#' When the original edge vector has zero variance a warning is issued and
+#' the object is returned with `cs = 0`, an empty `summary`, and all-`NA`
+#' metric matrices.
 #'
 #' @details
 #' For each `drop_prop` p and each iteration, a size `n_cases * (1 - p)`
@@ -65,6 +82,7 @@
 #' @seealso [centrality_stability()], [bootstrap_network()].
 #'
 #' @examples
+#' set.seed(1)
 #' seqs <- data.frame(
 #'   V1 = sample(LETTERS[1:4], 30, TRUE),
 #'   V2 = sample(LETTERS[1:4], 30, TRUE),
@@ -301,11 +319,17 @@ casedrop_reliability <- function(x,
   )
 }
 
-#' @param x An edge-stability object.
-#' @param digits Digits to display. Default `3`.
-#' @param ... Additional arguments (ignored).
-#' @return The input `x` invisibly.
 #' @rdname casedrop_reliability
+#' @param digits Digits to display. Default `3`.
+#' @param ... In \code{plot.net_casedrop_reliability()}, \code{plot.net_casedrop_reliability_group()}, \code{print.net_casedrop_reliability()}, \code{print.summary.net_casedrop_reliability_group()}, \code{summary.net_casedrop_reliability()} and \code{summary.net_casedrop_reliability_group()}: Additional arguments (ignored). In \code{print.net_casedrop_reliability_group()}: Ignored.
+#' @param object For the \code{summary()} method: an object of class \code{net_casedrop_reliability} or \code{net_casedrop_reliability_group}.
+#' @param combined When `TRUE` (default), all four metrics are shown in one ggplot via `facet_wrap(~ metric)`. When `FALSE`, returns a named list of four single-panel ggplots, one per metric.
+#' @param metric Which metric to plot. One of `"correlation"` (default), `"mean_abs_dev"`, `"median_abs_dev"`, `"max_abs_dev"`.
+#' @return In \code{print.net_casedrop_reliability()}: The input `x` invisibly.
+#' @return In \code{summary.net_casedrop_reliability()}: A tidy data frame with columns \code{metric}, \code{drop_prop}, \code{mean}, \code{sd} summarising edge-weight stability across case-dropping iterations.
+#' @return In \code{summary.net_casedrop_reliability_group()}: A data frame with one row per network containing `cor`, `mean_abs_dev`, `median_abs_dev`, `max_abs_dev` formatted as "mean +/- sd".
+#' @return In \code{plot.net_casedrop_reliability()}: A `ggplot` object, or a named list of four ggplots when `combined = FALSE`.
+#' @return In \code{plot.net_casedrop_reliability_group()}: A `ggplot` object.
 #' @export
 print.net_casedrop_reliability <- function(x, digits = 3, ...) {
   cat(sprintf("Edge-weight Case-dropping Stability\n"))
@@ -338,13 +362,6 @@ print.net_casedrop_reliability <- function(x, digits = 3, ...) {
   invisible(x)
 }
 
-#' Summary method for net_casedrop_reliability
-#'
-#' @param object A `net_casedrop_reliability`.
-#' @param ... Additional arguments (ignored).
-#' @return A tidy data frame with columns \code{metric}, \code{drop_prop},
-#'   \code{mean}, \code{sd} summarising edge-weight stability across
-#'   case-dropping iterations.
 #' @rdname casedrop_reliability
 #' @export
 summary.net_casedrop_reliability <- function(object, ...) {
@@ -369,19 +386,6 @@ print.net_casedrop_reliability_group <- function(x, ...) {
   invisible(x)
 }
 
-#' Summary method for net_casedrop_reliability_group
-#'
-#' @param object A `net_casedrop_reliability_group`.
-#' @param drop_prop Drop proportion at which to report the four metrics
-#'   (mean +/- sd per network). Must be one of the drop proportions the
-#'   object was built with. Defaults to the object's median grid value
-#'   (the stored grid is used, not an assumed `0.7`); pass an explicit
-#'   value not in the grid to get an error listing the available
-#'   proportions.
-#' @param ... Additional arguments (ignored).
-#' @return A data frame with one row per network containing
-#'   `cor`, `mean_abs_dev`, `median_abs_dev`, `max_abs_dev` formatted as
-#'   "mean +/- sd".
 #' @rdname casedrop_reliability
 #' @export
 summary.net_casedrop_reliability_group <- function(object,
@@ -420,8 +424,6 @@ summary.net_casedrop_reliability_group <- function(object,
             drop_prop = drop_prop)
 }
 
-#' @param x A `summary.net_casedrop_reliability_group` object.
-#' @param ... Additional arguments (ignored).
 #' @rdname casedrop_reliability
 #' @export
 print.summary.net_casedrop_reliability_group <- function(x, ...) {
@@ -431,23 +433,10 @@ print.summary.net_casedrop_reliability_group <- function(x, ...) {
   invisible(x)
 }
 
-#' Plot method for edge-stability result
-#'
-#' Plots the four model-level reliability metrics across drop
-#' proportions: `correlation`, `mean_abs_dev`, `median_abs_dev`,
-#' `max_abs_dev`. Each panel shows the per-iteration mean with a ribbon
-#' at mean +/- sd. The `correlation` panel includes a dashed horizontal
-#' line at the user's `threshold` (default 0.7).
-#'
-#' @param x A `net_casedrop_reliability` object from [casedrop_reliability()].
-#' @param combined When `TRUE` (default), all four metrics are shown in
-#'   one ggplot via `facet_wrap(~ metric)`. When `FALSE`, returns a named
-#'   list of four single-panel ggplots, one per metric.
-#' @param ... Additional arguments (ignored).
-#'
-#' @return A `ggplot` object, or a named list of four ggplots when
-#'   `combined = FALSE`.
 #' @rdname casedrop_reliability
+#' @section Methods:
+#' * \code{plot.net_casedrop_reliability()}: Plots the four model-level reliability metrics across drop proportions: `correlation`, `mean_abs_dev`, `median_abs_dev`, `max_abs_dev`. Each panel shows the per-iteration mean with a ribbon at mean +/- sd. The `correlation` panel includes a dashed horizontal line at the user's `threshold` (default 0.7).
+#' * \code{plot.net_casedrop_reliability_group()}: Overlay of per-cluster correlation curves across drop proportions. One colour per sub-network; ribbons show mean +/- sd across iterations. Dashed horizontal line marks the stability threshold (default 0.7).
 #' @export
 plot.net_casedrop_reliability <- function(x, combined = TRUE, ...) {
   stopifnot(is.logical(combined), length(combined) == 1L)
@@ -518,19 +507,6 @@ plot.net_casedrop_reliability <- function(x, combined = TRUE, ...) {
     ggplot2::facet_wrap(~ .data$metric, scales = "free_y")
 }
 
-#' Plot method for grouped edge-stability result
-#'
-#' Overlay of per-cluster correlation curves across drop proportions.
-#' One colour per sub-network; ribbons show mean +/- sd across
-#' iterations. Dashed horizontal line marks the stability threshold
-#' (default 0.7).
-#'
-#' @param x A `net_casedrop_reliability_group` object.
-#' @param metric Which metric to plot. One of `"correlation"`
-#'   (default), `"mean_abs_dev"`, `"median_abs_dev"`, `"max_abs_dev"`.
-#' @param ... Additional arguments (ignored).
-#'
-#' @return A `ggplot` object.
 #' @rdname casedrop_reliability
 #' @export
 plot.net_casedrop_reliability_group <- function(x,

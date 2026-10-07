@@ -43,12 +43,13 @@ utils::globalVariables(c(
 #'
 #' @param x A \code{netobject_group} (from grouped \code{build_network}),
 #'   a \code{netobject} (requires \code{group}), or a wide-format
-#'   \code{data.frame} (requires \code{group}).
+#'   \code{data.frame} (requires \code{group}). For the \code{print()} and \code{plot()} methods: an object of class \code{net_sequence_comparison}.
 #' @param group Character or vector. Column name or vector of group labels.
 #'   Not needed for \code{netobject_group}.
 #' @param sub Integer vector. Pattern lengths to analyze. Default: \code{3:5}.
 #' @param min_freq Integer. Minimum frequency in each group for a pattern
-#'   to be included. Default: 5.
+#'   to be included: a pattern is kept only when its count reaches this
+#'   threshold in \emph{every} group. Default: 5.
 #' @param test Character. Inference method: one of \code{"permutation"}
 #'   (default), \code{"chisq"}, or \code{"none"}. See Details.
 #' @param iter Integer. Permutation iterations. Only used when
@@ -58,17 +59,30 @@ utils::globalVariables(c(
 #'
 #' @return An object of class \code{"net_sequence_comparison"} containing:
 #' \describe{
-#'   \item{patterns}{Tidy data.frame. Always present:
-#'     \code{pattern}, \code{length}, \code{freq_<group>},
-#'     \code{prop_<group>}, \code{resid_<group>}. If
-#'     \code{test = "permutation"}: \code{effect_size}, \code{p_value}.
-#'     If \code{test = "chisq"}: \code{statistic}, \code{p_value}.}
-#'   \item{groups}{Character vector of group names.}
-#'   \item{n_patterns}{Integer. Number of patterns passing min_freq.}
+#'   \item{patterns}{Tidy data.frame, one row per retained k-gram pattern.
+#'     Always present: \code{pattern}, \code{length}, and one
+#'     \code{freq_<group>}, \code{prop_<group>} and \code{resid_<group>}
+#'     column per group. If \code{test = "permutation"}: \code{effect_size},
+#'     \code{p_value}. If \code{test = "chisq"}: \code{statistic},
+#'     \code{p_value}. Rows are ordered by ascending adjusted \code{p_value}
+#'     when a test was run, and by descending maximum absolute residual
+#'     otherwise.}
+#'   \item{groups}{Character vector of group names, sorted.}
+#'   \item{n_patterns}{Integer. Number of rows in \code{patterns}, i.e. the
+#'     patterns meeting \code{min_freq} in every group.}
 #'   \item{params}{List of sub, min_freq, test, iter, adjust.}
 #' }
 #'
+#' @references
+#' Haberman, S. J. (1973). The analysis of residuals in cross-classified
+#' tables. \emph{Biometrics}, 29(1), 205--220. (standardized residuals)
+#'
+#' Benjamini, Y. & Hochberg, Y. (1995). Controlling the false discovery rate.
+#' \emph{Journal of the Royal Statistical Society B}, 57(1), 289--300.
+#' (the default \code{adjust = "fdr"})
+#'
 #' @examples
+#' set.seed(1)
 #' seqs <- data.frame(
 #'   V1 = sample(LETTERS[1:4], 60, TRUE),
 #'   V2 = sample(LETTERS[1:4], 60, TRUE),
@@ -377,12 +391,17 @@ sequence_compare <- function(x, group = NULL, sub = 3:5,
 
 # ---- S3 Methods ----
 
-#' Print Method for net_sequence_comparison
-#'
-#' @param x A \code{net_sequence_comparison} object.
-#' @param ... Additional arguments (ignored).
-#' @return The input object, invisibly.
-#' @inherit sequence_compare examples
+#' @rdname sequence_compare
+#' @param ... In \code{plot.net_sequence_comparison()}, \code{print.net_sequence_comparison()} and \code{summary.net_sequence_comparison()}: Additional arguments (ignored).
+#' @param object For the \code{summary()} method: an object of class \code{net_sequence_comparison}.
+#' @param top_n Integer. Show top N patterns. Default: 10.
+#' @param style Character. \code{"auto"} (default) draws the back-to-back pyramid for exactly 2 groups and the heatmap for any other number; \code{"pyramid"} and \code{"heatmap"} force a specific style.
+#' @param sort Character. \code{"statistic"} (default) ranks patterns by test statistic or residual magnitude. \code{"frequency"} ranks by total occurrence count across all groups.
+#' @param alpha Numeric. Significance threshold for p-value display in the pyramid: patterns with \code{p_value < alpha} are starred and drawn in bold dark text, the rest stay plain grey. Default: 0.05.
+#' @param show_residuals Logical. If \code{TRUE}, print the standardized residual value inside each pyramid bar. Default: \code{FALSE}. Ignored for the heatmap (which always shows residuals).
+#' @return In \code{print.net_sequence_comparison()}: The input object, invisibly.
+#' @return In \code{summary.net_sequence_comparison()}: The \code{patterns} data.frame: tidy, one row per k-gram pattern, with a frequency, proportion and standardized-residual column per group, and the test columns when \code{test} was not \code{"none"}.
+#' @return In \code{plot.net_sequence_comparison()}: The drawn \code{ggplot} object, invisibly (the plot is also printed). \code{NULL}, invisibly, when the object holds no patterns.
 #' @export
 print.net_sequence_comparison <- function(x, ...) {
   cat(sprintf("Sequence Comparison  [%d patterns | %d groups: %s]\n",
@@ -410,52 +429,28 @@ print.net_sequence_comparison <- function(x, ...) {
 }
 
 
-#' Summary Method for net_sequence_comparison
-#'
-#' @param object A \code{net_sequence_comparison} object.
-#' @param ... Additional arguments (ignored).
-#' @return The patterns data.frame (tidy: one row per k-gram pattern, per
-#'   group, with frequency and proportion columns; includes p-values when a
-#'   permutation test was run).
-#' @inherit sequence_compare examples
+#' @rdname sequence_compare
 #' @export
 summary.net_sequence_comparison <- function(object, ...) {
   object$patterns
 }
 
 
-#' Plot Method for net_sequence_comparison
-#'
-#' @description
+#' @rdname sequence_compare
+#' @section Plot styles:
 #' Visualizes pattern-level standardized residuals across groups. Two styles
-#' are available:
+#' are available, and \code{style = "auto"} (the default) picks between them
+#' by the number of groups:
 #' \describe{
 #'   \item{\code{"pyramid"}}{Back-to-back bars of pattern proportions, shaded
-#'     by each side's standardized residual. Requires exactly 2 groups.}
+#'     by each side's standardized residual. Requires exactly 2 groups; an
+#'     explicit \code{style = "pyramid"} on any other number is an error.}
 #'   \item{\code{"heatmap"}}{One tile per (pattern, group) cell, colored by
 #'     standardized residual. Works for any number of groups.}
 #' }
 #' Residuals are read directly from the \code{resid_<group>} columns in
 #' \code{$patterns}, which are always populated regardless of the inference
 #' method chosen in \code{sequence_compare}.
-#'
-#' @param x A \code{net_sequence_comparison} object.
-#' @param top_n Integer. Show top N patterns. Default: 10.
-#' @param style Character. \code{"auto"} (default) draws the back-to-back
-#'   pyramid for exactly 2 groups and the heatmap for any other number;
-#'   \code{"pyramid"} and \code{"heatmap"} force a specific style.
-#' @param sort Character. \code{"statistic"} (default) ranks patterns by test
-#'   statistic or residual magnitude. \code{"frequency"} ranks by total
-#'   occurrence count across all groups.
-#' @param alpha Numeric. Significance threshold for p-value display in the
-#'   pyramid: patterns with \code{p_value < alpha} are starred and drawn in
-#'   bold dark text, the rest stay plain grey. Default: 0.05.
-#' @param show_residuals Logical. If \code{TRUE}, print the standardized
-#'   residual value inside each pyramid bar. Default: \code{FALSE}. Ignored
-#'   for the heatmap (which always shows residuals).
-#' @param ... Additional arguments (ignored).
-#' @return A \code{ggplot} object, invisibly.
-#' @inherit sequence_compare examples
 #' @import ggplot2
 #' @export
 plot.net_sequence_comparison <- function(x, top_n = 10L,

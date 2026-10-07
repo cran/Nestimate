@@ -2,6 +2,8 @@
 % Please edit documentation in R/simplicial.R
 \name{build_simplicial}
 \alias{build_simplicial}
+\alias{print.simplicial_complex}
+\alias{plot.simplicial_complex}
 \title{Build a Simplicial Complex}
 \usage{
 build_simplicial(
@@ -14,10 +16,14 @@ build_simplicial(
   max_scale = NULL,
   ...
 )
+
+\method{print}{simplicial_complex}(x, ...)
+
+\method{plot}{simplicial_complex}(x, combined = TRUE, ...)
 }
 \arguments{
 \item{x}{A square matrix, \code{tna}, \code{netobject},
-\code{net_hon}, \code{net_hypa}, or \code{net_mogen}.}
+\code{net_hon}, \code{net_hypa}, or \code{net_mogen}. For the \code{print()} and \code{plot()} methods: an object of class \code{simplicial_complex}.}
 
 \item{type}{Construction type: \code{"clique"} (default), \code{"pathway"},
 or \code{"vr"} (alias \code{"rips"}).}
@@ -25,7 +31,8 @@ or \code{"vr"} (alias \code{"rips"}).}
 \item{threshold}{For \code{type = "clique"}: minimum non-zero absolute
 edge weight to include an edge (default 0). Edges below this are
 ignored; zero-weight non-edges are never included. Ignored for
-\code{type = "vr"} - use \code{max_scale} instead.}
+\code{type = "vr"} (use \code{max_scale} instead) and for
+\code{type = "pathway"}.}
 
 \item{max_dim}{Maximum simplex dimension (default 10). Must be a single
 non-negative integer. A k-simplex has k+1 nodes.}
@@ -43,12 +50,38 @@ ratio; over-represented paths are ranked by largest ratio.}
 in the filtration. \code{NULL} (default) uses \code{max(d)}.}
 
 \item{...}{Additional arguments passed to \code{build_hon()} when
-\code{x} is a \code{tna}/\code{netobject} with \code{type = "pathway"}.}
+\code{x} is a \code{tna}/\code{netobject} with \code{type = "pathway"}.
+In \code{plot.simplicial_complex()}: Ignored. In \code{print.simplicial_complex()}: Additional arguments (unused).}
+
+\item{combined}{When \code{TRUE} (default), the four panels are stitched into a 2x2 gtable via \code{gridExtra::arrangeGrob} and drawn. When \code{FALSE}, returns a named list of the four ggplots (\code{f_vector}, \code{betti}, \code{degree}, \code{degree_heatmap}) so each can be printed, saved, or re-laid-out independently.}
 }
 \value{
-A \code{simplicial_complex} object. For \code{type = "vr"} an
-additional \code{$filtration} numeric vector is attached (parallel to
-\code{$simplices}).
+A \code{simplicial_complex} object - a list with:
+\describe{
+\item{simplices}{List of integer vectors, one per simplex, each holding
+the (sorted) node indices it spans. Every face of every simplex is
+present, including all 0-simplices (isolated vertices included).}
+\item{nodes}{Character vector of node labels; \code{simplices} index
+into it.}
+\item{n_nodes, n_simplices}{Integer counts.}
+\item{dimension}{Integer. Highest simplex dimension present
+(a k-simplex has k+1 nodes).}
+\item{f_vector}{Named integer vector \code{dim_0}, \code{dim_1}, ... -
+the number of simplices of each dimension.}
+\item{density}{Numeric. \code{n_simplices} divided by the number of
+simplices a complete complex on \code{n_nodes} would have up to
+\code{dimension}.}
+\item{mean_dim}{Numeric. Mean simplex dimension.}
+\item{type}{\code{"clique"}, \code{"pathway"}, or \code{"vr"}.}
+}
+For \code{type = "vr"} two further elements are attached:
+\code{$filtration} (numeric, parallel to \code{$simplices}: the value at
+which each simplex enters) and \code{$max_scale} (the cap actually
+used). \code{persistent_homology()} consumes them directly.
+
+In \code{print.simplicial_complex()}: The input object, invisibly.
+
+In \code{plot.simplicial_complex()}: A grid grob (invisibly) when \code{combined = TRUE}; a named list of four ggplots when \code{combined = FALSE}.
 }
 \description{
 Constructs a simplicial complex from a network or higher-order pathway
@@ -71,6 +104,13 @@ filtration diameter; edges with \code{d(i,j) > max_scale} are excluded.
 Filtration values are attached as \code{$filtration} on the returned
 object so \code{persistent_homology()} can read them directly.
 }
+\section{Methods}{
+
+\itemize{
+\item \code{plot.simplicial_complex()}: Produces a four-panel summary: f-vector, Betti numbers, simplicial degree ranking, and degree-by-dimension heatmap.
+}
+}
+
 \examples{
 mat <- matrix(c(0,.6,.5,.6,0,.4,.5,.4,0), 3, 3)
 colnames(mat) <- rownames(mat) <- c("A","B","C")

@@ -2,6 +2,8 @@
 % Please edit documentation in R/link_prediction.R
 \name{predict_links}
 \alias{predict_links}
+\alias{print.net_link_prediction}
+\alias{summary.net_link_prediction}
 \title{Predict Missing or Future Links in a Network}
 \usage{
 predict_links(
@@ -14,10 +16,14 @@ predict_links(
   include_self = FALSE,
   katz_damping = NULL
 )
+
+\method{print}{net_link_prediction}(x, ...)
+
+\method{summary}{net_link_prediction}(object, ...)
 }
 \arguments{
 \item{x}{A \code{netobject}, \code{mcml}, \code{cograph_network}, or
-numeric square matrix.}
+numeric square matrix. For the \code{print()} method: an object of class \code{net_link_prediction}.}
 
 \item{methods}{Character vector. One or more of:
 \code{"common_neighbors"}, \code{"resource_allocation"},
@@ -39,13 +45,24 @@ Default: \code{FALSE}.}
 \item{katz_damping}{Numeric or NULL. Attenuation factor for Katz index.
 If NULL, auto-computed as \code{0.9 / spectral_radius(A)}.
 Default: \code{NULL}.}
+
+\item{...}{In \code{print.net_link_prediction()} and \code{summary.net_link_prediction()}: Additional arguments (ignored).}
+
+\item{object}{For the \code{summary()} method: an object of class \code{net_link_prediction}.}
 }
 \value{
 An object of class \code{"net_link_prediction"} containing:
 \describe{
-\item{predictions}{Data frame with columns: from, to, method, score, rank.
+\item{predictions}{Data frame, one row per (node pair, method), with
+columns \code{from}, \code{to}, \code{method}, \code{score},
+\code{existing} (was the pair already an edge?) and \code{rank}.
 Sorted by score (descending) within each method.}
+\item{consensus}{Data frame, one row per node pair, with columns
+\code{from}, \code{to}, \code{avg_rank}, \code{n_methods} and
+\code{consensus_rank}, ordered by \code{avg_rank}. \code{NULL} when
+only one method was requested.}
 \item{scores}{Named list of score matrices (one per method).}
+\item{adjacency}{Integer 0/1 adjacency matrix of the input network.}
 \item{methods}{Character vector of methods used.}
 \item{nodes}{Character vector of node names.}
 \item{directed}{Logical.}
@@ -53,6 +70,10 @@ Sorted by score (descending) within each method.}
 \item{n_nodes}{Integer.}
 \item{n_existing}{Integer. Number of existing edges.}
 }
+
+In \code{print.net_link_prediction()}: The input object, invisibly.
+
+In \code{summary.net_link_prediction()}: A data frame, one row per method, with columns \code{method}, \code{n_predictions}, \code{score_mean}, \code{score_sd}, \code{score_max} and \code{score_min}. A method with no predictions (every possible link already exists) has \code{n_predictions = 0} and \code{NA} scores.
 }
 \description{
 Computes link prediction scores for all node pairs using one or more
@@ -87,9 +108,9 @@ exponentially damped by path length. Computed via matrix inversion:
 }
 \examples{
 seqs <- data.frame(
-  V1 = sample(LETTERS[1:5], 50, TRUE),
-  V2 = sample(LETTERS[1:5], 50, TRUE),
-  V3 = sample(LETTERS[1:5], 50, TRUE)
+  V1 = c("A", "B", "C", "D", "A", "C", "E", "B"),
+  V2 = c("B", "C", "D", "E", "C", "E", "A", "D"),
+  V3 = c("C", "D", "E", "A", "D", "A", "B", "E")
 )
 net <- build_network(seqs, method = "relative")
 pred <- predict_links(net)
@@ -109,6 +130,13 @@ Adamic, L. A. & Adar, E. (2003). Friends and neighbors on the Web.
 
 Katz, L. (1953). A new status index derived from sociometric analysis.
 \emph{Psychometrika}, 18(1), 39--43.
+
+Jaccard, P. (1901). Etude comparative de la distribution florale dans une
+portion des Alpes et des Jura. \emph{Bulletin de la Societe Vaudoise des
+Sciences Naturelles}, 37, 547--579.
+
+Barabasi, A.-L. & Albert, R. (1999). Emergence of scaling in random
+networks. \emph{Science}, 286(5439), 509--512.
 }
 \seealso{
 \code{\link{evaluate_links}} for prediction evaluation,

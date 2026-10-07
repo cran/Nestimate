@@ -12,7 +12,7 @@
 #' networks.
 #'
 #' @param x A \code{netobject}, \code{mcml}, \code{cograph_network}, or
-#'   numeric square matrix.
+#'   numeric square matrix. For the \code{print()} method: an object of class \code{net_link_prediction}.
 #' @param methods Character vector. One or more of:
 #'   \code{"common_neighbors"}, \code{"resource_allocation"},
 #'   \code{"adamic_adar"}, \code{"jaccard"}, \code{"preferential_attachment"},
@@ -31,9 +31,16 @@
 #'
 #' @return An object of class \code{"net_link_prediction"} containing:
 #' \describe{
-#'   \item{predictions}{Data frame with columns: from, to, method, score, rank.
+#'   \item{predictions}{Data frame, one row per (node pair, method), with
+#'     columns \code{from}, \code{to}, \code{method}, \code{score},
+#'     \code{existing} (was the pair already an edge?) and \code{rank}.
 #'     Sorted by score (descending) within each method.}
+#'   \item{consensus}{Data frame, one row per node pair, with columns
+#'     \code{from}, \code{to}, \code{avg_rank}, \code{n_methods} and
+#'     \code{consensus_rank}, ordered by \code{avg_rank}. \code{NULL} when
+#'     only one method was requested.}
 #'   \item{scores}{Named list of score matrices (one per method).}
+#'   \item{adjacency}{Integer 0/1 adjacency matrix of the input network.}
 #'   \item{methods}{Character vector of methods used.}
 #'   \item{nodes}{Character vector of node names.}
 #'   \item{directed}{Logical.}
@@ -76,11 +83,18 @@
 #' Katz, L. (1953). A new status index derived from sociometric analysis.
 #' \emph{Psychometrika}, 18(1), 39--43.
 #'
+#' Jaccard, P. (1901). Etude comparative de la distribution florale dans une
+#' portion des Alpes et des Jura. \emph{Bulletin de la Societe Vaudoise des
+#' Sciences Naturelles}, 37, 547--579.
+#'
+#' Barabasi, A.-L. & Albert, R. (1999). Emergence of scaling in random
+#' networks. \emph{Science}, 286(5439), 509--512.
+#'
 #' @examples
 #' seqs <- data.frame(
-#'   V1 = sample(LETTERS[1:5], 50, TRUE),
-#'   V2 = sample(LETTERS[1:5], 50, TRUE),
-#'   V3 = sample(LETTERS[1:5], 50, TRUE)
+#'   V1 = c("A", "B", "C", "D", "A", "C", "E", "B"),
+#'   V2 = c("B", "C", "D", "E", "C", "E", "A", "D"),
+#'   V3 = c("C", "D", "E", "A", "D", "A", "B", "E")
 #' )
 #' net <- build_network(seqs, method = "relative")
 #' pred <- predict_links(net)
@@ -414,19 +428,16 @@ predict_links <- function(x,
 #'   and one precision_at_k column per k value.
 #'
 #' @examples
-#' set.seed(42)
 #' seqs <- data.frame(
-#'   V1 = sample(LETTERS[1:5], 50, TRUE),
-#'   V2 = sample(LETTERS[1:5], 50, TRUE),
-#'   V3 = sample(LETTERS[1:5], 50, TRUE)
+#'   V1 = c("A", "B", "C", "D", "A", "C", "E", "B"),
+#'   V2 = c("B", "C", "D", "E", "C", "E", "A", "D"),
+#'   V3 = c("C", "D", "E", "A", "D", "A", "B", "E")
 #' )
 #' net <- build_network(seqs, method = "relative")
 #' pred <- predict_links(net, exclude_existing = FALSE)
 #'
-#' # Evaluate: predict the network's own edges
-#' true <- data.frame(from = pred$predictions$from[1:5],
-#'                    to = pred$predictions$to[1:5])
-#' evaluate_links(pred, true)
+#' # Evaluate against the network's own edges as the known truth
+#' evaluate_links(pred, extract_edges(net, threshold = 0.001))
 #'
 #' @export
 evaluate_links <- function(pred, true_edges, k = c(5L, 10L, 20L)) {
@@ -491,22 +502,11 @@ evaluate_links <- function(pred, true_edges, k = c(5L, 10L, 20L)) {
 
 # ---- S3 Methods ----
 
-#' Print Method for net_link_prediction
-#'
-#' @param x A \code{net_link_prediction} object.
-#' @param ... Additional arguments (ignored).
-#' @return The input object, invisibly.
-#'
-#' @examples
-#' seqs <- data.frame(
-#'   V1 = sample(LETTERS[1:4], 30, TRUE),
-#'   V2 = sample(LETTERS[1:4], 30, TRUE),
-#'   V3 = sample(LETTERS[1:4], 30, TRUE)
-#' )
-#' net <- build_network(seqs, method = "relative")
-#' pred <- predict_links(net)
-#' print(pred)
-#'
+#' @rdname predict_links
+#' @param ... In \code{print.net_link_prediction()} and \code{summary.net_link_prediction()}: Additional arguments (ignored).
+#' @param object For the \code{summary()} method: an object of class \code{net_link_prediction}.
+#' @return In \code{print.net_link_prediction()}: The input object, invisibly.
+#' @return In \code{summary.net_link_prediction()}: A data frame, one row per method, with columns \code{method}, \code{n_predictions}, \code{score_mean}, \code{score_sd}, \code{score_max} and \code{score_min}. A method with no predictions (every possible link already exists) has \code{n_predictions = 0} and \code{NA} scores.
 #' @export
 print.net_link_prediction <- function(x, ...) {
   dir_lbl <- if (x$directed) "directed" else "undirected"
@@ -552,34 +552,22 @@ print.net_link_prediction <- function(x, ...) {
 }
 
 
-#' Summary Method for net_link_prediction
-#'
-#' @param object A \code{net_link_prediction} object.
-#' @param ... Additional arguments (ignored).
-#' @return A data frame with per-method summary statistics, invisibly.
-#'
-#' @examples
-#' seqs <- data.frame(
-#'   V1 = sample(LETTERS[1:4], 30, TRUE),
-#'   V2 = sample(LETTERS[1:4], 30, TRUE),
-#'   V3 = sample(LETTERS[1:4], 30, TRUE)
-#' )
-#' net <- build_network(seqs, method = "relative")
-#' pred <- predict_links(net)
-#' summary(pred)
-#'
+#' @rdname predict_links
 #' @export
 summary.net_link_prediction <- function(object, ...) {
   df <- object$predictions
   do.call(rbind, lapply(object$methods, function(m) {
-    sub <- df[df$method == m, , drop = FALSE]
+    score <- df$score[df$method == m]
+    # A complete network has no missing links to score: report NA, not the
+    # NaN / -Inf / Inf that mean() / max() / min() return on an empty vector.
+    has_scores <- length(score) > 0L
     data.frame(
       method        = m,
-      n_predictions = nrow(sub),
-      score_mean    = mean(sub$score, na.rm = TRUE),
-      score_sd      = sd(sub$score, na.rm = TRUE),
-      score_max     = max(sub$score, na.rm = TRUE),
-      score_min     = min(sub$score, na.rm = TRUE),
+      n_predictions = length(score),
+      score_mean    = if (has_scores) mean(score) else NA_real_,
+      score_sd      = if (has_scores) stats::sd(score) else NA_real_,
+      score_max     = if (has_scores) max(score) else NA_real_,
+      score_min     = if (has_scores) min(score) else NA_real_,
       stringsAsFactors = FALSE,
       row.names     = NULL
     )

@@ -2,23 +2,44 @@
 % Please edit documentation in R/honem.R
 \name{build_honem}
 \alias{build_honem}
+\alias{print.net_honem}
+\alias{summary.net_honem}
+\alias{plot.net_honem}
 \title{Build HONEM Embeddings for Higher-Order Networks}
 \usage{
 build_honem(hon, dim = 32L, max_power = 10L)
+
+\method{print}{net_honem}(x, ...)
+
+\method{summary}{net_honem}(object, ...)
+
+\method{plot}{net_honem}(x, dims = c(1L, 2L), ...)
 }
 \arguments{
 \item{hon}{A \code{net_hon} object from \code{\link{build_hon}}, or a
 square weighted adjacency matrix.}
 
-\item{dim}{Integer. Embedding dimension (default 32).}
+\item{dim}{Integer. Embedding dimension (default 32). Silently capped at
+\code{n_nodes - 1}; the dimension actually used is reported in the
+returned \code{dim} component.}
 
 \item{max_power}{Integer. Maximum walk length for neighborhood computation
 (default 10). Higher values capture longer-range structure.}
+
+\item{x}{For the \code{print()} and \code{plot()} methods: an object of class \code{net_honem}.}
+
+\item{...}{In \code{plot.net_honem()}: Additional arguments passed to \code{\link[graphics]{plot}}. In \code{print.net_honem()} and \code{summary.net_honem()}: Additional arguments (ignored).}
+
+\item{object}{For the \code{summary()} method: an object of class \code{net_honem}.}
+
+\item{dims}{Integer vector of length 2. Dimensions to plot (default: \code{c(1, 2)}).}
 }
 \value{
 An object of class \code{net_honem} with components:
 \describe{
-\item{embeddings}{Numeric matrix (n_nodes x dim) of node embeddings.}
+\item{embeddings}{Numeric matrix (n_nodes x dim) of node embeddings,
+row names = node names, column names \code{dim_1}, \code{dim_2},
+...}
 \item{nodes}{Character vector of node names.}
 \item{singular_values}{Numeric vector of top singular values.}
 \item{explained_variance}{Proportion of variance explained.}
@@ -26,6 +47,10 @@ An object of class \code{net_honem} with components:
 \item{max_power}{Maximum power used.}
 \item{n_nodes}{Number of nodes embedded.}
 }
+
+In \code{print.net_honem()} and \code{plot.net_honem()}: The input object, invisibly.
+
+In \code{summary.net_honem()}: A data.frame with one row per node: column \code{node} (node label) followed by \code{dim1}, \code{dim2}, ..., \code{dim}\emph{d} embedding coordinates, returned visibly; the summary text is printed as a side effect.
 }
 \description{
 Constructs low-dimensional embeddings from a Higher-Order Network (HON)
@@ -51,7 +76,7 @@ plot(emb)
 
 }
 \references{
-Saebi, M., Ciampaglia, G. L., Kazemzadeh, S., & Meyur, R. (2020).
+Saebi, M., Ciampaglia, G. L., Kaplan, L. M., & Chawla, N. V. (2020).
 HONEM: Learning Embedding for Higher Order Networks. \emph{Big Data},
 8(4), 255-269.
 }

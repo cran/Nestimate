@@ -614,7 +614,7 @@
 #'   (chi-square + Cramer's V + standardized adjusted residuals for
 #'   factors; Kruskal-Wallis + eta-squared for numerics).
 #' @param ... Unsupported. Supplying unused arguments raises an error.
-#'
+#' In \code{plot.net_clustering()}, \code{print.net_clustering()} and \code{summary.net_clustering()}: Unsupported. Supplying unused arguments raises an error. In \code{print.tidy_covariates()}: Ignored.
 #' @return An object of class \code{"net_clustering"} containing:
 #' \describe{
 #'   \item{data}{The original input data.}
@@ -630,6 +630,14 @@
 #'   \item{seed}{Seed used (or NULL).}
 #'   \item{weighted}{Logical, whether weighted Hamming was used.}
 #'   \item{lambda}{Lambda value used (0 if not weighted).}
+#'   \item{covariates}{The post-hoc covariate analysis (a list; see the
+#'     \code{estimator} argument), or NULL when \code{covariates = NULL}.}
+#'   \item{network_method, build_args}{For \code{netobject} input, the
+#'     source network's method and stored build arguments, so per-cluster
+#'     networks can be rebuilt the same way. NULL otherwise.}
+#'   \item{metadata}{For \code{netobject} input, its per-sequence metadata,
+#'     one row per clustered sequence, so \code{\link{session_ids}} can name
+#'     each sequence. NULL otherwise.}
 #'   \item{htna_partition}{For HTNA input, the preserved node-to-actor
 #'     partition used to restore HTNA children when networks are built.}
 #' }
@@ -793,6 +801,7 @@ build_clusters <- function(data, k, dissimilarity = "hamming", method = "pam",
       covariates = cov_result,
       network_method = if (inherits(raw_data, "netobject")) raw_data$method else NULL,
       build_args     = if (inherits(raw_data, "netobject")) raw_data$build_args else NULL,
+      metadata       = if (inherits(raw_data, "netobject")) raw_data$metadata else NULL,
       htna_partition = .capture_htna_partition(raw_data)
     ),
     class = "net_clustering"
@@ -895,38 +904,19 @@ cluster_data <- function(...) {
   }, numeric(1L))
 }
 
-#' Print Method for net_clustering
-#'
-#' Compact, fixed-width summary of a sequence-clustering result. The header
-#' carries the clustering method and dissimilarity; the per-cluster table
-#' carries cluster size (count and percentage) and mean within-cluster
-#' distance when available. Optional medoid and covariate lines surface
-#' only when those fields are populated.
-#'
-#' @param x A \code{net_clustering} object.
-#' @param digits Integer. Decimal places used for floating-point statistics
-#'   in the printout. Default \code{3}. Non-breaking: existing
-#'   \code{print(x)} calls keep their previous formatting.
-#' @param ... Unsupported. Supplying unused arguments raises an error.
-#'
-#' @return The input object, invisibly.
-#'
-#' @examples
-#' seqs <- data.frame(V1 = c("A","B","C","A","B"), V2 = c("B","C","A","B","A"),
-#'                    V3 = c("C","A","B","C","B"))
-#' cl <- build_clusters(seqs, k = 2)
-#' print(cl)
-#' \donttest{
-#' set.seed(1)
-#' seqs <- data.frame(
-#'   V1 = sample(c("A","B","C"), 20, TRUE),
-#'   V2 = sample(c("A","B","C"), 20, TRUE),
-#'   V3 = sample(c("A","B","C"), 20, TRUE)
-#' )
-#' cl <- build_clusters(seqs, k = 2)
-#' print(cl)
-#' }
-#'
+#' @rdname build_clusters
+#' @section Methods:
+#' * \code{print.net_clustering()}: Compact, fixed-width summary of a sequence-clustering result. The header carries the clustering method and dissimilarity; the per-cluster table carries cluster size (count and percentage) and mean within-cluster distance when available. Optional medoid and covariate lines surface only when those fields are populated.
+#' * \code{print.tidy_covariates()}: Prints a one-line header naming the estimator, then the data.frame. The full human-readable view (per-cluster stats, profiles, OR/test tables) was already printed by `summary()` when this object was produced, so this method intentionally stays minimal to avoid duplication. Auto-prints when the user types the variable at the REPL.
+#' @param x For the \code{print()} and \code{plot()} methods: an object of class \code{net_clustering} or \code{tidy_covariates}.
+#' @param digits Integer. Decimal places used for floating-point statistics in the printout. Default \code{3}. Non-breaking: existing \code{print(x)} calls keep their previous formatting.
+#' @param object For the \code{summary()} method: an object of class \code{net_clustering}.
+#' @param type Character. Plot type: \code{"silhouette"} (per-observation silhouette bars), \code{"mds"} (2D MDS projection), \code{"heatmap"} (distance matrix heatmap ordered by cluster), or \code{"predictors"} (odds-ratio forest plot of the post-hoc covariate analysis; requires \code{covariates} and an estimator that produces coefficients). Default: \code{"silhouette"}.
+#' @param combined Logical. For \code{type = "predictors"} only: when \code{TRUE} (default), covariate forest panels are combined into a single faceted plot; when \code{FALSE}, a list of separate ggplots is returned.
+#' @return In \code{print.net_clustering()}: The input object, invisibly.
+#' @return In \code{summary.net_clustering()}: A data frame of per-cluster statistics, one row per cluster, with columns \code{cluster}, \code{size} and \code{mean_within_dist}, returned \emph{visibly}. When the clustering was fitted with \code{covariates}, a \code{tidy_covariates}/\code{data.frame} (the tidied covariate table, with cluster sizes, fit statistics and profiles attached as attributes) is returned \emph{invisibly} instead. In both cases the printed summary is a side effect.
+#' @return In \code{plot.net_clustering()}: A \code{ggplot} object (invisibly); for \code{type = "predictors"} with \code{combined = FALSE}, a list of \code{ggplot} objects named by cluster (invisibly).
+#' @return In \code{print.tidy_covariates()}: The input invisibly.
 #' @export
 print.net_clustering <- function(x, digits = 3L, ...) {
   .net_clustering_check_unused_dots("print.net_clustering", ...)
@@ -982,29 +972,7 @@ print.net_clustering <- function(x, digits = 3L, ...) {
   invisible(x)
 }
 
-#' Summary Method for net_clustering
-#'
-#' @param object A \code{net_clustering} object.
-#' @param ... Unsupported. Supplying unused arguments raises an error.
-#'
-#' @return The input object, invisibly.
-#'
-#' @examples
-#' seqs <- data.frame(V1 = c("A","B","C","A","B"), V2 = c("B","C","A","B","A"),
-#'                    V3 = c("C","A","B","C","B"))
-#' cl <- build_clusters(seqs, k = 2)
-#' summary(cl)
-#' \donttest{
-#' set.seed(1)
-#' seqs <- data.frame(
-#'   V1 = sample(c("A","B","C"), 20, TRUE),
-#'   V2 = sample(c("A","B","C"), 20, TRUE),
-#'   V3 = sample(c("A","B","C"), 20, TRUE)
-#' )
-#' cl <- build_clusters(seqs, k = 2)
-#' summary(cl)
-#' }
-#'
+#' @rdname build_clusters
 #' @export
 summary.net_clustering <- function(object, ...) {
   .net_clustering_check_unused_dots("summary.net_clustering", ...)
@@ -1042,36 +1010,7 @@ summary.net_clustering <- function(object, ...) {
   cluster_stats
 }
 
-#' Plot Sequence Clustering Results
-#'
-#' @param x A \code{net_clustering} object.
-#' @param type Character. Plot type: \code{"silhouette"} (per-observation
-#'   silhouette bars), \code{"mds"} (2D MDS projection), or
-#'   \code{"heatmap"} (distance matrix heatmap ordered by cluster).
-#'   Default: \code{"silhouette"}.
-#' @param combined Logical. For \code{type = "predictors"} only: when
-#'   \code{TRUE} (default), covariate forest panels are combined into a
-#'   single faceted plot; when \code{FALSE}, a list of separate ggplots is
-#'   returned.
-#' @param ... Unsupported. Supplying unused arguments raises an error.
-#' @return A \code{ggplot} object (invisibly).
-#'
-#' @examples
-#' seqs <- data.frame(V1 = c("A","B","C","A","B"), V2 = c("B","C","A","B","A"),
-#'                    V3 = c("C","A","B","C","B"))
-#' cl <- build_clusters(seqs, k = 2)
-#' plot(cl, type = "silhouette")
-#' \donttest{
-#' set.seed(1)
-#' seqs <- data.frame(
-#'   V1 = sample(c("A","B","C"), 20, TRUE),
-#'   V2 = sample(c("A","B","C"), 20, TRUE),
-#'   V3 = sample(c("A","B","C"), 20, TRUE)
-#' )
-#' cl <- build_clusters(seqs, k = 2)
-#' plot(cl, type = "silhouette")
-#' }
-#'
+#' @rdname build_clusters
 #' @import ggplot2
 #' @export
 plot.net_clustering <- function(x, type = c("silhouette", "mds", "heatmap",
@@ -1395,7 +1334,12 @@ plot.net_clustering <- function(x, type = c("silhouette", "mds", "heatmap",
 #'
 #' Dispatches on `estimator`:
 #' \itemize{
-#'   \item `"firth"` (default) - Firth's penalised multinomial logit via
+#'   \item `"auto"` (default) - resolves to `"firth"` when
+#'     `.detect_separation_risk()` finds a cluster x covariate cell with
+#'     fewer than 5 observations, and to `"multinom"` otherwise. The
+#'     resolved choice and its reason are stored on the `profiles` object
+#'     as the `auto_choice` / `auto_reason` attributes.
+#'   \item `"firth"` - Firth's penalised multinomial logit via
 #'     `brglm2::brmultinom`. Bias-reduced; estimates stay finite under
 #'     quasi-complete separation. AIC/BIC/McFadden derived from the same
 #'     log-likelihood scale as the ML fit, so they remain comparable.
@@ -1866,17 +1810,7 @@ plot.net_clustering <- function(x, type = c("silhouette", "mds", "heatmap",
   out
 }
 
-#' Print method for tidy covariate output
-#'
-#' Prints a one-line header naming the estimator, then the data.frame.
-#' The full human-readable view (per-cluster stats, profiles, OR/test
-#' tables) was already printed by `summary()` when this object was
-#' produced, so this method intentionally stays minimal to avoid
-#' duplication. Auto-prints when the user types the variable at the REPL.
-#'
-#' @param x A `tidy_covariates` data.frame.
-#' @param ... Ignored.
-#' @return The input invisibly.
+#' @rdname build_clusters
 #' @export
 print.tidy_covariates <- function(x, ...) {
   cat(sprintf("# Tidy covariate analysis (estimator = %s)\n",

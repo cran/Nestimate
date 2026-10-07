@@ -1,3 +1,6 @@
+# Skipped on CRAN to keep the check under its time limit; runs locally and in CI.
+testthat::skip_on_cran()
+
 # Tests for build_mcml_pc() (experimental MCML for psychometric networks)
 
 # Block-structured Gaussian data: within-block r = .5, between A-B = .30,
@@ -852,4 +855,111 @@ test_that("build_mcml_pc accepts clusters as a two-column data.frame", {
   # a one-column data.frame is rejected with a clear message.
   expect_error(build_mcml_pc(items, data.frame(x = paste0("v", 1:6))),
                "at least two columns")
+})
+
+
+# ---- Accessors: item_loadings() and composites() ------------------------
+
+test_that("item_loadings() returns the tidy item table", {
+  fit <- build_mcml_pc(make_block_data(), block_clusters(),
+                       aggregation = "loadings", method = "cor")
+  tab <- item_loadings(fit)
+  expect_s3_class(tab, "data.frame")
+  expect_equal(nrow(tab), 9L)
+  expect_named(tab, c("node", "cluster", "loading", "weight", "sign",
+                      "max_cross", "cross_cluster", "misfit"))
+})
+
+test_that("item_loadings(misfit=) partitions the table without loss", {
+  fit <- build_mcml_pc(make_block_data(), block_clusters(),
+                       aggregation = "loadings", method = "cor")
+  all_items <- item_loadings(fit)
+  bad <- item_loadings(fit, misfit = TRUE)
+  good <- item_loadings(fit, misfit = FALSE)
+  # Invariant: the two halves partition the whole, and each is homogeneous.
+  expect_equal(nrow(bad) + nrow(good), nrow(all_items))
+  expect_true(all(bad$misfit))
+  expect_false(any(good$misfit))
+  expect_setequal(c(bad$node, good$node), all_items$node)
+})
+
+test_that("item_loadings() rejects a non-logical misfit filter", {
+  fit <- build_mcml_pc(make_block_data(), block_clusters(),
+                       aggregation = "loadings", method = "cor")
+  expect_error(item_loadings(fit, misfit = "yes"))
+})
+
+test_that("composites() returns one row per observation, one column per cluster", {
+  data <- make_block_data()
+  fit <- build_mcml_pc(data, block_clusters(), aggregation = "loadings",
+                       method = "cor")
+  scores <- composites(fit)
+  expect_s3_class(scores, "data.frame")
+  expect_equal(nrow(scores), nrow(data))
+  expect_named(scores, names(block_clusters()))
+  expect_true(all(vapply(scores, is.numeric, logical(1))))
+})
+
+test_that("composites() reproduces the macro network it was fitted on", {
+  fit <- build_mcml_pc(make_block_data(), block_clusters(),
+                       aggregation = "loadings", method = "cor")
+  # Calibration: re-estimating from the returned scores must give back the
+  # macro weights exactly, or the accessor is not returning what was fitted.
+  refit <- build_network(composites(fit), method = "cor")
+  expect_equal(refit$weights, fit$macro$weights)
+})
+
+test_that("composites() errors by class on the descriptive aggregations", {
+  fit <- build_mcml_pc(make_block_data(), block_clusters(),
+                       aggregation = "escoufier")
+  expect_error(composites(fit), class = "nestimate_no_composites")
+})
+
+
+test_that("macro_network() returns the cluster-level netobject of an mcml_pc", {
+  fit <- build_mcml_pc(make_block_data(), block_clusters(),
+                       aggregation = "loadings", method = "cor")
+  macro <- macro_network(fit)
+  expect_s3_class(macro, "netobject")
+  expect_equal(dim(macro$weights), c(3L, 3L))
+  expect_equal(rownames(macro$weights), names(block_clusters()))
+})
+
+test_that("macro_network() refuses expand= on a psychometric fit", {
+  fit <- build_mcml_pc(make_block_data(), block_clusters(),
+                       aggregation = "loadings", method = "cor")
+  expect_error(macro_network(fit, expand = "A"), class = "nestimate_no_expand")
+})
+
+test_that("composites() keeps one row per input row, with NA and row names", {
+  set.seed(1)
+  f <- stats::rnorm(120); g <- stats::rnorm(120)
+  df <- data.frame(a1 = f + stats::rnorm(120), a2 = f + stats::rnorm(120),
+                   a3 = f + stats::rnorm(120), b1 = g + stats::rnorm(120),
+                   b2 = g + stats::rnorm(120), b3 = g + stats::rnorm(120))
+  rownames(df) <- sprintf("r%03d", seq_len(nrow(df)))
+  df[3, c("a1", "a2", "a3")] <- NA        # all of cluster A missing
+  df[5, "b1"] <- NA                       # part of cluster B missing
+  fit <- build_mcml_pc(df, list(A = c("a1", "a2", "a3"), B = c("b1", "b2", "b3")),
+                       aggregation = "composite", method = "cor")
+  sc <- composites(fit)
+  expect_identical(dim(sc), c(120L, 2L))
+  expect_identical(rownames(sc), rownames(df))
+  expect_true(is.na(sc["r003", "A"]))
+  expect_false(is.na(sc["r005", "B"]))    # averaged over the observed items
+  # the macro network is the estimator on the complete rows
+  expect_equal(build_network(sc, method = "cor")$weights,
+               macro_network(fit)$weights)
+})
+
+test_that("macro_network(mcml_pc) rejects method and ... instead of ignoring them", {
+  set.seed(2)
+  f <- stats::rnorm(100); g <- stats::rnorm(100)
+  df <- data.frame(a1 = f + stats::rnorm(100), a2 = f + stats::rnorm(100),
+                   b1 = g + stats::rnorm(100), b2 = g + stats::rnorm(100))
+  fit <- build_mcml_pc(df, list(A = c("a1", "a2"), B = c("b1", "b2")),
+                       aggregation = "composite", method = "cor")
+  expect_error(macro_network(fit, method = "glasso"), "do not apply")
+  expect_error(macro_network(fit, gamma = 0.5), "do not apply")
+  expect_s3_class(macro_network(fit), "netobject")
 })

@@ -229,11 +229,12 @@ build_hypergraph <- function(net,
 
 # ---- S3 methods ---------------------------------------------------------
 
-#' @param x A `net_hypergraph` object (for `print`).
-#' @param object A `net_hypergraph` object (for `summary`).
-#' @param ... Additional arguments (ignored).
-#' @return The input `x` invisibly.
 #' @rdname build_hypergraph
+#' @param x For the \code{print()} method: an object of class \code{net_hypergraph}.
+#' @param object For the \code{summary()} method: an object of class \code{net_hypergraph}.
+#' @param ... In \code{print.net_hypergraph()}: Additional arguments (ignored). In \code{summary.net_hypergraph()}: Ignored.
+#' @return In \code{print.net_hypergraph()}: For `print()`, the input `x` invisibly.
+#' @return In \code{summary.net_hypergraph()}: For `summary()`, a data.frame with one row per node and columns `node` (node name) and `degree` (number of hyperedges containing the node), returned visibly; the summary block (node / hyperedge counts, mean and maximum hyperedge size) is printed as a side effect.
 #' @export
 print.net_hypergraph <- function(x, ...) {
   cat(sprintf("Hypergraph: %d nodes, %d hyperedges\n",
@@ -250,7 +251,6 @@ print.net_hypergraph <- function(x, ...) {
   invisible(x)
 }
 
-#' @return The input `object` invisibly.
 #' @rdname build_hypergraph
 #' @export
 summary.net_hypergraph <- function(object, ...) {

@@ -8,7 +8,10 @@ build_ising(data, ...)
 }
 \arguments{
 \item{data}{Data frame (sequences or per-observation frequencies) or a
-square symmetric matrix (correlation or covariance).}
+square symmetric matrix (correlation or covariance). A fitted
+\code{net_clustering} or \code{net_mmm} object is also accepted: the
+per-cluster networks are (re)built and a \code{netobject_group} is
+returned.}
 
 \item{...}{Additional arguments passed to \code{\link{build_network}}.}
 }
@@ -20,11 +23,9 @@ Convenience wrapper for \code{build_network(method = "ising")}.
 Computes L1-regularized logistic regression network for binary data.
 }
 \examples{
-\donttest{
 if (requireNamespace("glmnet", quietly = TRUE)) {
   bin_data <- data.frame(matrix(rbinom(200, 1, 0.5), ncol = 5))
   net <- build_ising(bin_data)
-}
 }
 }
 \seealso{

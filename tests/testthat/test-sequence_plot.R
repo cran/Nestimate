@@ -1,3 +1,6 @@
+# Skipped on CRAN to keep the check under its time limit; runs locally and in CI.
+testthat::skip_on_cran()
+
 test_that("sequence_plot draws from a data.frame + hclust", {
   set.seed(1L)
   states <- c("A", "B", "C")
@@ -296,8 +299,8 @@ test_that("trim applies to the distribution and mcml paths", {
   expect_true(all(vapply(ch_abs$cmats, ncol, 1L) == length(ch_abs$times)))
   expect_equal(ncol(ch_abs$summary_mat), 15L)
 
-  expect_s3_class(sequence_plot(fit, type = "index", trim = 15), "ggplot")
-  expect_s3_class(sequence_plot(fit, type = "distribution", trim = 0.9), "ggplot")
+  expect_s3_class(sequence_plot(fit, type = "index", trim = 15), "mcml_sequence_plot")
+  expect_s3_class(sequence_plot(fit, type = "distribution", trim = 0.9), "mcml_sequence_plot")
 })
 
 test_that("trim_clusterwise: global keeps panels aligned, clusterwise crops per group", {
@@ -336,4 +339,44 @@ test_that("trim_clusterwise: global keeps panels aligned, clusterwise crops per 
   ix <- sequence_plot(df, type = "index", group = grp, trim = 0.95,
                       trim_clusterwise = TRUE, legend = "none")
   expect_setequal(unlist(ix$orders), seq_len(nrow(df)))
+})
+
+test_that("named state_colors maps by name in every non-mcml type", {
+  m <- matrix(c("a", "b", "c", "a",
+                "b", "c", "c", "a",
+                "b", "b", "c", "a"), nrow = 3, byrow = TRUE)
+  pdf(NULL); on.exit(grDevices::dev.off(), add = TRUE)
+
+  idx  <- sequence_plot(m, type = "index", state_colors = c(b = "#000000"))
+  heat <- sequence_plot(m, type = "heatmap", state_colors = c(c = "#123456"))
+  dist <- sequence_plot(m, type = "distribution", state_colors = c(b = "#000000"))
+
+  # The named key is overridden; the states left unnamed are dealt the
+  # Okabe-Ito colours the palette did NOT use, one each - so "b" taking
+  # #000000 (Okabe-Ito 9) leaves "a" and "c" on 1 and 2, never a repeat.
+  expect_equal(idx$palette, c(.okabe_ito[1L], "#000000", .okabe_ito[2L]))
+  expect_equal(heat$palette, c(.okabe_ito[1L], .okabe_ito[2L], "#123456"))
+  expect_equal(dist$palette[seq_len(3L)], c(.okabe_ito[1L], "#000000",
+                                            .okabe_ito[2L]))
+  expect_false(anyDuplicated(idx$palette) > 0L)
+
+  # unnamed stays positional (regression: names must not change the old path)
+  pos <- sequence_plot(m, type = "index",
+                       state_colors = c("#111111", "#222222", "#333333"))
+  expect_equal(pos$palette, c("#111111", "#222222", "#333333"))
+
+  # extra names are dropped with a message (one palette, many figures)
+  expect_message(super <- sequence_plot(m, type = "index",
+                                        state_colors = c(zz = "red", b = "#000000")),
+                 "1 of 2 names are not drawn")
+  expect_equal(super$palette, c(.okabe_ito[1L], "#000000", .okabe_ito[2L]))
+  expect_message(sequence_plot(m, state_colors = c(zz = "red")),
+                 "no name matches a key this plot draws")
+})
+
+test_that("a half-named state_colors is rejected, not half-honoured", {
+  m <- matrix(c("a", "b", "c", "a", "b", "c"), nrow = 2, byrow = TRUE)
+  pdf(NULL); on.exit(grDevices::dev.off(), add = TRUE)
+  expect_error(sequence_plot(m, state_colors = c("#111111", b = "#222222")),
+               "mixes named and unnamed colours")
 })

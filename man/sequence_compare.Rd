@@ -2,6 +2,9 @@
 % Please edit documentation in R/sequence_compare.R
 \name{sequence_compare}
 \alias{sequence_compare}
+\alias{print.net_sequence_comparison}
+\alias{summary.net_sequence_comparison}
+\alias{plot.net_sequence_comparison}
 \title{Compare Subsequence Patterns Between Groups}
 \usage{
 sequence_compare(
@@ -13,11 +16,25 @@ sequence_compare(
   iter = 1000L,
   adjust = "fdr"
 )
+
+\method{print}{net_sequence_comparison}(x, ...)
+
+\method{summary}{net_sequence_comparison}(object, ...)
+
+\method{plot}{net_sequence_comparison}(
+  x,
+  top_n = 10L,
+  style = c("auto", "pyramid", "heatmap"),
+  sort = c("statistic", "frequency"),
+  alpha = 0.05,
+  show_residuals = FALSE,
+  ...
+)
 }
 \arguments{
 \item{x}{A \code{netobject_group} (from grouped \code{build_network}),
 a \code{netobject} (requires \code{group}), or a wide-format
-\code{data.frame} (requires \code{group}).}
+\code{data.frame} (requires \code{group}). For the \code{print()} and \code{plot()} methods: an object of class \code{net_sequence_comparison}.}
 
 \item{group}{Character or vector. Column name or vector of group labels.
 Not needed for \code{netobject_group}.}
@@ -25,7 +42,8 @@ Not needed for \code{netobject_group}.}
 \item{sub}{Integer vector. Pattern lengths to analyze. Default: \code{3:5}.}
 
 \item{min_freq}{Integer. Minimum frequency in each group for a pattern
-to be included. Default: 5.}
+to be included: a pattern is kept only when its count reaches this
+threshold in \emph{every} group. Default: 5.}
 
 \item{test}{Character. Inference method: one of \code{"permutation"}
 (default), \code{"chisq"}, or \code{"none"}. See Details.}
@@ -35,19 +53,43 @@ to be included. Default: 5.}
 
 \item{adjust}{Character. P-value correction method (see
 \code{\link[stats]{p.adjust}}). Default: \code{"fdr"}.}
+
+\item{...}{In \code{plot.net_sequence_comparison()}, \code{print.net_sequence_comparison()} and \code{summary.net_sequence_comparison()}: Additional arguments (ignored).}
+
+\item{object}{For the \code{summary()} method: an object of class \code{net_sequence_comparison}.}
+
+\item{top_n}{Integer. Show top N patterns. Default: 10.}
+
+\item{style}{Character. \code{"auto"} (default) draws the back-to-back pyramid for exactly 2 groups and the heatmap for any other number; \code{"pyramid"} and \code{"heatmap"} force a specific style.}
+
+\item{sort}{Character. \code{"statistic"} (default) ranks patterns by test statistic or residual magnitude. \code{"frequency"} ranks by total occurrence count across all groups.}
+
+\item{alpha}{Numeric. Significance threshold for p-value display in the pyramid: patterns with \code{p_value < alpha} are starred and drawn in bold dark text, the rest stay plain grey. Default: 0.05.}
+
+\item{show_residuals}{Logical. If \code{TRUE}, print the standardized residual value inside each pyramid bar. Default: \code{FALSE}. Ignored for the heatmap (which always shows residuals).}
 }
 \value{
 An object of class \code{"net_sequence_comparison"} containing:
 \describe{
-\item{patterns}{Tidy data.frame. Always present:
-\code{pattern}, \code{length}, \code{freq_<group>},
-\code{prop_<group>}, \code{resid_<group>}. If
-\code{test = "permutation"}: \code{effect_size}, \code{p_value}.
-If \code{test = "chisq"}: \code{statistic}, \code{p_value}.}
-\item{groups}{Character vector of group names.}
-\item{n_patterns}{Integer. Number of patterns passing min_freq.}
+\item{patterns}{Tidy data.frame, one row per retained k-gram pattern.
+Always present: \code{pattern}, \code{length}, and one
+\code{freq_<group>}, \code{prop_<group>} and \code{resid_<group>}
+column per group. If \code{test = "permutation"}: \code{effect_size},
+\code{p_value}. If \code{test = "chisq"}: \code{statistic},
+\code{p_value}. Rows are ordered by ascending adjusted \code{p_value}
+when a test was run, and by descending maximum absolute residual
+otherwise.}
+\item{groups}{Character vector of group names, sorted.}
+\item{n_patterns}{Integer. Number of rows in \code{patterns}, i.e. the
+patterns meeting \code{min_freq} in every group.}
 \item{params}{List of sub, min_freq, test, iter, adjust.}
 }
+
+In \code{print.net_sequence_comparison()}: The input object, invisibly.
+
+In \code{summary.net_sequence_comparison()}: The \code{patterns} data.frame: tidy, one row per k-gram pattern, with a frequency, proportion and standardized-residual column per group, and the test columns when \code{test} was not \code{"none"}.
+
+In \code{plot.net_sequence_comparison()}: The drawn \code{ggplot} object, invisibly (the plot is also printed). \code{NULL}, invisibly, when the object holds no patterns.
 }
 \description{
 Extracts all k-gram patterns (subsequences of length k) from sequences
@@ -83,7 +125,25 @@ P-values are adjusted once across all patterns (not per-pattern) using
 any method supported by \code{\link[stats]{p.adjust}}. The default is
 \code{"fdr"} (Benjamini-Hochberg).
 }
+\section{Plot styles}{
+
+Visualizes pattern-level standardized residuals across groups. Two styles
+are available, and \code{style = "auto"} (the default) picks between them
+by the number of groups:
+\describe{
+\item{\code{"pyramid"}}{Back-to-back bars of pattern proportions, shaded
+by each side's standardized residual. Requires exactly 2 groups; an
+explicit \code{style = "pyramid"} on any other number is an error.}
+\item{\code{"heatmap"}}{One tile per (pattern, group) cell, colored by
+standardized residual. Works for any number of groups.}
+}
+Residuals are read directly from the \code{resid_<group>} columns in
+\code{$patterns}, which are always populated regardless of the inference
+method chosen in \code{sequence_compare}.
+}
+
 \examples{
+set.seed(1)
 seqs <- data.frame(
   V1 = sample(LETTERS[1:4], 60, TRUE),
   V2 = sample(LETTERS[1:4], 60, TRUE),
@@ -94,4 +154,12 @@ grp <- rep(c("X", "Y"), 30)
 net <- build_network(seqs, method = "relative")
 res <- sequence_compare(net, group = grp, sub = 2:3, test = "chisq")
 
+}
+\references{
+Haberman, S. J. (1973). The analysis of residuals in cross-classified
+tables. \emph{Biometrics}, 29(1), 205--220. (standardized residuals)
+
+Benjamini, Y. & Hochberg, Y. (1995). Controlling the false discovery rate.
+\emph{Journal of the Royal Statistical Society B}, 57(1), 289--300.
+(the default \code{adjust = "fdr"})
 }

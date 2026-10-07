@@ -102,11 +102,11 @@ test_that("permutation works with method='relative'", {
 test_that("permutation warns for one-sequence transition networks", {
   long <- data.frame(action = c("A", "B", "C", "A"),
                      stringsAsFactors = FALSE)
-  net <- suppressWarnings(build_tna(long, action = "action"))
+  net <- suppressMessages(build_tna(long, action = "action"))
 
   expect_warning(
     perm <- permutation(net, net, iter = 2L, seed = 1),
-    "one long sequence is not recommended"
+    class = "nestimate_single_sequence"
   )
   expect_s3_class(perm, "net_permutation")
 })
@@ -502,7 +502,7 @@ test_that("print.net_permutation shows generic label for unknown method", {
 })
 
 
-# ---- Cross-validation against tna::permutation_test ----
+# ---- Grouped dispatch and output ----
 
 test_that("permutation single netobject_group runs all-pairs (L85-104)", {
   set.seed(1)

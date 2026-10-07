@@ -2,9 +2,18 @@
 % Please edit documentation in R/mmm.R
 \name{compare_mmm}
 \alias{compare_mmm}
+\alias{print.mmm_compare}
+\alias{summary.mmm_compare}
+\alias{plot.mmm_compare}
 \title{Compare MMM fits across different k}
 \usage{
 compare_mmm(data, k = 2:5, return_fits = FALSE, ...)
+
+\method{print}{mmm_compare}(x, ...)
+
+\method{summary}{mmm_compare}(object, ...)
+
+\method{plot}{mmm_compare}(x, ...)
 }
 \arguments{
 \item{data}{Data frame, netobject, or tna model.}
@@ -19,12 +28,25 @@ the chosen model without re-running the EM. Default \code{FALSE}
 keeps the historical lightweight return shape -- only the comparison
 table is allocated.}
 
-\item{...}{Arguments passed to \code{\link{build_mmm}}.}
+\item{...}{Arguments passed to \code{\link{build_mmm}}.
+In \code{plot.mmm_compare()}, \code{print.mmm_compare()} and \code{summary.mmm_compare()}: Unsupported. Supplying unused arguments raises an error.}
+
+\item{x}{For the \code{print()} and \code{plot()} methods: an object of class \code{mmm_compare}.}
+
+\item{object}{For the \code{summary()} method: an object of class \code{mmm_compare}.}
 }
 \value{
-A \code{mmm_compare} data frame with BIC, AIC, ICL, AvePP,
-entropy per k. When \code{return_fits = TRUE}, the fitted models are
+A \code{mmm_compare} data frame, one row per requested \code{k},
+with columns \code{k}, \code{log_likelihood}, \code{AIC}, \code{BIC},
+\code{ICL}, \code{AvePP}, \code{Entropy} and \code{converged}. When
+\code{return_fits = TRUE}, the fitted \code{net_mmm} models are
 attached as \code{attr(result, "fits")}.
+
+In \code{print.mmm_compare()}: The comparison table, invisibly, with the printed \code{best} marker column (\code{"<-- BIC"} / \code{"<-- ICL"}) added.
+
+In \code{summary.mmm_compare()}: A tidy data frame with one row per \code{k}, plus a \code{best} character column flagging the minimum-BIC and minimum-ICL solutions.
+
+In \code{plot.mmm_compare()}: A \code{ggplot} object, invisibly.
 }
 \description{
 Compare MMM fits across different k
@@ -42,10 +64,10 @@ seqs <- data.frame(
 comp <- compare_mmm(seqs, k = 2:3, seed = 42)
 print(comp)
 
-# Retain fits to avoid a re-fit after picking the BIC-min model.
+# Retain the fits so the chosen model needs no re-run; summary() marks
+# the minimum-BIC and minimum-ICL rows in its `best` column.
 comp_with_fits <- compare_mmm(seqs, k = 2:3, seed = 42, return_fits = TRUE)
-best_k <- comp_with_fits$k[which.min(comp_with_fits$BIC)]
-best_fit <- attr(comp_with_fits, "fits")[[as.character(best_k)]]
+summary(comp_with_fits)
 }
 
 }

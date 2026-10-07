@@ -177,9 +177,10 @@
 #' @param fill Either \code{"y"} (color by Y category, e.g. state -- default)
 #'   or the name of another column to map to fill (e.g. a residual column
 #'   for diverging color).
-#' @param colors Optional character vector of fill colors. When
-#'   \code{fill = "y"}, length must be at least the number of distinct y
-#'   levels. Defaults to recycled Okabe-Ito.
+#' @param colors Optional fill colors. Either an unnamed vector applied in
+#'   level order (when \code{fill = "y"}, length must be at least the number
+#'   of distinct y levels), or a named lookup (\code{c(plan = "#0072B2")})
+#'   overriding only the levels you name. Defaults to recycled Okabe-Ito.
 #' @param show_labels If \code{TRUE}, draw within-segment percentage labels.
 #' @param label_size Numeric size for segment labels.
 #' @param x_label,y_label Optional axis labels.
@@ -273,7 +274,7 @@ plot_mosaic <- function(data,
 
   # Build palette
   pal <- if (identical(fill, "y")) {
-    .state_palette(colors, length(y_levels))
+    .state_palette(colors, length(y_levels), y_levels)
   } else {
     NULL
   }
@@ -309,7 +310,10 @@ plot_mosaic <- function(data,
     rects$y_mid <- (rects$ymin + rects$ymax) / 2
     rects$lab   <- sprintf("%.1f%%", 100 * rects$pct)
     rects$lab[rects$pct < 0.04] <- ""
-    p <- p + .geom_fit_label(rects, label_size)
+    fill_cols <- if (is.null(pal)) NULL else {
+      pal[match(as.character(rects[[fill_var]]), y_levels)]
+    }
+    p <- p + .geom_fit_label(rects, label_size, fill_colors = fill_cols)
   }
   p
 }
@@ -334,8 +338,11 @@ plot_mosaic <- function(data,
 #' Column widths are proportional to row marginals of the weight matrix
 #' (incoming totals when the matrix is transposed, as for transitions). Within
 #' each column, segment heights are proportional to that row's conditional
-#' distribution. Cell fill is the standardized residual from
-#' \code{stats::chisq.test()}, with a diverging palette clipped to \eqn{\pm 4}.
+#' distribution. Cell fill is the standardized residual under the independence
+#' null -- a permutation z-score by default, or the closed-form
+#' \code{stats::chisq.test()} residual with \code{residuals = "asymptotic"}
+#' (see \code{residuals}) -- on a diverging palette whose limits auto-fit the
+#' observed residuals unless \code{range} is supplied.
 #' Mosaics need integer counts: when \code{$weights} is already integer
 #' (\code{method = "frequency"} / \code{"co_occurrence"}) it is used directly;
 #' for a single \code{netobject} / \code{htna} otherwise (relative, glasso,
@@ -355,12 +362,15 @@ plot_mosaic <- function(data,
 #'   single mosaic of \code{x$macro$weights} (the cluster-by-cluster
 #'   aggregate); \code{"clusters"} draws one mosaic per cluster from
 #'   \code{x$clusters[[k]]$weights}, faceted into one combined ggplot.
-#' @param xlab,ylab Axis labels. \code{NULL} (default) draws no axis title.
-#'   Pass any string to add one.
+#' @param xlab,ylab Axis labels. \code{NULL} (default) draws no axis title
+#'   on the four data-bearing methods; the \code{table} / \code{matrix}
+#'   methods default to \code{"Row"} and \code{"Column"}. Pass any string to
+#'   set one.
 #' @param range Numeric of length 2 giving the lower and upper colour-scale
 #'   limits for the standardized residual. \code{NULL} (default) auto-fits
 #'   the limits to the symmetric range \code{c(-M, M)} where
-#'   \code{M = max(|stdres|)}, so no signal is squished. Pass an explicit
+#'   \code{M = max(|stdres|)} floored at 1, so no signal is squished and the
+#'   legend stays readable on a near-independent table. Pass an explicit
 #'   range (e.g. \code{c(-4, 4)} for tna-style display, \code{c(-6, 6)} for
 #'   moderate clipping) to clamp the colour scale.
 #' @param top_angle,left_angle Rotation in degrees for the top (x) and left
@@ -379,8 +389,11 @@ plot_mosaic <- function(data,
 #'   Default 500; use \code{>= 1000} for stable tail estimates.
 #' @param seed Optional integer seed for the permutation RNG. Use for
 #'   reproducible plots; ignored when \code{residuals = "asymptotic"}.
-#' @param ncol For \code{netobject_group}: number of columns in the small-
-#'   multiples layout. Default 2.
+#' @param ncol Number of columns in the multi-panel layout. Default 2.
+#'   Effective only for \code{mcml} with \code{level = "clusters"}, the one
+#'   multi-panel case; \code{netobject_group} is drawn as a single
+#'   (group x state) mosaic, so \code{ncol} is accepted but has no effect
+#'   there.
 #' @param values Logical. When \code{TRUE}, overlay each cell's standardized
 #'   residual as a numeric label (one decimal). Text colour switches to
 #'   white on saturated cells (|stdres| > 1.5) and dark grey otherwise.
@@ -400,16 +413,19 @@ plot_mosaic <- function(data,
 #' @param ... Flat styling overrides forwarded to the flat renderer when
 #'   \code{style = "flat"} (otherwise ignored).
 #'
-#' @return A \code{ggplot} object (or a \code{gtable} from
-#'   \code{gridExtra::arrangeGrob} for \code{netobject_group} when
-#'   \pkg{gridExtra} is available).
+#' @return A \code{ggplot} object: one \code{geom_rect} layer with one
+#'   rectangle per contingency-table cell, filled by the standardized
+#'   residual. \code{mcml} with \code{level = "clusters"} returns a single
+#'   \code{facet_wrap}-ed \code{ggplot} (one panel per cluster, shared fill
+#'   scale); every other input returns a single-panel \code{ggplot}.
 #' @seealso \code{\link{plot_mosaic}} for the lower-level data.frame primitive.
 #' @export
 #' @examples
-#' \dontrun{
-#'   net <- build_network(group_regulation, method = "frequency")
-#'   mosaic_plot(net)
-#' }
+#' data(group_regulation_long, package = "Nestimate")
+#' net <- build_network(group_regulation_long, method = "frequency",
+#'                      format = "long", actor = "Actor", action = "Action",
+#'                      order = "Time")
+#' mosaic_plot(net, seed = 1)
 mosaic_plot <- function(x, ...) UseMethod("mosaic_plot")
 
 #' @export
@@ -1410,7 +1426,7 @@ mosaic_plot.matrix <- function(x, ...) mosaic_plot.table(as.table(x), ...)
   group_levels <- unique(freq_df$group)
   freq_df$group <- factor(freq_df$group, levels = group_levels)
 
-  pal <- .state_palette(colors, length(state_levels))
+  pal <- .state_palette(colors, length(state_levels), state_levels)
   names(pal) <- state_levels
 
   # Build cumulative-width / cumulative-height rectangle coordinates.
@@ -1477,7 +1493,8 @@ mosaic_plot.matrix <- function(x, ...) mosaic_plot.table(as.table(x), ...)
     rects$tile_w <- rects$xmax - rects$xmin
     rects$tile_h <- rects$ymax - rects$ymin
     rects$angle <- ifelse(rects$tile_h > rects$tile_w, 90, 0)
-    p <- p + .geom_fit_label(rects, label_size)
+    p <- p + .geom_fit_label(rects, label_size,
+                             fill_colors = pal[as.character(rects$state)])
   }
   p
 }
@@ -1595,7 +1612,8 @@ mosaic_plot.matrix <- function(x, ...) mosaic_plot.table(as.table(x), ...)
     rects$lab <- .format_value_label(rects$state, rects$count,
                                      rects$proportion, label)
     rects$angle <- ifelse(rects$tile_h > rects$tile_w, 90, 0)
-    p <- p + .geom_fit_label(rects, label_size)
+    p <- p + .geom_fit_label(rects, label_size,
+                             fill_colors = pal_named[as.character(rects$state)])
   }
   p
 }
@@ -1648,7 +1666,7 @@ mosaic_plot.matrix <- function(x, ...) mosaic_plot.table(as.table(x), ...)
     sub <- sub[!is.na(sub$state) & sub$count > 0, , drop = FALSE]
     if (nrow(sub) == 0L) return(NULL)
 
-    local_pal <- .state_palette(colors, length(local_levels))
+    local_pal <- .state_palette(colors, length(local_levels), local_levels)
     names(local_pal) <- local_levels
 
     .single_treemap_plot(sub, local_pal, label, label_size,
@@ -1679,8 +1697,8 @@ mosaic_plot.matrix <- function(x, ...) mosaic_plot.table(as.table(x), ...)
 }
 
 
+#' @rdname plot_state_frequencies
 #' @export
-#' @keywords internal
 print.nestimate_facet_plot <- function(x, ...) {
   grid::grid.newpage()
   grid::grid.draw(x)
@@ -1688,8 +1706,8 @@ print.nestimate_facet_plot <- function(x, ...) {
 }
 
 
+#' @rdname plot_state_frequencies
 #' @export
-#' @keywords internal
 print.nestimate_facet_list <- function(x, ...) {
   for (p in x) print(p)
   invisible(x)
@@ -1721,7 +1739,7 @@ knit_print.nestimate_facet_list <- function(x, ...) {
                                   legend_dir = "auto",
                                   legend_frame = "none") {
   state_levels <- .order_states(freq_df$state, freq_df$count, sort_states)
-  pal <- .state_palette(colors, length(state_levels))
+  pal <- .state_palette(colors, length(state_levels), state_levels)
   names(pal) <- state_levels
 
   groups <- unique(as.character(freq_df$group))
@@ -1776,7 +1794,8 @@ knit_print.nestimate_facet_list <- function(x, ...) {
     rects$tile_w <- rects$xmax - rects$xmin
     rects$tile_h <- rects$ymax - rects$ymin
     rects$angle <- ifelse(rects$tile_h > rects$tile_w, 90, 0)
-    p <- p + .geom_fit_label(rects, label_size)
+    p <- p + .geom_fit_label(rects, label_size,
+                             fill_colors = pal[as.character(rects$state)])
   }
   p
 }
@@ -1795,7 +1814,7 @@ knit_print.nestimate_facet_list <- function(x, ...) {
   state_levels <- .order_states(freq_df$state, freq_df$count, sort_states)
   # Reverse so the largest count appears at the top of the y-axis
   freq_df$state <- factor(freq_df$state, levels = rev(state_levels))
-  pal <- .state_palette(colors, length(state_levels))
+  pal <- .state_palette(colors, length(state_levels), state_levels)
   names(pal) <- state_levels
 
   x_var <- if (metric == "freq") "count" else "proportion"
@@ -1859,7 +1878,11 @@ knit_print.nestimate_facet_list <- function(x, ...) {
 #' group when groups exist. All variants use the Okabe-Ito palette.
 #'
 #' @param x A \code{netobject}, \code{netobject_group}, \code{mcml}, or
-#'   \code{htna} object.
+#'   \code{htna} object. For the \code{print()}, \code{plot()} and
+#'   \code{as.data.frame()} methods: the \code{state_freq} object returned by
+#'   \code{plot_state_frequencies()}; for the \code{print()} methods of the
+#'   per-facet figure, an object of class \code{nestimate_facet_plot} or
+#'   \code{nestimate_facet_list}.
 #' @param style One of:
 #'   \itemize{
 #'     \item \code{"marimekko"} (default) -- per-group treemap panels with
@@ -1891,9 +1914,11 @@ knit_print.nestimate_facet_list <- function(x, ...) {
 #'   \code{"bottom"} for single-network and \code{netobject_group}
 #'   treemaps (shared state vocabulary, one shared legend).
 #'   Override with any of \code{"bottom"}, \code{"top"}, \code{"right"},
-#'   \code{"left"}, \code{"none"}, or \code{"per_facet"}. The
-#'   \code{"per_facet"} option requires the \pkg{gridExtra} package and
-#'   returns a \code{gtable}.
+#'   \code{"left"}, \code{"none"}, or \code{"per_facet"}. \code{"per_facet"}
+#'   is silently demoted to \code{"bottom"} when every group shares the same
+#'   state vocabulary (repeating one legend per panel would be redundant);
+#'   when it does take effect it returns a \code{gtable} (requiring the
+#'   \pkg{gridExtra} package) or a list of ggplots, per \code{combine}.
 #' @param legend_dir Legend internal layout: \code{"auto"} (default --
 #'   horizontal for top/bottom, vertical for left/right), or force
 #'   \code{"horizontal"} or \code{"vertical"} regardless of position.
@@ -1902,9 +1927,10 @@ knit_print.nestimate_facet_list <- function(x, ...) {
 #'   ("legend enclosed in a square").
 #' @param sort_states One of \code{"frequency"} (default -- most frequent
 #'   first), \code{"alpha"}, or \code{"none"}.
-#' @param colors Optional character vector overriding the default
-#'   Okabe-Ito state palette. Length must be at least the number of unique
-#'   states.
+#' @param colors Optional colors overriding the default Okabe-Ito state
+#'   palette. Either an unnamed vector applied in state order (length at
+#'   least the number of unique states), or a named lookup
+#'   (\code{c(plan = "#0072B2")}) overriding only the states you name.
 #' @param label_size Numeric size of inline labels (max size when
 #'   \pkg{ggfittext} is installed -- text auto-shrinks per tile).
 #' @param abbreviate Abbreviate state names. \code{FALSE} (default) shows
@@ -1912,7 +1938,8 @@ knit_print.nestimate_facet_list <- function(x, ...) {
 #'   \code{base::abbreviate()} (which extends the truncation as needed to
 #'   keep names unique after collision); a positive integer sets the
 #'   target minimum length explicitly (e.g. \code{abbreviate = 4}).
-#'   Affects tile labels, legend, and the returned \code{$table}.
+#'   Affects tile labels, the legend, and the tidy table returned by
+#'   \code{as.data.frame()}.
 #' @param include_macro For \code{mcml} only: prepend a \code{"macro"}
 #'   reference column showing aggregate state frequencies across all
 #'   clusters. Default \code{FALSE}.
@@ -1930,18 +1957,22 @@ knit_print.nestimate_facet_list <- function(x, ...) {
 #' @param ncol For \code{legend = "per_facet"} with \code{combine = TRUE}:
 #'   number of columns in the grid arrangement. \code{NULL} (default)
 #'   picks 1, 2, or 3 columns based on the number of panels.
-#' @param ... Reserved for future use.
+#' @param ... Reserved for future use. In \code{as.data.frame.state_freq()},
+#'   \code{plot.state_freq()}, \code{print.state_freq()},
+#'   \code{print.nestimate_facet_list()} and \code{print.nestimate_facet_plot()}:
+#'   ignored.
 #'
 #' @return A \code{state_freq} object: a list with the rendered \code{$plot}
-#'   (a \code{ggplot} or \code{gtable}), the tidy \code{$table} (a
+#'   (a \code{ggplot}; a \code{gtable} or a list of ggplots under
+#'   \code{legend = "per_facet"}, per \code{combine}), the tidy \code{$table} (a
 #'   \code{data.frame} with columns \code{group}, \code{state}, \code{count},
-#'   \code{proportion}), and the call's \code{$style}, \code{$metric},
-#'   \code{$source_class}. The class supports \code{print()} (shows the
-#'   tidy table in the console), \code{plot()} (renders the chart), and
-#'   \code{as.data.frame()} (returns the table).
+#'   \code{proportion}, one row per (group, state) cell), and the call's
+#'   \code{$style}, \code{$metric}, \code{$source_class}. The class supports
+#'   \code{print()} (prints the tidy table and draws the chart),
+#'   \code{plot()} (draws the chart alone), and \code{as.data.frame()}
+#'   (returns the tidy table) -- see the section below.
 #'
 #' @examples
-#' \donttest{
 #' if (requireNamespace("ggplot2", quietly = TRUE)) {
 #'   data(group_regulation_long, package = "Nestimate")
 #'   nw <- build_network(group_regulation_long,
@@ -1953,7 +1984,7 @@ knit_print.nestimate_facet_list <- function(x, ...) {
 #'   plot(res)             # ggplot chart
 #'   head(as.data.frame(res))
 #' }
-#' }
+#' @order 1
 #' @export
 plot_state_frequencies <- function(x, ...) {
   UseMethod("plot_state_frequencies")
@@ -2059,7 +2090,7 @@ plot_state_frequencies.netobject_group <- function(x,
                                                     combine = "auto",
                                                     ncol = NULL,
                                                     node_groups = NULL,
-                                                    ...) {
+                                                          ...) {
   .plot_state_frequencies_impl(
     x, source_class = "netobject_group", hierarchical = FALSE,
     style = style, metric = metric, label = label, legend = legend,
@@ -2115,6 +2146,9 @@ plot_state_frequencies.default <- function(x, ...) {
   legend_dir   <- match.arg(legend_dir)
   legend_frame <- match.arg(legend_frame)
   sort_states  <- match.arg(sort_states)
+  # A palette attached with set_state_colors() is the object's own default;
+  # an explicit `colors` still wins for this one figure.
+  colors       <- colors %||% .stored_state_colors(x)
 
   if (identical(legend, "auto")) {
     legend <- if (style == "bars") {
@@ -2225,18 +2259,18 @@ plot_state_frequencies.default <- function(x, ...) {
 #'   the other classes.
 #' @param ... Currently unused.
 #'
-#' @return A \code{data.frame} with columns \code{group} (character),
-#'   \code{state} (character), \code{count} (integer), and
-#'   \code{proportion} (numeric, within-group share).
+#' @return A \code{data.frame} with one row per (group, state) cell and
+#'   columns \code{group} (character), \code{state} (character),
+#'   \code{count} (integer), and \code{proportion} (numeric, within-group
+#'   share). A single ungrouped network yields a single group labelled
+#'   \code{"all"}.
 #' @export
 #' @examples
-#' \dontrun{
-#'   data(ai_long)
-#'   net <- build_network(ai_long, method = "frequency",
-#'                        id_col = "session_id",
-#'                        time_col = "order_in_session", action = "code")
-#'   state_distribution(net)
-#' }
+#' data(group_regulation_long, package = "Nestimate")
+#' net <- build_network(group_regulation_long, method = "frequency",
+#'                      format = "long", actor = "Actor", action = "Action",
+#'                      order = "Time", group = "Course")
+#' state_distribution(net)
 state_distribution <- function(x, ...) UseMethod("state_distribution")
 
 #' @export
@@ -2301,22 +2335,26 @@ state_distribution.default <- function(x, ...) {
   out
 }
 
-#' Print, Plot, and Convert a state_freq Object
-#'
+#' @section The state_freq object:
 #' \code{plot_state_frequencies()} returns a \code{state_freq} object holding
 #' both the rendered chart and the tidy frequency table. \code{print()} shows
-#' the table in the console, \code{plot()} renders the chart, and
-#' \code{as.data.frame()} returns the tidy table for downstream piping.
+#' the table in the console \emph{and} draws the chart on the active graphics
+#' device, \code{plot()} draws the chart alone, and \code{as.data.frame()}
+#' returns the tidy table for downstream piping.
 #'
-#' @param x A \code{state_freq} object.
 #' @param digits Number of decimal places for proportion / share columns.
-#' @param max_states Cap on rows shown per group in the per-state table.
-#'   The full table remains available via \code{x$table}.
-#' @param ... Unused.
-#' @return \code{print()} returns \code{invisible(x)}; \code{plot()} returns
-#'   \code{invisible(NULL)} after drawing; \code{as.data.frame()} returns
-#'   \code{x$table}.
+#'   Default 1.
+#' @param max_states Cap on rows shown per group in the per-state table
+#'   (default 20); the surplus is folded into a single \code{"(+k more)"}
+#'   row. The full, uncapped table is returned by
+#'   \code{as.data.frame(x)}.
+#' @return \code{print()} returns \code{x} invisibly (after printing the
+#'   table and drawing the chart); \code{plot()} returns \code{invisible(NULL)}
+#'   after drawing; \code{as.data.frame()} returns the tidy
+#'   \code{data.frame}, one row per (group, state) cell with columns
+#'   \code{group}, \code{state}, \code{count}, \code{proportion}.
 #' @name state_freq
+#' @rdname plot_state_frequencies
 NULL
 
 # Draw whatever kind of plot object a state_freq carries: a single ggplot,
@@ -2336,8 +2374,8 @@ NULL
   invisible(NULL)
 }
 
+#' @rdname plot_state_frequencies
 #' @export
-#' @rdname state_freq
 print.state_freq <- function(x, digits = 1, max_states = 20L, ...) {
   tbl <- x$table
   groups <- unique(as.character(tbl$group))
@@ -2396,15 +2434,15 @@ print.state_freq <- function(x, digits = 1, max_states = 20L, ...) {
   invisible(x)
 }
 
+#' @rdname plot_state_frequencies
 #' @export
-#' @rdname state_freq
 plot.state_freq <- function(x, ...) {
   .draw_state_freq_plot(x$plot)
   invisible(NULL)
 }
 
+#' @rdname plot_state_frequencies
 #' @export
-#' @rdname state_freq
 as.data.frame.state_freq <- function(x, ...) x$table
 
 

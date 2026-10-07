@@ -1,6 +1,6 @@
 Package: Nestimate
 Title: Dynamic, Probabilistic, and Higher-Order Network Analysis
-Version: 0.8.5
+Version: 0.9.24
 Authors@R: c(
     person("Mohammed", "Saqr", email = "saqr@saqr.me", role = c("aut", "cre", "cph")),
     person("Sonsoles", "López-Pernas", email = "sonsoles.lopez@uef.fi", role = "aut"),
@@ -19,12 +19,14 @@ Description: Estimate, compare, and analyze dynamic and psychological networks
     split-half reliability, centrality stability analysis, mixed Markov
     models, multi-cluster multi-layer networks and clustering.
 License: MIT + file LICENSE
-URL: https://github.com/mohsaqr/Nestimate, https://saqr.me/Nestimate/
+URL: https://github.com/mohsaqr/Nestimate,
+        https://pak.dynasite.org/Nestimate/
 BugReports: https://github.com/mohsaqr/Nestimate/issues
 Language: en-US
 Encoding: UTF-8
 RoxygenNote: 7.3.3
-Imports: ggplot2, data.table, cluster, scales, brglm2, nnet
+Imports: ggplot2, data.table, cluster, scales, brglm2, nnet,
+        idiographic (>= 0.3.4), psychnets (>= 0.5.2)
 Suggests: testthat (>= 3.0.0), igraph, glmnet, lavaan, stringdist,
         gridExtra, lme4, corpcor, Matrix, cograph (>= 2.4.4),
         ggfittext, knitr, rmarkdown, tna
@@ -33,10 +35,10 @@ Depends: R (>= 4.1.0)
 LazyData: true
 VignetteBuilder: knitr
 NeedsCompilation: no
-Packaged: 2026-08-21 13:19:07 UTC; mohammedsaqr
+Packaged: 2026-10-07 14:40:53 UTC; mohammedsaqr
 Author: Mohammed Saqr [aut, cre, cph],
   Sonsoles López-Pernas [aut],
   Kamila Misiejuk [aut]
 Maintainer: Mohammed Saqr <saqr@saqr.me>
 Repository: CRAN
-Date/Publication: 2026-08-21 22:01:48 UTC
+Date/Publication: 2026-10-07 16:40:02 UTC

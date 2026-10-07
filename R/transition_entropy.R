@@ -27,7 +27,7 @@
 #' @param x A \code{netobject}, \code{cograph_network}, \code{tna} object,
 #'   row-stochastic numeric transition matrix, or a wide sequence data.frame
 #'   (rows = actors, columns = time-steps; a relative transition network is
-#'   built automatically). Group dispatch on \code{netobject_group}.
+#'   built automatically). Group dispatch on \code{netobject_group}. For the \code{print()} and \code{plot()} methods: an object of class \code{net_transition_entropy} or \code{net_transition_entropy_group} (or its \code{summary()}).
 #' @param base Numeric. Logarithm base. \code{2} (default) for bits,
 #'   \code{exp(1)} for nats, \code{10} for hartleys.
 #' @param normalize Logical. If \code{TRUE} (default), rows that do not sum
@@ -63,6 +63,9 @@
 #'   \item{base}{Logarithm base used.}
 #'   \item{states}{Character vector of state names.}
 #' }
+#'   For a \code{netobject_group} the result is a
+#'   \code{"net_transition_entropy_group"}: a named list holding one such
+#'   object per group.
 #'
 #' @details
 #' Convention \eqn{0 \log 0 := 0} is applied, so absorbing or
@@ -77,13 +80,11 @@
 #' \code{redundancy} - a measure of how much memory the chain has at order 1.
 #'
 #' @examples
-#' \donttest{
 #' net <- build_network(as.data.frame(trajectories), method = "relative")
 #' te  <- transition_entropy(net)
 #' print(te)
 #' summary(te)
 #' plot(te)
-#' }
 #'
 #' @seealso \code{\link{entropy_network}} for the edge-level decomposition,
 #'   \code{\link{entropy_trajectory}} for the sliding-window version,
@@ -236,8 +237,9 @@ transition_entropy <- function(x, base = 2, normalize = TRUE) {
 #'   \code{$inits}, \code{$meta}, \code{$node_groups}, and node coordinates
 #'   are inherited, so it plots with the same TNA styling and layout as its
 #'   source. \code{$method} is \code{"entropy"}. \code{$params} carries
-#'   \code{base}, \code{weight}, \code{entropy_rate}, and the stationary
-#'   distribution \code{stationary}.
+#'   \code{base}, \code{weight}, \code{scaling}, \code{entropy_rate}, and the
+#'   stationary distribution \code{stationary} (plus \code{production_rate}
+#'   and \code{n_oneway_pairs} when \code{weight = "production"}).
 #'
 #'   The object also declares the entropy house style through the
 #'   \code{$meta$splot} producer contract (honoured by cograph >= 2.4.4):
@@ -466,7 +468,8 @@ entropy_network <- function(x, base = 2,
 #'     \code{time_end}, \code{n_transitions}, \code{n_states} (distinct
 #'     states in the window), \code{entropy} (bits per transition) and
 #'     \code{entropy_norm} (divided by \eqn{\log_b} of the window's
-#'     active-state count; in \eqn{[0, 1]}).}
+#'     active-state count, floored at 2 states so the ceiling is never
+#'     zero; in \eqn{[0, 1]}).}
 #'   \item{window, step, base, states}{Call metadata; \code{states} is the
 #'     global state set.}
 #' }
@@ -485,14 +488,12 @@ entropy_network <- function(x, base = 2,
 #' returned with a warning.
 #'
 #' @examples
-#' \donttest{
 #' tr <- entropy_trajectory(group_regulation_long,
 #'                          action = "Action", actor = "Actor",
 #'                          time = "Time", group = "Achiever")
 #' tr
 #' summary(tr)
 #' plot(tr)
-#' }
 #'
 #' @seealso \code{\link{transition_entropy}} for the whole-process snapshot,
 #'   \code{\link{entropy_bayes}} for credible intervals on it.
@@ -618,12 +619,17 @@ entropy_trajectory <- function(data, action, actor = NULL, time = NULL,
   )
 }
 
-#' Print method for `net_entropy_trajectory`
-#'
-#' @param x A `net_entropy_trajectory` object.
+#' @rdname entropy_trajectory
+#' @param x For the \code{print()} and \code{plot()} methods: an object of class \code{net_entropy_trajectory}.
 #' @param digits Integer. Digits to round numeric output. Default `3`.
-#' @param ... Ignored.
-#' @return `x` invisibly.
+#' @param ... In \code{plot.net_entropy_trajectory()}, \code{print.net_entropy_trajectory()} and \code{summary.net_entropy_trajectory()}: Ignored.
+#' @param object For the \code{summary()} method: an object of class \code{net_entropy_trajectory}.
+#' @param normalized Logical. Plot `entropy_norm` instead of raw bits (default `FALSE`).
+#' @param span Numeric. Loess span (default `0.4`).
+#' @param title Character. Plot title.
+#' @return In \code{print.net_entropy_trajectory()}: `x` invisibly.
+#' @return In \code{summary.net_entropy_trajectory()}: Tidy per-group data.frame: windows, mean/sd/min/max entropy, entropy at the first and last window, and their difference (negative = routinization).
+#' @return In \code{plot.net_entropy_trajectory()}: A ggplot object.
 #' @export
 print.net_entropy_trajectory <- function(x, digits = 3, ...) {
   tr <- x$trajectory
@@ -640,13 +646,7 @@ print.net_entropy_trajectory <- function(x, digits = 3, ...) {
   invisible(x)
 }
 
-#' Summary method for `net_entropy_trajectory`
-#'
-#' @param object A `net_entropy_trajectory` object.
-#' @param ... Ignored.
-#' @return Tidy per-group data.frame: windows, mean/sd/min/max entropy,
-#'   entropy at the first and last window, and their difference (negative =
-#'   routinization).
+#' @rdname entropy_trajectory
 #' @export
 summary.net_entropy_trajectory <- function(object, ...) {
   tr <- object$trajectory
@@ -669,20 +669,9 @@ summary.net_entropy_trajectory <- function(object, ...) {
   out
 }
 
-#' Plot method for `net_entropy_trajectory`
-#'
-#' @description
-#' Raw per-window entropy as faint lines with a loess-smoothed trend per
-#' group, Okabe-Ito coloured. Declining trend = routinization; level shifts
-#' = phase changes.
-#'
-#' @param x A `net_entropy_trajectory` object.
-#' @param normalized Logical. Plot `entropy_norm` instead of raw bits
-#'   (default `FALSE`).
-#' @param span Numeric. Loess span (default `0.4`).
-#' @param title Character. Plot title.
-#' @param ... Ignored.
-#' @return A ggplot object.
+#' @rdname entropy_trajectory
+#' @section Methods:
+#' * \code{plot.net_entropy_trajectory()}: Raw per-window entropy as faint lines with a loess-smoothed trend per group, Okabe-Ito coloured. Declining trend = routinization; level shifts = phase changes.
 #' @export
 plot.net_entropy_trajectory <- function(x, normalized = FALSE, span = 0.4,
                                         title = "Transition entropy over time",
@@ -779,7 +768,7 @@ plot.net_entropy_trajectory <- function(x, normalized = FALSE, span = 0.4,
 #'   (\code{build_network(method = "frequency")}), any \code{netobject} that
 #'   carries its \code{$data} (counts are rebuilt automatically), a
 #'   count matrix, or a wide sequence data.frame. Group dispatch on
-#'   \code{netobject_group}.
+#'   \code{netobject_group}. For the \code{print()} and \code{plot()} methods: an object of class \code{net_entropy_bayes} or \code{net_entropy_bayes_group}.
 #' @param prior Numeric. Dirichlet prior concentration added to every cell
 #'   of the count matrix (default \code{0.5}, Jeffreys).
 #' @param draws Integer. Number of Monte Carlo posterior draws
@@ -811,6 +800,9 @@ plot.net_entropy_trajectory <- function(x, normalized = FALSE, span = 0.4,
 #'     draws (for further analysis or plotting).}
 #'   \item{prior, draws, ci, min_share, base, states_names}{Call metadata.}
 #' }
+#'   For a \code{netobject_group} the result is a
+#'   \code{"net_entropy_bayes_group"}: a named list holding one such object
+#'   per group.
 #'
 #' @details
 #' With \code{prior > 0} the posterior puts mass on every transition, so
@@ -826,14 +818,12 @@ plot.net_entropy_trajectory <- function(x, normalized = FALSE, span = 0.4,
 #' but averages over uncertainty); the difference vanishes as counts grow.
 #'
 #' @examples
-#' \donttest{
 #' net <- build_network(group_regulation_long, method = "relative",
 #'                      actor = "Actor", action = "Action", time = "Time")
-#' eb <- entropy_bayes(net, seed = 1)
+#' eb <- entropy_bayes(net, draws = 1000, seed = 1)
 #' eb
 #' summary(eb)
 #' plot(eb)
-#' }
 #'
 #' @seealso \code{\link{transition_entropy}}, \code{\link{entropy_network}},
 #'   \code{\link{bayes_compare}}
@@ -979,12 +969,15 @@ entropy_bayes <- function(x, prior = 0.5, draws = 4000, ci = 0.95,
   )
 }
 
-#' Print method for `net_entropy_bayes`
-#'
-#' @param x A `net_entropy_bayes` object.
+#' @rdname entropy_bayes
 #' @param digits Integer. Digits to round numeric output. Default `3`.
-#' @param ... Ignored.
-#' @return `x` invisibly.
+#' @param ... In \code{plot.net_entropy_bayes()}, \code{print.net_entropy_bayes()}, \code{print.net_entropy_bayes_group()} and \code{summary.net_entropy_bayes()}: Ignored.
+#' @param object For the \code{summary()} method: an object of class \code{net_entropy_bayes}.
+#' @param top Integer. Show at most this many edges, by posterior mean contribution (default `25`).
+#' @param title Character. Plot title.
+#' @return In \code{print.net_entropy_bayes()} and \code{print.net_entropy_bayes_group()}: `x` invisibly.
+#' @return In \code{summary.net_entropy_bayes()}: The tidy edge table (data.frame), one row per observed transition, sorted by posterior mean contribution, returned invisibly. The chain-level and per-edge tables are printed as a side effect.
+#' @return In \code{plot.net_entropy_bayes()}: A ggplot object.
 #' @export
 print.net_entropy_bayes <- function(x, digits = 3, ...) {
   unit <- switch(as.character(x$base),
@@ -1009,11 +1002,7 @@ print.net_entropy_bayes <- function(x, digits = 3, ...) {
   invisible(x)
 }
 
-#' Print method for `net_entropy_bayes_group`
-#'
-#' @param x A `net_entropy_bayes_group`.
-#' @param ... Ignored.
-#' @return `x` invisibly.
+#' @rdname entropy_bayes
 #' @export
 print.net_entropy_bayes_group <- function(x, ...) {
   cat(sprintf("Bayesian Transition Entropy - %d groups: %s\n\n",
@@ -1028,12 +1017,7 @@ print.net_entropy_bayes_group <- function(x, ...) {
   invisible(x)
 }
 
-#' Summary method for `net_entropy_bayes`
-#'
-#' @param object A `net_entropy_bayes` object.
-#' @param ... Ignored.
-#' @return The tidy edge table (data.frame), sorted by posterior mean
-#'   contribution, invisibly printed with the chain-level summary.
+#' @rdname entropy_bayes
 #' @export
 summary.net_entropy_bayes <- function(object, ...) {
   cat("Chain-level posterior:\n")
@@ -1047,20 +1031,9 @@ summary.net_entropy_bayes <- function(object, ...) {
   invisible(object$edges)
 }
 
-#' Plot method for `net_entropy_bayes`
-#'
-#' @description
-#' Forest plot of the per-edge entropy contributions: posterior mean and
-#' credible interval, credible edges in Okabe-Ito blue, unstable
-#' (non-credible) edges in grey. The dashed line marks \code{min_share} of
-#' the posterior-mean entropy rate - the stability criterion.
-#'
-#' @param x A `net_entropy_bayes` object.
-#' @param top Integer. Show at most this many edges, by posterior mean
-#'   contribution (default `25`).
-#' @param title Character. Plot title.
-#' @param ... Ignored.
-#' @return A ggplot object.
+#' @rdname entropy_bayes
+#' @section Methods:
+#' * \code{plot.net_entropy_bayes()}: Forest plot of the per-edge entropy contributions: posterior mean and credible interval, credible edges in Okabe-Ito blue, unstable (non-credible) edges in grey. The dashed line marks \code{min_share} of the posterior-mean entropy rate - the stability criterion.
 #' @export
 plot.net_entropy_bayes <- function(x, top = 25,
                                    title = "Bayesian edge entropy contributions",
@@ -1106,12 +1079,15 @@ plot.net_entropy_bayes <- function(x, top = 25,
                    legend.position = "bottom")
 }
 
-#' Print method for `net_transition_entropy`
-#'
-#' @param x A `net_transition_entropy` object.
+#' @rdname transition_entropy
 #' @param digits Integer. Digits to round numeric output. Default `3`.
-#' @param ... Ignored.
-#' @return `x` invisibly.
+#' @param ... In \code{plot.net_transition_entropy()}, \code{print.net_transition_entropy()}, \code{print.summary.net_transition_entropy()} and \code{summary.net_transition_entropy()}: Ignored. In \code{print.net_transition_entropy_group()}: Forwarded to `print.net_transition_entropy`.
+#' @param object For the \code{summary()} method: an object of class \code{net_transition_entropy}.
+#' @param title Character. Plot title.
+#' @param fill Character. Bar fill colour. Default Okabe-Ito blue.
+#' @return In \code{print.net_transition_entropy()}, \code{print.net_transition_entropy_group()} and \code{print.summary.net_transition_entropy()}: `x` invisibly.
+#' @return In \code{summary.net_transition_entropy()}: A `summary.net_transition_entropy` containing \describe{ \item{table}{tidy per-state data.frame, sorted by `contribution_pct` descending} \item{chain}{tidy chain-level data.frame with raw and normalised \eqn{h(P)}, \eqn{H(\pi)}, redundancy, and ceiling} \item{base}{logarithm base used} }
+#' @return In \code{plot.net_transition_entropy()}: A ggplot object.
 #' @export
 print.net_transition_entropy <- function(x, digits = 3, ...) {
   unit <- switch(as.character(x$base),
@@ -1138,11 +1114,7 @@ print.net_transition_entropy <- function(x, digits = 3, ...) {
   invisible(x)
 }
 
-#' Print method for `net_transition_entropy_group`
-#'
-#' @param x A `net_transition_entropy_group`.
-#' @param ... Forwarded to `print.net_transition_entropy`.
-#' @return `x` invisibly.
+#' @rdname transition_entropy
 #' @export
 print.net_transition_entropy_group <- function(x, ...) {
   cat(sprintf("Transition Entropy - %d groups: %s\n\n",
@@ -1153,26 +1125,7 @@ print.net_transition_entropy_group <- function(x, ...) {
   invisible(x)
 }
 
-#' Summary method for `net_transition_entropy`
-#'
-#' @description
-#' Returns a tidy per-state contribution table sorted by share of the
-#' chain-level entropy rate (largest first), so the dominant contributors
-#' to \eqn{h(P)} are visible at a glance. Each row contains the
-#' stationary mass, the raw and normalised row entropy, the additive
-#' contribution \eqn{\pi_i H(P_{i\cdot})}, and that contribution as a
-#' percentage of \eqn{h(P)}.
-#'
-#' @param object A `net_transition_entropy` object.
-#' @param ... Ignored.
-#' @return A `summary.net_transition_entropy` containing
-#'   \describe{
-#'     \item{table}{tidy per-state data.frame, sorted by `contribution_pct`
-#'       descending}
-#'     \item{chain}{tidy chain-level data.frame with raw and normalised
-#'       \eqn{h(P)}, \eqn{H(\pi)}, redundancy, and ceiling}
-#'     \item{base}{logarithm base used}
-#'   }
+#' @rdname transition_entropy
 #' @export
 summary.net_transition_entropy <- function(object, ...) {
   contrib  <- object$stationary * object$row_entropy
@@ -1224,12 +1177,7 @@ summary.net_transition_entropy <- function(object, ...) {
   )
 }
 
-#' Print method for `summary.net_transition_entropy`
-#'
-#' @param x A `summary.net_transition_entropy`.
-#' @param digits Integer. Digits to round numeric output. Default `3`.
-#' @param ... Ignored.
-#' @return `x` invisibly.
+#' @rdname transition_entropy
 #' @export
 print.summary.net_transition_entropy <- function(x, digits = 3, ...) {
   unit <- x$chain$unit[1L]
@@ -1260,20 +1208,10 @@ print.summary.net_transition_entropy <- function(x, digits = 3, ...) {
   invisible(x)
 }
 
-#' Plot method for `net_transition_entropy`
-#'
-#' @description
-#' Bar chart of per-state row entropy with overlaid horizontal lines at
-#' the entropy rate \eqn{h(P)} (chain-level summary) and the maximum row
-#' entropy \eqn{\log_b n} (uniform branching). Bar widths are proportional
-#' to the stationary probability so the visual area sums to the entropy
-#' rate.
-#'
-#' @param x A `net_transition_entropy` object.
-#' @param title Character. Plot title.
-#' @param fill Character. Bar fill colour. Default Okabe-Ito blue.
-#' @param ... Ignored.
-#' @return A ggplot object.
+#' @rdname transition_entropy
+#' @section Methods:
+#' * \code{plot.net_transition_entropy()}: Bar chart of per-state row entropy with overlaid horizontal lines at the entropy rate \eqn{h(P)} (chain-level summary) and the maximum row entropy \eqn{\log_b n} (uniform branching). Bar widths are proportional to the stationary probability so the visual area sums to the entropy rate.
+#' * \code{summary.net_transition_entropy()}: Returns a tidy per-state contribution table sorted by share of the chain-level entropy rate (largest first), so the dominant contributors to \eqn{h(P)} are visible at a glance. Each row contains the stationary mass, the raw and normalised row entropy, the additive contribution \eqn{\pi_i H(P_{i\cdot})}, and that contribution as a percentage of \eqn{h(P)}.
 #' @export
 plot.net_transition_entropy <- function(x,
                                         title = "Transition Entropy",

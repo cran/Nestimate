@@ -86,14 +86,14 @@
 #' @param x A \code{netobject}, \code{cograph_network}, \code{tna} object,
 #'   row-stochastic numeric transition matrix, or a wide sequence data.frame
 #'   (rows = actors, columns = time-steps; a relative transition network is
-#'   built automatically).
+#'   built automatically). For the \code{print()} and \code{plot()} methods: an object of class \code{net_mpt} or \code{net_mpt_group} (or its \code{summary()}).
 #' @param object A \code{net_mpt} object (for \code{summary}).
 #' @param states Character vector. Restrict output to these states.
 #'   \code{NULL} (default) keeps all states.
 #' @param normalize Logical. If \code{TRUE} (default), rows that do not sum
 #'   to 1 are normalized automatically (with a warning).
 #' @param ... Ignored.
-#'
+#' In \code{plot.net_mpt()}, \code{print.net_mpt()}, \code{print.summary.net_mpt()} and \code{summary.net_mpt()}: Ignored. In \code{print.net_mpt_group()}: Forwarded to `print.net_mpt` for each element.
 #' @return An object of class \code{"net_mpt"} with:
 #' \describe{
 #'   \item{matrix}{Full \eqn{n \times n} MFPT matrix. Row \eqn{i}, column
@@ -103,6 +103,8 @@
 #'   \item{return_times}{Named numeric vector: \eqn{1/\pi_i} per state.}
 #'   \item{states}{Character vector of state names.}
 #' }
+#'   For a \code{netobject_group} the result is a \code{"net_mpt_group"}: a
+#'   named list holding one \code{net_mpt} per group.
 #'
 #' @details
 #' Uses the Kemeny-Snell fundamental matrix formula:
@@ -174,6 +176,16 @@ passage_time <- function(x, states = NULL, normalize = TRUE) {
   )
 }
 
+#' @rdname passage_time
+#' @return In \code{print.net_mpt()}: \code{x}, invisibly.
+#' @param log_scale Logical. Apply log transform to the fill scale for better contrast? Default \code{TRUE}.
+#' @param digits Integer. Decimal places displayed in cells. Default \code{1}.
+#' @param title Character. Plot title.
+#' @param low Character. Hex colour for the low end (short passage time). Default dark green \code{"#004d00"}.
+#' @param high Character. Hex colour for the high end (long passage time). Default pale green \code{"#ccffcc"}.
+#' @return In \code{print.net_mpt_group()}: `x` invisibly.
+#' @return In \code{summary.net_mpt()}: \code{summary.net_mpt} returns an object of class \code{"summary.net_mpt"}: a list whose \code{table} is a data frame with one row per state and columns \code{state}, \code{return_time}, \code{stationary}, \code{mean_out} (mean steps to other states) and \code{mean_in} (mean steps from other states), and whose \code{object} is the \code{net_mpt} it summarises. Its print method shows the table.
+#' @return In \code{plot.net_mpt()}: \code{plot.net_mpt} returns a ggplot object: a from-by-to heatmap of the mean first passage time matrix.
 #' @export
 print.net_mpt <- function(x, digits = 1, ...) {
   n <- length(x$states)
@@ -184,11 +196,7 @@ print.net_mpt <- function(x, digits = 1, ...) {
   invisible(x)
 }
 
-#' Print method for `net_mpt_group`
-#'
-#' @param x A `net_mpt_group` (named list of `net_mpt` results).
-#' @param ... Forwarded to `print.net_mpt` for each element.
-#' @return `x` invisibly.
+#' @rdname passage_time
 #' @export
 print.net_mpt_group <- function(x, ...) {
   cat(sprintf("Mean First Passage Times -- %d groups: %s\n\n",
@@ -201,10 +209,6 @@ print.net_mpt_group <- function(x, ...) {
   invisible(x)
 }
 
-#' @return \code{summary.net_mpt} returns a data frame with one row per state
-#'   and columns \code{state}, \code{return_time}, \code{stationary},
-#'   \code{mean_out} (mean steps to other states), \code{mean_in} (mean steps
-#'   from other states).
 #' @rdname passage_time
 #' @export
 summary.net_mpt <- function(object, ...) {
@@ -226,6 +230,8 @@ summary.net_mpt <- function(object, ...) {
   structure(list(table = df, object = object), class = "summary.net_mpt")
 }
 
+#' @rdname passage_time
+#' @return In \code{print.summary.net_mpt()}: \code{x}, invisibly.
 #' @export
 print.summary.net_mpt <- function(x, ...) {
   cat("Mean First Passage Times - Summary\n\n")
@@ -233,14 +239,6 @@ print.summary.net_mpt <- function(x, ...) {
   invisible(x)
 }
 
-#' @param log_scale Logical. Apply log transform to the fill scale for better
-#'   contrast? Default \code{TRUE}.
-#' @param digits Integer. Decimal places displayed in cells. Default \code{1}.
-#' @param title Character. Plot title.
-#' @param low Character. Hex colour for the low end (short passage time).
-#'   Default dark green \code{"#004d00"}.
-#' @param high Character. Hex colour for the high end (long passage time).
-#'   Default pale green \code{"#ccffcc"}.
 #' @rdname passage_time
 #' @export
 plot.net_mpt <- function(x,
@@ -300,10 +298,10 @@ plot.net_mpt <- function(x,
 #'
 #' @param x A \code{netobject}, \code{cograph_network}, \code{tna} object,
 #'   row-stochastic numeric transition matrix, or a wide sequence data.frame
-#'   (rows = actors, columns = time-steps).
+#'   (rows = actors, columns = time-steps). For the \code{print()} and \code{plot()} methods: an object of class \code{net_markov_stability} or \code{net_markov_stability_group}.
 #' @param normalize Logical. Normalize rows to sum to 1? Default \code{TRUE}.
 #' @param ... Ignored.
-#'
+#' In \code{plot.net_markov_stability()}, \code{print.net_markov_stability()} and \code{summary.net_markov_stability()}: Ignored. In \code{print.net_markov_stability_group()}: Forwarded to `print.net_markov_stability` for each element.
 #' @return An object of class \code{"net_markov_stability"} with:
 #' \describe{
 #'   \item{stability}{Data frame with one row per state and columns:
@@ -315,6 +313,9 @@ plot.net_mpt <- function(x,
 #'     \code{avg_time_from_others} (mean MFPT arriving at state \eqn{i}).}
 #'   \item{mpt}{The underlying \code{net_mpt} object.}
 #' }
+#'   For a \code{netobject_group} the result is a
+#'   \code{"net_markov_stability_group"}: a named list holding one such
+#'   object per group.
 #'
 #' @details
 #' \strong{Sojourn time} is the expected consecutive time steps spent in a
@@ -336,6 +337,11 @@ plot.net_mpt <- function(x,
 #' }
 #'
 #' @seealso \code{\link{passage_time}}
+#'
+#' @references
+#' Kemeny, J.G. and Snell, J.L. (1976). \emph{Finite Markov Chains}.
+#' Springer-Verlag.
+#'
 #' @export
 markov_stability <- function(x, normalize = TRUE) {
   if (inherits(x, "netobject_group")) {
@@ -381,6 +387,12 @@ markov_stability <- function(x, normalize = TRUE) {
             class = "net_markov_stability")
 }
 
+#' @rdname markov_stability
+#' @return In \code{print.net_markov_stability()}: \code{x}, invisibly.
+#' @param metrics Character vector. Which metrics to plot. Options: \code{"persistence"}, \code{"stationary_prob"}, \code{"return_time"}, \code{"sojourn_time"}, \code{"avg_time_to_others"}, \code{"avg_time_from_others"}. Default: all six.
+#' @param combined When \code{TRUE} (default), all selected metrics are shown in one ggplot via \code{facet_wrap(~ metric)}. When \code{FALSE}, returns a named list of single-panel ggplots, one per metric, so each can be printed, saved, or re-laid-out independently.
+#' @return In \code{print.net_markov_stability_group()}: `x` invisibly.
+#' @return In \code{plot.net_markov_stability()}: \code{plot.net_markov_stability} returns a faceted ggplot object when \code{combined = TRUE}, and (invisibly) a named list of single-metric ggplots, one per entry of \code{metrics}, when \code{combined = FALSE}.
 #' @export
 print.net_markov_stability <- function(x, ...) {
   cat("Markov Stability Analysis\n\n")
@@ -388,12 +400,7 @@ print.net_markov_stability <- function(x, ...) {
   invisible(x)
 }
 
-#' Print method for `net_markov_stability_group`
-#'
-#' @param x A `net_markov_stability_group` (named list of
-#'   `net_markov_stability` results).
-#' @param ... Forwarded to `print.net_markov_stability` for each element.
-#' @return `x` invisibly.
+#' @rdname markov_stability
 #' @export
 print.net_markov_stability_group <- function(x, ...) {
   cat(sprintf("Markov Stability -- %d groups: %s\n\n",
@@ -406,6 +413,10 @@ print.net_markov_stability_group <- function(x, ...) {
   invisible(x)
 }
 
+#' @rdname markov_stability
+#' @return In \code{summary.net_markov_stability()}: the per-state stability table (the \code{$stability} data frame: one row per state with \code{state}, \code{persistence}, \code{stationary_prob}, \code{return_time}, \code{sojourn_time}, \code{avg_time_to_others}, \code{avg_time_from_others}), after printing the attractor and the most persistent state.
+#' @param object For the \code{summary()} method: an object of class
+#'   \code{net_markov_stability}.
 #' @export
 summary.net_markov_stability <- function(object, ...) {
   df      <- object$stability
@@ -416,14 +427,6 @@ summary.net_markov_stability <- function(object, ...) {
   df
 }
 
-#' @param metrics Character vector. Which metrics to plot. Options:
-#'   \code{"persistence"}, \code{"stationary_prob"}, \code{"return_time"},
-#'   \code{"sojourn_time"}, \code{"avg_time_to_others"},
-#'   \code{"avg_time_from_others"}. Default: all six.
-#' @param combined When \code{TRUE} (default), all selected metrics are
-#'   shown in one ggplot via \code{facet_wrap(~ metric)}. When \code{FALSE},
-#'   returns a named list of single-panel ggplots, one per metric, so each
-#'   can be printed, saved, or re-laid-out independently.
 #' @rdname markov_stability
 #' @export
 plot.net_markov_stability <- function(x,

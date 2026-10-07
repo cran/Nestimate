@@ -2,6 +2,10 @@
 % Please edit documentation in R/cluster_data.R
 \name{build_clusters}
 \alias{build_clusters}
+\alias{print.net_clustering}
+\alias{summary.net_clustering}
+\alias{plot.net_clustering}
+\alias{print.tidy_covariates}
 \title{Cluster Sequences by Dissimilarity}
 \usage{
 build_clusters(
@@ -19,6 +23,19 @@ build_clusters(
   estimator = c("auto", "firth", "multinom", "chisq"),
   ...
 )
+
+\method{print}{net_clustering}(x, digits = 3L, ...)
+
+\method{summary}{net_clustering}(object, ...)
+
+\method{plot}{net_clustering}(
+  x,
+  type = c("silhouette", "mds", "heatmap", "predictors"),
+  combined = TRUE,
+  ...
+)
+
+\method{print}{tidy_covariates}(x, ...)
 }
 \arguments{
 \item{data}{Input data. Accepts multiple formats:
@@ -113,7 +130,18 @@ astronomical ORs with degenerate CIs (silent failure).
 (chi-square + Cramer's V + standardized adjusted residuals for
 factors; Kruskal-Wallis + eta-squared for numerics).}
 
-\item{...}{Unsupported. Supplying unused arguments raises an error.}
+\item{...}{Unsupported. Supplying unused arguments raises an error.
+In \code{plot.net_clustering()}, \code{print.net_clustering()} and \code{summary.net_clustering()}: Unsupported. Supplying unused arguments raises an error. In \code{print.tidy_covariates()}: Ignored.}
+
+\item{x}{For the \code{print()} and \code{plot()} methods: an object of class \code{net_clustering} or \code{tidy_covariates}.}
+
+\item{digits}{Integer. Decimal places used for floating-point statistics in the printout. Default \code{3}. Non-breaking: existing \code{print(x)} calls keep their previous formatting.}
+
+\item{object}{For the \code{summary()} method: an object of class \code{net_clustering}.}
+
+\item{type}{Character. Plot type: \code{"silhouette"} (per-observation silhouette bars), \code{"mds"} (2D MDS projection), \code{"heatmap"} (distance matrix heatmap ordered by cluster), or \code{"predictors"} (odds-ratio forest plot of the post-hoc covariate analysis; requires \code{covariates} and an estimator that produces coefficients). Default: \code{"silhouette"}.}
+
+\item{combined}{Logical. For \code{type = "predictors"} only: when \code{TRUE} (default), covariate forest panels are combined into a single faceted plot; when \code{FALSE}, a list of separate ggplots is returned.}
 }
 \value{
 An object of class \code{"net_clustering"} containing:
@@ -131,9 +159,25 @@ for hierarchical methods).}
 \item{seed}{Seed used (or NULL).}
 \item{weighted}{Logical, whether weighted Hamming was used.}
 \item{lambda}{Lambda value used (0 if not weighted).}
+\item{covariates}{The post-hoc covariate analysis (a list; see the
+\code{estimator} argument), or NULL when \code{covariates = NULL}.}
+\item{network_method, build_args}{For \code{netobject} input, the
+source network's method and stored build arguments, so per-cluster
+networks can be rebuilt the same way. NULL otherwise.}
+\item{metadata}{For \code{netobject} input, its per-sequence metadata,
+one row per clustered sequence, so \code{\link{session_ids}} can name
+each sequence. NULL otherwise.}
 \item{htna_partition}{For HTNA input, the preserved node-to-actor
 partition used to restore HTNA children when networks are built.}
 }
+
+In \code{print.net_clustering()}: The input object, invisibly.
+
+In \code{summary.net_clustering()}: A data frame of per-cluster statistics, one row per cluster, with columns \code{cluster}, \code{size} and \code{mean_within_dist}, returned \emph{visibly}. When the clustering was fitted with \code{covariates}, a \code{tidy_covariates}/\code{data.frame} (the tidied covariate table, with cluster sizes, fit statistics and profiles attached as attributes) is returned \emph{invisibly} instead. In both cases the printed summary is a side effect.
+
+In \code{plot.net_clustering()}: A \code{ggplot} object (invisibly); for \code{type = "predictors"} with \code{combined = FALSE}, a list of \code{ggplot} objects named by cluster (invisibly).
+
+In \code{print.tidy_covariates()}: The input invisibly.
 }
 \description{
 Clusters wide-format sequences using pairwise string dissimilarity and
@@ -142,6 +186,14 @@ Supports 9 distance metrics including temporal weighting for Hamming
 distance. When the \pkg{stringdist} package is available, uses C-level
 distance computation for 100-1000x speedup on edit distances.
 }
+\section{Methods}{
+
+\itemize{
+\item \code{print.net_clustering()}: Compact, fixed-width summary of a sequence-clustering result. The header carries the clustering method and dissimilarity; the per-cluster table carries cluster size (count and percentage) and mean within-cluster distance when available. Optional medoid and covariate lines surface only when those fields are populated.
+\item \code{print.tidy_covariates()}: Prints a one-line header naming the estimator, then the data.frame. The full human-readable view (per-cluster stats, profiles, OR/test tables) was already printed by \code{summary()} when this object was produced, so this method intentionally stays minimal to avoid duplication. Auto-prints when the user types the variable at the REPL.
+}
+}
+
 \examples{
 seqs <- data.frame(V1 = c("A","B","C","A","B"), V2 = c("B","C","A","B","A"),
                    V3 = c("C","A","B","C","B"))

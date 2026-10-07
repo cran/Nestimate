@@ -8,12 +8,14 @@
 #' \strong{individual edges} (E-statistic per edge). Inference is via
 #' permutation of group labels.
 #'
-#' Implementation matches \code{NetworkComparisonTest::NCT()} with defaults
-#' \code{abs = TRUE}, \code{weighted = TRUE}, \code{paired = FALSE} at
-#' machine precision when the same seed is used. The network estimator is
-#' EBIC-selected glasso applied to a Pearson correlation matrix, with
-#' \code{Matrix::nearPD} symmetrization (matching NCT's
-#' \code{NCT_estimator_GGM} default).
+#' Follows \code{NetworkComparisonTest::NCT()} with defaults
+#' \code{abs = TRUE}, \code{weighted = TRUE}, \code{paired = FALSE}. The
+#' network estimator is EBIC-selected glasso applied to a Pearson
+#' correlation matrix, with \code{Matrix::nearPD} symmetrization (matching
+#' NCT's \code{NCT_estimator_GGM} default). The glasso solver is not the
+#' Fortran one NCT wraps, so results agree to independent-solver precision
+#' (of the order of \code{1e-4} on the test statistics) rather than
+#' bit-for-bit, even under the same seed.
 #'
 #' @param data1 A numeric matrix or data.frame of observations from group 1.
 #' @param data2 A numeric matrix or data.frame of observations from group 2.
@@ -33,22 +35,28 @@
 #' \describe{
 #'   \item{nw1, nw2}{Estimated weighted adjacency matrices.}
 #'   \item{M}{List with \code{observed}, \code{perm}, \code{p_value} for
-#'     the global strength test.}
+#'     the global strength test. P-values are permutation p-values,
+#'     \code{(sum(perm >= observed) + 1) / (iter + 1)}.}
 #'   \item{S}{Same structure for the maximum absolute edge difference.}
-#'   \item{E}{Same structure for per-edge tests.}
+#'   \item{E}{Same structure for the per-edge tests (\code{observed} and
+#'     \code{p_value} are one value per upper-triangle edge, \code{perm} an
+#'     \code{iter} by edges matrix), plus \code{edge_names}, a two-column
+#'     data frame of the node pairs (\code{NULL} when \code{data1} has no
+#'     column names).}
 #'   \item{n_iter}{Number of permutations.}
 #'   \item{paired}{Whether a paired test was used.}
+#'   \item{params}{List of the settings used: \code{gamma}, \code{abs},
+#'     \code{weighted}, \code{p_adjust}.}
 #' }
 #' @examples
-#' \dontrun{
 #' set.seed(1)
-#' x1 <- matrix(rnorm(200 * 5), 200, 5)
-#' x2 <- matrix(rnorm(200 * 5), 200, 5)
-#' colnames(x1) <- colnames(x2) <- paste0("V", 1:5)
-#' res <- nct(x1, x2, iter = 100)
-#' res$M$p_value
-#' res$S$p_value
-#' }
+#' x1 <- matrix(rnorm(100 * 4), 100, 4)
+#' x2 <- matrix(rnorm(100 * 4), 100, 4)
+#' colnames(x1) <- colnames(x2) <- paste0("V", 1:4)
+#' # iter = 20 keeps the example fast; a real analysis uses 1000 or more.
+#' res <- nct(x1, x2, iter = 20)
+#' res
+#' summary(res)
 #' @export
 nct <- function(data1, data2, iter = 1000L, gamma = 0.5,
                  paired = FALSE, abs = TRUE, weighted = TRUE,
@@ -78,12 +86,9 @@ nct <- function(data1, data2, iter = 1000L, gamma = 0.5,
     cor_x <- stats::cor(x)
     cor_x <- as.matrix(Matrix::nearPD(cor_x, corr = TRUE)$mat)
     cor_x <- (cor_x + t(cor_x)) / 2
-    lambda_path <- .compute_lambda_path(cor_x, nlambda = 100L,
-                                          lambda.min.ratio = 0.01)
-    selected <- .select_ebic(cor_x, lambda_path,
-                              n = nrow(x), gamma = gamma,
-                              penalize_diagonal = FALSE)
-    .wi2net(selected$wi)
+    psychnets::ebic_glasso(cor_matrix = cor_x, n = nrow(x), gamma = gamma,
+                           nlambda = 100L, lambda_min_ratio = 0.01,
+                           native = TRUE)$weights
   }
 
   nw1 <- est(data1)
@@ -175,12 +180,12 @@ nct <- function(data1, data2, iter = 1000L, gamma = 0.5,
 }
 
 
-#' Print Method for net_nct
-#'
-#' @param x A \code{net_nct} object.
-#' @param ... Ignored.
-#' @return The input object, invisibly.
-#' @inherit nct examples
+#' @rdname nct
+#' @param x For the \code{print()} method: an object of class \code{net_nct}.
+#' @param ... In \code{print.net_nct()} and \code{summary.net_nct()}: Ignored.
+#' @param object For the \code{summary()} method: an object of class \code{net_nct}.
+#' @return In \code{print.net_nct()}: The input object, invisibly.
+#' @return In \code{summary.net_nct()}: A data frame with columns \code{from}, \code{to}, \code{diff_observed}, \code{p_value}, \code{significant}. Attributes \code{m_stat} and \code{s_stat} each hold a one-row data frame with \code{observed} and \code{p_value}.
 #' @export
 print.net_nct <- function(x, ...) {
   cat(sprintf("Network Comparison Test  [%d permutations | %s]\n",
@@ -201,19 +206,9 @@ print.net_nct <- function(x, ...) {
 }
 
 
-#' Summary Method for net_nct
-#'
-#' @description
-#' Returns a tidy data frame with one row per edge test. The global M
-#' (strength) and S (structure) statistics are attached as attributes.
-#'
-#' @param object A \code{net_nct} object.
-#' @param ... Ignored.
-#' @return A data frame with columns \code{from}, \code{to},
-#'   \code{diff_observed}, \code{p_value}, \code{significant}. Attributes
-#'   \code{m_stat} and \code{s_stat} each hold a one-row data frame with
-#'   \code{observed} and \code{p_value}.
-#' @inherit nct examples
+#' @rdname nct
+#' @section Methods:
+#' * \code{summary.net_nct()}: Returns a tidy data frame with one row per edge test. The global M (strength) and S (structure) statistics are attached as attributes.
 #' @export
 summary.net_nct <- function(object, ...) {
   ed <- object$E$edge_names

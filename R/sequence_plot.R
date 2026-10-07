@@ -115,8 +115,8 @@
 #'       \code{\link{build_network}} on a clustering. Extracts data and
 #'       assignments from \code{attr(, "clustering")}.
 #'     }
-#'     \item{net_mmm}{From \code{\link{build_mmm}}. Uses \code{$models[[1]]$data}
-#'       and \code{$assignments}.}
+#'     \item{net_mmm}{From \code{\link{build_mmm}}. Uses \code{$data} (falling
+#'       back to \code{$models[[1]]$data}) and \code{$assignments}.}
 #'     \item{tna}{From the tna package. Decodes integer-encoded sequences.}
 #'     \item{mcml}{From \code{\link{build_mcml}} (built from sequences).
 #'       Produces a \strong{multichannel} plot: one panel per cluster plus a
@@ -124,9 +124,10 @@
 #'       draw the carpet (each channel's own states solid, other clusters a
 #'       faded wash); \code{type = "distribution"} draws the stacked
 #'       distribution (add \code{normalize = TRUE} for a TraMineR-style
-#'       \code{seqdplot} where each time point sums to 1). Returns a
-#'       \code{ggplot} object.}
-#'   }
+#'       \code{seqdplot} where each time point sums to 1). See the section
+#'       \emph{Multichannel view of an mcml} for the options that shape it,
+#'       and \emph{Value} for what it returns.}
+#'   } For the \code{print()} method: an object of class \code{mcml_sequence_plot}.
 #' @param type One of \code{"heatmap"} (default), \code{"index"}, or
 #'   \code{"distribution"}.
 #' @param sort Row-ordering strategy for heatmap / within-panel for index.
@@ -140,16 +141,59 @@
 #'   one facet per group. Index/distribution only. Ignored for heatmap.
 #' @param scale,geom,na Passed to \code{\link{distribution_plot}} when
 #'   \code{type = "distribution"}.
+#'   For an \code{mcml} (\code{type = "distribution"}), \code{na = FALSE}
+#'   drops the \code{NA} (ended) band and shows every time point as shares
+#'   of the sequences still running there, so each panel stacks to 100
+#'   percent (cluster panels only with \code{rest = "clusters"} or
+#'   \code{"pooled"}; a time point where no sequence is running stays empty).
 #' @param normalize \code{mcml} + \code{type = "distribution"} only. When
 #'   \code{TRUE}, each time point is normalised to sum to 1 within its channel
 #'   (TraMineR-style \code{seqdplot} composition); when \code{FALSE} (default)
 #'   the stack shows prevalence and is capped with an \code{NA} band.
+#' @param expand For an \code{mcml}, names of clusters whose member states
+#'   are shown individually in the Summary band; \code{"all"} or \code{TRUE}
+#'   expands every cluster. The per-cluster channels are unaffected. Default
+#'   \code{NULL} keys the Summary band by cluster.
+#' @param combine For an \code{mcml}, clusters to merge into one channel. A
+#'   character vector merges one group (e.g.
+#'   \code{combine = c("Cognitive", "Affective")}); a list merges several,
+#'   and its names label the merged channels (default label
+#'   \code{"Cognitive + Affective"}). A merged group acts as one cluster
+#'   throughout the figure: one per-cluster panel holding all its states, one
+#'   key in the Summary band, and one faded band in the other panels.
+#'   \code{expand} is resolved after merging, so it can name the merged
+#'   label. Errors on unknown clusters, a group of fewer than two, or a
+#'   cluster in two groups. Default \code{NULL} draws the partition as built.
+#' @param rest For an \code{mcml}, how a cluster's panel shows the time its
+#'   subjects spend in \emph{other} clusters. \code{"clusters"} (default): one
+#'   faded band (or wash, in the carpet) per other cluster.
+#'   \code{"pooled"}: all other clusters as one grey band labelled
+#'   \code{rest_label}.
+#'   \code{"none"}: left blank, so the panel shows only its own states; in the
+#'   distribution view the \code{NA} (ended) band is dropped too, and the
+#'   panel's height at each time point is the share of subjects in that
+#'   cluster. Ignored with \code{normalize = TRUE}, which rescales each panel
+#'   to its own states. The Summary panel is unaffected.
+#' @param rest_label For an \code{mcml}, the legend text for time spent in
+#'   other clusters. Default \code{"Other states"}; e.g. \code{"Others"} or
+#'   \code{"Rest of states"}. The pooled band (\code{rest = "pooled"}) takes
+#'   it as is; the per-cluster bands read \code{"Social (Other states)"}.
+#'   Must not equal a state or cluster name.
+#' @param panel \code{mcml} + \code{type = "distribution"} only. Which panel
+#'   to draw. \code{"both"} (default) stacks the macro \code{Summary}
+#'   channel and the per-cluster channels on one figure, each with its own
+#'   legend; \code{"summary"} draws the macro channel alone,
+#'   keyed and coloured by cluster; \code{"channels"} draws the per-cluster
+#'   channels alone, keyed and coloured by state. The macro channel is keyed
+#'   by cluster and the rest by state, so a cluster and a state can land on
+#'   the same colour -- drawing one panel avoids that and gives it a default
+#'   title.
 #' @param trim Optional time-axis truncation, to stop a few long
 #'   sequences from stretching the plot. Applies to all three types
 #'   (including the \code{mcml} multichannel view). \code{NULL} (default)
 #'   plots the full width. A fraction in \code{(0, 1)} drops everything
 #'   past that quantile of sequence lengths (e.g. \code{trim = 0.95} keeps
-#'   the columns covering the shortest 95\% of sequences); a value
+#'   the columns covering the shortest 95% of sequences); a value
 #'   \code{>= 1} is an absolute cut (\code{trim = 50} keeps the first 50
 #'   time points).
 #' @param trim_clusterwise Grouped \code{type = "index"} /
@@ -172,11 +216,26 @@
 #'   \code{"white"}.
 #' @param k_line_width Line width for the cluster separators. Default
 #'   \code{2.5}.
-#' @param state_colors Vector of colours, one per state.
+#' @param state_colors Colours for the fill keys. Two forms:
+#'   \emph{unnamed} - one colour per state, in level order (states are
+#'   ordered as \code{sort(unique(...))}); \emph{named} - a lookup, where
+#'   only the keys you name are overridden and every other key keeps its
+#'   default. Names this figure does not draw are dropped with a message
+#'   naming them, so one project-wide palette can be handed to every plot
+#'   and each takes the keys that apply to it.
+#'
+#'   For an \code{mcml} the named form reaches the whole figure, not just
+#'   the states: a cluster name colours its \code{Summary} band, its
+#'   channel strip and its faded band in the other panels, and a group
+#'   merged by \code{combine} is named by its label (the list name you
+#'   gave it, or \code{"A + B"}). \code{rest_label} is a key too. So
+#'   \code{state_colors = c(plan = "#0072B2", "Planning + Monitoring" =
+#'   "#D55E00")} recolours one state and one combined cluster and leaves
+#'   the rest of the palette alone.
 #' @param na_color Colour for \code{NA} cells.
-#' @param cell_border Cell border colour. \code{NA} = off.
-#' @param frame If \code{TRUE} (default), draw a box around each panel.
-#'   If \code{FALSE}, no box - axis ticks and labels still appear.
+#' @param cell_border Cell border colour. \code{NA} (default) = off.
+#' @param frame \code{FALSE} (default) draws no box - axis ticks and labels
+#'   still appear. \code{TRUE} draws a box around each panel.
 #' @param width,height Optional device dimensions in inches. When supplied,
 #'   opens a new graphics device via \code{grDevices::dev.new()}. In knitr
 #'   chunks use the \code{fig.width} / \code{fig.height} chunk options
@@ -195,7 +254,8 @@
 #'   legend). Single-group calls (\code{G == 1}) ignore this argument.
 #'   Heatmap is always single-figure.
 #' @param legend Legend position: \code{"bottom"}, \code{"right"}, or
-#'   \code{"none"}. Default varies by type.
+#'   \code{"none"}. \code{NULL} (default) resolves to \code{"right"} for
+#'   every type.
 #' @param legend_size Legend text size. \code{NULL} (default) auto-scales
 #'   from the device width so the legend looks proportional at 5 in vs
 #'   12 in figures (clamped to \code{[0.65, 1.2]}).
@@ -204,14 +264,68 @@
 #' @param legend_border Swatch border colour.
 #' @param legend_bty \code{"n"} or \code{"o"}.
 #'
-#' @return For base-graphics types, invisibly a list describing the plot
-#'   (shape depends on \code{type}). For an \code{mcml} input, a \code{ggplot}
-#'   object.
+#' @section Multichannel view of an mcml:
+#' An \code{mcml} built from sequences stores, for every cluster, the full
+#' sequence matrix with the other clusters' states blanked out. Each cluster
+#' is therefore a \emph{channel}, and \code{sequence_plot()} stacks them:
+#' \describe{
+#'   \item{\code{Summary}}{The macro sequence: at every time point, the
+#'     cluster each subject is in.}
+#'   \item{One panel per cluster}{That cluster's own states, plus the time
+#'     its subjects spend in the other clusters.}
+#' }
+#' The options apply in this order, so each one sees the result of the one
+#' before:
+#' \enumerate{
+#'   \item \code{combine} merges clusters into one channel. The merged group
+#'     is then one cluster throughout the figure: one panel with all its
+#'     states, one Summary key, one band in the other panels. The object
+#'     itself is not changed.
+#'   \item \code{expand} opens clusters (including a merged group, by its
+#'     label) into their member states in the Summary panel only.
+#'   \item \code{rest} and \code{rest_label} set how a cluster's panel shows
+#'     the other clusters: one faded band per cluster labelled
+#'     \code{"<cluster> (<rest_label>)"} (\code{rest = "clusters"}), one grey
+#'     band labelled \code{rest_label} (\code{"pooled"}), or nothing
+#'     (\code{"none"}).
+#'   \item \code{na} (distribution only) keeps the \code{NA} band of
+#'     sequences that have ended (\code{TRUE}, shares of all subjects) or
+#'     drops it (\code{FALSE}, shares of the subjects still running, so every
+#'     panel stacks to 100 percent unless \code{rest = "none"}). \code{normalize = TRUE} instead rescales each
+#'     cluster panel to its own states, which ignores \code{rest} and
+#'     \code{na}.
+#' }
+#' \code{panel} draws the Summary or the cluster panels alone, and
+#' \code{trim} cuts the time axis for every panel at once.
+#'
+#' @return An \code{mcml} input returns the multichannel figure: one panel
+#'   per channel (the macro \code{Summary} and one per cluster), stacked,
+#'   each with its own legend of its own clusters or states. When more than
+#'   one channel is drawn this is an \code{mcml_sequence_plot} (a
+#'   \code{gtable} whose print method draws it); when \code{panel =
+#'   "summary"} leaves a single channel it is a plain \code{ggplot}. Every
+#'   other input draws with base graphics and
+#'   returns, invisibly, a list whose shape depends on \code{type}:
+#'   \describe{
+#'     \item{\code{"heatmap"}}{\code{ord} (integer row order actually
+#'       plotted), \code{codes} (the integer-encoded, trimmed sequence
+#'       matrix), \code{palette}, \code{levels} (state labels, parallel to
+#'       \code{palette}), and \code{sort_used} (the ordering strategy
+#'       applied, \code{"net_clustering"} when a clustering dendrogram was
+#'       used).}
+#'     \item{\code{"index"}}{\code{codes}, \code{palette}, \code{levels},
+#'       \code{orders} (list of integer row orders, one per panel, indexing
+#'       the original rows) and \code{groups} (panel labels).}
+#'     \item{\code{"distribution"}}{Whatever
+#'       \code{\link{distribution_plot}} returns: \code{counts},
+#'       \code{proportions}, \code{levels}, \code{palette}, \code{groups}.}
+#'   }
 #' @seealso \code{\link{distribution_plot}}, \code{\link{build_clusters}},
 #'   \code{\link{build_mcml}}
 #' @examples
-#' \donttest{
 #' sequence_plot(trajectories)
+#'
+#' \donttest{
 #' sequence_plot(trajectories, type = "index")
 #' sequence_plot(trajectories, type = "distribution")
 #'
@@ -223,8 +337,18 @@
 #'                   Affective  = "emotion"),
 #'   actor = "Actor", action = "Action", time = "Time")
 #' sequence_plot(fit)                                          # multichannel carpet
-#' sequence_plot(fit, type = "distribution")                  # prevalence + NA band
-#' sequence_plot(fit, type = "distribution", normalize = TRUE) # seqdplot (sums to 1)
+#'
+#' # Shape the multichannel view (see the section above).
+#' sequence_plot(fit, type = "distribution",
+#'               combine = list(Task = c("Cognitive", "Regulation")),
+#'               expand = "Task")                              # merge, then open
+#'
+#' # Colour by name: one state, one cluster, one combined group. Everything
+#' # not named keeps its default colour.
+#' sequence_plot(fit, type = "distribution",
+#'               combine = list(Task = c("Cognitive", "Regulation")),
+#'               state_colors = c(Task = "#0072B2", Affective = "#D55E00",
+#'                                emotion = "#CC79A7"))
 #' }
 #' @export
 sequence_plot <- function(x,
@@ -242,6 +366,12 @@ sequence_plot <- function(x,
                           na               = TRUE,
                           normalize        = FALSE,
                           trim             = NULL,
+                          panel            = c("both", "summary",
+                                               "channels"),
+                          expand           = NULL,
+                          combine          = NULL,
+                          rest             = c("clusters", "pooled", "none"),
+                          rest_label       = "Other states",
                           trim_clusterwise = FALSE,
                           row_gap          = 0,
                           dendrogram_width = 1.2,
@@ -273,6 +403,9 @@ sequence_plot <- function(x,
 
   type <- match.arg(type)
   sort <- match.arg(sort)
+  # A palette attached with set_state_colors() is the object's own default;
+  # an explicit `state_colors` still wins for this one figure.
+  state_colors <- state_colors %||% .stored_state_colors(x)
   stopifnot(is.logical(combined), length(combined) == 1L,
             is.logical(trim_clusterwise), length(trim_clusterwise) == 1L)
   if (is.null(legend)) legend <- "right"
@@ -281,11 +414,19 @@ sequence_plot <- function(x,
 
   # mcml: multichannel sequence / distribution plot (ggplot, faceted by
   # cluster-channel). Self-contained path; returns a ggplot object.
+  if (!inherits(x, "mcml") &&
+      (!is.null(combine) || !is.null(expand) || !missing(rest) ||
+       !missing(rest_label))) {
+    stop("`combine`, `expand`, `rest` and `rest_label` apply to an mcml ",
+         "(from build_mcml()); got '", class(x)[1L], "'.", call. = FALSE)
+  }
   if (inherits(x, "mcml")) {
     return(.sequence_plot_mcml(
       x, type = type, normalize = isTRUE(normalize),
       state_colors = state_colors, na_color = na_color,
-      main = main, time_label = time_label, trim = trim))
+      main = main, time_label = time_label, trim = trim,
+      panel = match.arg(panel), expand = expand, combine = combine,
+      rest = match.arg(rest), na = na, rest_label = rest_label))
   }
 
   # Open a new device when width/height supplied (interactive use). In
@@ -375,7 +516,8 @@ sequence_plot <- function(x,
                  length(ord), n_rows), call. = FALSE)
   }
 
-  palette <- .state_palette(state_colors, length(levels_all))
+  .report_unused_colors(state_colors, levels_all)
+  palette <- .state_palette(state_colors, length(levels_all), levels_all)
   z       <- t(codes[ord, , drop = FALSE])
 
   op <- graphics::par(no.readonly = TRUE); on.exit(graphics::par(op), add = TRUE)
@@ -482,7 +624,8 @@ sequence_plot <- function(x,
   full_codes <- enc$codes
   levels_all <- enc$levels
   col_names  <- colnames(full_codes)
-  palette    <- .state_palette(state_colors, length(levels_all))
+  .report_unused_colors(state_colors, levels_all)
+  palette    <- .state_palette(state_colors, length(levels_all), levels_all)
   # One global cut keeps every panel the same width (aligned axes). With
   # trim_clusterwise = TRUE each group is cropped to its own length
   # quantile instead, so panels can end up different widths.

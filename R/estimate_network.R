@@ -170,11 +170,9 @@ build_glasso <- function(data, ...) {
 #' @return A \code{netobject} (see \code{\link{build_network}}).
 #' @seealso \code{\link{build_network}}
 #' @examples
-#' \donttest{
 #' if (requireNamespace("glmnet", quietly = TRUE)) {
 #'   bin_data <- data.frame(matrix(rbinom(200, 1, 0.5), ncol = 5))
 #'   net <- build_ising(bin_data)
-#' }
 #' }
 #' @export
 build_ising <- function(data, ...) {
@@ -208,7 +206,10 @@ build_ising <- function(data, ...) {
     isingfit          = "ising",
     atna              = "attention",
     mixed_graphical   = "mgm",
-    mixed             = "mgm"
+    mixed             = "mgm",
+    `co-occurrence`   = "co_occurrence",
+    `n-gram`          = "ngram",
+    n_gram            = "ngram"
   )
   if (method %in% names(aliases)) {
     aliases[[method]]

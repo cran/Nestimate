@@ -13,9 +13,10 @@
 #' Unlike transition counts, partial correlations do not aggregate by
 #' arithmetic: the submatrix of a pcor matrix is \emph{not} the pcor
 #' network of the subsystem (the conditioning set changes), and averaging
-#' pcor entries across blocks is descriptive only. The five
+#' pcor entries across blocks is descriptive only. The
 #' \code{aggregation} methods therefore have explicitly different
-#' statuses:
+#' statuses (the full list of accepted values is under
+#' \code{aggregation} below):
 #'
 #' \describe{
 #'   \item{\code{"average"} (descriptive)}{Macro edge A--B = mean of the
@@ -38,13 +39,13 @@
 #'     weighting - related in spirit to network loadings
 #'     (Christensen & Golino 2021) but not a reimplementation of any
 #'     EGA-family estimator. Requires raw data.}
-#'   \item{\code{"rv"} (descriptive, multivariate)}{Macro edge A--B =
+#'   \item{\code{"escoufier"} (descriptive, multivariate)}{Macro edge A--B =
 #'     Escoufier's RV coefficient between the member blocks - a matrix
 #'     correlation in `[0, 1]` computed from the block covariance
 #'     structure. No composites are formed and no estimator is re-fit,
 #'     so nothing is lost to averaging; signs are not represented.
 #'     Requires raw data.}
-#'   \item{\code{"canonical"} (descriptive, multivariate)}{Macro edge
+#'   \item{\code{"cancor"} (descriptive, multivariate)}{Macro edge
 #'     A--B = the first canonical correlation between the member blocks:
 #'     the strongest linear relationship any weighting of A's items can
 #'     have with any weighting of B's items - an upper bound on what
@@ -54,7 +55,7 @@
 #' @details
 #' \strong{Item diagnostics.} Whenever raw data or a node-level network
 #' is available, every item's connection strength to \emph{every} cluster
-#' is computed. The \code{$loadings} table reports, per item: its signed
+#' is computed. The \code{\link{item_loadings}()} table reports, per item: its signed
 #' own-cluster loading, its composite weight, its strongest cross-cluster
 #' loading, and a \code{misfit} flag set when the cross-cluster loading
 #' exceeds the own-cluster loading - evidence the item is assigned to the
@@ -92,9 +93,9 @@
 #'
 #' \strong{Uncertainty.} The composite/loadings macro network is a full
 #' netobject carrying its composite data, so
-#' \code{\link{bootstrap_network}(fit$macro)} (edge-weight CIs) and
-#' \code{\link{vertex_bootstrap}(fit$macro)} (network-level CIs) work
-#' directly; \code{\link{vertex_compare}(fit1$macro, fit2$macro)}
+#' \code{\link{bootstrap_network}(macro_network(fit))} (edge-weight CIs) and
+#' \code{\link{vertex_bootstrap}(macro_network(fit))} (network-level CIs) work
+#' directly; \code{\link{vertex_compare}(macro_network(fit1), macro_network(fit2))}
 #' compares two groups. \code{\link{loading_stability}} quantifies how
 #' stable the composite weights themselves are under case resampling.
 #'
@@ -107,7 +108,7 @@
 #'   method (\code{cor}, \code{pcor}, \code{glasso}; aliases accepted) -
 #'   its \code{$data} and \code{$method} are reused - or a numeric
 #'   data.frame of raw observations (then \code{method} decides the
-#'   estimator).
+#'   estimator). For the \code{print()} and \code{plot()} methods: an object of class \code{mcml_pc}.
 #' @param clusters Cluster membership in any of three forms: a named list of
 #'   node-label vectors (names = cluster labels); a two-column
 #'   \code{data.frame} read by position (first column = node names, second =
@@ -231,7 +232,7 @@
 #'   internally (\code{model}, \code{data}, \code{covmat},
 #'   \code{n.obs}, \code{factors}) are ignored with a warning - the
 #'   model is always the one-factor model per cluster, because the
-#'   composite needs exactly one weight per item.
+#'   composite needs exactly one weight per item. In \code{plot.mcml_pc()}, \code{print.mcml_pc()} and \code{summary.mcml_pc()}: Additional arguments (ignored).
 #' @param id_col Character vector or NULL. Identifier column(s) to drop
 #'   from data.frame input before analysis (e.g., the \code{rid}/actor
 #'   columns produced by
@@ -254,11 +255,16 @@
 #'     based on (kept for diagnostics and \code{loading_stability}).}
 #'   \item{data}{The raw data (data.frame) when available, else
 #'     \code{NULL}.}
-#'   \item{meta}{List: \code{aggregation}, \code{method},
-#'     \code{within}, \code{scale}, \code{cor_method}, \code{signed},
-#'     \code{n_nodes}, \code{n_clusters}, \code{cluster_sizes},
-#'     \code{n_misfit}, \code{n_flipped}, \code{directed = FALSE},
-#'     \code{source = "pc"}, \code{experimental = TRUE}.}
+#'   \item{meta}{List: \code{aggregation} (the name as the caller spelled
+#'     it), \code{method}, \code{within}, \code{weighting},
+#'     \code{fa_method}, \code{fa_args}, \code{scale}, \code{cor_method},
+#'     \code{signed}, \code{n_nodes}, \code{n_clusters},
+#'     \code{cluster_sizes}, \code{n_misfit}, \code{n_flipped},
+#'     \code{directed = FALSE}, \code{source = "pc"},
+#'     \code{experimental = TRUE}. \code{method} and \code{weighting} are
+#'     \code{NA} on the descriptive paths that re-estimate nothing, and
+#'     \code{fa_method}/\code{fa_args} are set only for
+#'     \code{weighting = "factor"}.}
 #' }
 #'
 #' @references
@@ -297,8 +303,9 @@
 #'
 #' fit <- build_mcml_pc(df, clusters, aggregation = "composite",
 #'                      method = "cor")
-#' fit$macro$weights
-#' fit$loadings
+#' fit            # macro (cluster-level) weights
+#' summary(fit)   # one row per macro edge
+#' plot(fit)      # heatmap of the same weights
 #'
 #' @export
 build_mcml_pc <- function(x,
@@ -472,22 +479,26 @@ build_mcml_pc <- function(x,
     warning("Item(s) more strongly connected to another cluster than ",
             "their own (possible misassignment): ",
             paste(misfit_items, collapse = ", "),
-            ". See $loadings (misfit, cross_cluster).", call. = FALSE)
+            ". See item_loadings(fit, misfit = TRUE).", call. = FALSE)
   }
   flipped_items <- loadings_df$node[loadings_df$sign < 0]
   if (signed && length(flipped_items) > 0 && aggregation == "composite") {
     warning("Reverse-keyed item(s) flipped in composites: ",
             paste(flipped_items, collapse = ", "),
-            ". See $loadings (sign).", call. = FALSE)
+            ". See item_loadings() (column sign).", call. = FALSE)
   }
 
   # ---- Macro network ----
+  composites <- NULL
   macro <- switch(aggregation,
     average = .wrap_netobject(.pc_average_macro(W, members), data = NULL,
                               method = "pc_average", directed = FALSE),
     composite = {
       composites <- .pc_composites(data, members, loadings_df, scale,
                                    signed = signed, score_fn = score_fn)
+      # keep the input's row identities: the estimator drops incomplete rows
+      # and renumbers, so composites() must not read the estimator's data
+      rownames(composites) <- rownames(data)
       .pc_estimate(composites, method, "pearson")
     },
     rv = .wrap_netobject(.pc_block_macro(data, members, "rv"),
@@ -517,6 +528,7 @@ build_mcml_pc <- function(x,
     loadings = loadings_df,
     node_network = node_network,
     data = if (has_data) data else NULL,
+    composites = composites,
     meta = list(
       aggregation = aggregation_label,
       method = if (aggregation == "composite") method
@@ -804,7 +816,7 @@ build_mcml_pc <- function(x,
 #' mean the weighting (and therefore the \code{"loadings"} macro
 #' network) should not be over-interpreted.
 #'
-#' @param x An \code{mcml_pc} object that carries raw data.
+#' @param x An \code{mcml_pc} object that carries raw data. For the \code{print()} and \code{plot()} methods: an object of class \code{pc_loading_stability}.
 #' @param iter Integer. Bootstrap replicates (default 200; node-level
 #'   re-estimation makes this heavier than a plain bootstrap).
 #' @param ci_level Numeric. Significance level for percentile CIs
@@ -820,16 +832,17 @@ build_mcml_pc <- function(x,
 #'   \code{ci_level}. Has print and plot methods.
 #'
 #' @examples
-#' \donttest{
 #' set.seed(1)
-#' df <- as.data.frame(matrix(rnorm(600), 100, 6))
-#' names(df) <- c("a1", "a2", "a3", "b1", "b2", "b3")
+#' f <- stats::rnorm(100)
+#' g <- stats::rnorm(100)
+#' df <- data.frame(a1 = f + stats::rnorm(100), a2 = f + stats::rnorm(100),
+#'                  a3 = f + stats::rnorm(100), b1 = g + stats::rnorm(100),
+#'                  b2 = g + stats::rnorm(100), b3 = g + stats::rnorm(100))
 #' cl <- list(A = c("a1", "a2", "a3"), B = c("b1", "b2", "b3"))
 #' fit <- build_mcml_pc(df, cl, aggregation = "loadings",
 #'                      method = "cor")
-#' ls <- loading_stability(fit, iter = 50, seed = 1)
-#' ls$summary
-#' }
+#' stability <- loading_stability(fit, iter = 50, seed = 1)
+#' stability
 #'
 #' @export
 loading_stability <- function(x, iter = 200L, ci_level = 0.05,
@@ -903,12 +916,11 @@ loading_stability <- function(x, iter = 200L, ci_level = 0.05,
 }
 
 
-#' Print Composite-Weight Stability
-#'
-#' @param x A \code{pc_loading_stability} object.
+#' @rdname loading_stability
 #' @param digits Number of digits to display (default 3).
-#' @param ... Additional arguments (ignored).
-#' @return \code{x}, invisibly.
+#' @param ... In \code{plot.pc_loading_stability()} and \code{print.pc_loading_stability()}: Additional arguments (ignored).
+#' @return In \code{print.pc_loading_stability()}: \code{x}, invisibly.
+#' @return In \code{plot.pc_loading_stability()}: A ggplot object.
 #' @export
 print.pc_loading_stability <- function(x, digits = 3, ...) {
   cat("Composite-Weight Stability (case bootstrap, experimental)\n")
@@ -922,14 +934,9 @@ print.pc_loading_stability <- function(x, digits = 3, ...) {
 }
 
 
-#' Plot Composite-Weight Stability
-#'
-#' Signed composite weights with bootstrap percentile intervals, faceted
-#' by cluster.
-#'
-#' @param x A \code{pc_loading_stability} object.
-#' @param ... Additional arguments (ignored).
-#' @return A ggplot object.
+#' @rdname loading_stability
+#' @section Methods:
+#' * \code{plot.pc_loading_stability()}: Signed composite weights with bootstrap percentile intervals, faceted by cluster.
 #' @export
 plot.pc_loading_stability <- function(x, ...) {
   df <- x$summary
@@ -954,12 +961,12 @@ plot.pc_loading_stability <- function(x, ...) {
 }
 
 
-#' Print an MCML-PC Object
-#'
-#' @param x An \code{mcml_pc} object.
-#' @param digits Number of digits to display (default 3).
-#' @param ... Additional arguments (ignored).
-#' @return \code{x}, invisibly.
+#' @rdname build_mcml_pc
+#' @param digits In \code{print.mcml_pc()}: Number of digits to display (default 3). In \code{plot.mcml_pc()}: Number of digits for tile labels (default 2).
+#' @param object For the \code{summary()} method: an object of class \code{mcml_pc}.
+#' @return In \code{print.mcml_pc()}: \code{x}, invisibly.
+#' @return In \code{summary.mcml_pc()}: Tidy data frame with one row per macro edge (upper triangle), columns \code{from}, \code{to}, \code{weight}.
+#' @return In \code{plot.mcml_pc()}: A ggplot object.
 #' @export
 print.mcml_pc <- function(x, digits = 3, ...) {
   m <- x$meta
@@ -973,10 +980,10 @@ print.mcml_pc <- function(x, digits = 3, ...) {
               paste(names(m$cluster_sizes), m$cluster_sizes,
                     sep = ": ", collapse = ", ")))
   if (m$n_misfit > 0) {
-    cat(sprintf("  ! %d misfit item(s) - see $loadings\n", m$n_misfit))
+    cat(sprintf("  ! %d misfit item(s) - see item_loadings()\n", m$n_misfit))
   }
   if (m$n_flipped > 0) {
-    cat(sprintf("  ! %d reverse-keyed item(s) flipped - see $loadings\n",
+    cat(sprintf("  ! %d reverse-keyed item(s) flipped - see item_loadings()\n",
                 m$n_flipped))
   }
   cat("\nMacro weights:\n")
@@ -985,12 +992,7 @@ print.mcml_pc <- function(x, digits = 3, ...) {
 }
 
 
-#' Summarize an MCML-PC Object
-#'
-#' @param object An \code{mcml_pc} object.
-#' @param ... Additional arguments (ignored).
-#' @return Tidy data frame with one row per macro edge (upper triangle),
-#'   columns \code{from}, \code{to}, \code{weight}.
+#' @rdname build_mcml_pc
 #' @export
 summary.mcml_pc <- function(object, ...) {
   W <- object$macro$weights
@@ -1005,17 +1007,9 @@ summary.mcml_pc <- function(object, ...) {
 }
 
 
-#' Plot an MCML-PC Object
-#'
-#' Heatmap of the macro (cluster-level) weights with the package's
-#' diverging palette. For the two-layer network rendering use
-#' \code{cograph::plot_mcml()}, which accepts \code{mcml_pc} objects and
-#' draws them undirected.
-#'
-#' @param x An \code{mcml_pc} object.
-#' @param digits Number of digits for tile labels (default 2).
-#' @param ... Additional arguments (ignored).
-#' @return A ggplot object.
+#' @rdname build_mcml_pc
+#' @section Methods:
+#' * \code{plot.mcml_pc()}: Heatmap of the macro (cluster-level) weights with the package's diverging palette. For the two-layer network rendering use \code{cograph::plot_mcml()}, which accepts \code{mcml_pc} objects and draws them undirected.
 #' @export
 plot.mcml_pc <- function(x, digits = 2, ...) {
   W <- x$macro$weights
@@ -1042,6 +1036,142 @@ plot.mcml_pc <- function(x, digits = 2, ...) {
                          x$meta$aggregation)
     ) +
     ggplot2::theme_minimal(base_size = 12)
+}
+
+
+#' Item Diagnostics From a Psychometric MCML Fit
+#'
+#' @description
+#' The item table behind \code{\link{build_mcml_pc}}: one row per node,
+#' reporting how strongly the item connects to its own cluster, the
+#' weight it carries into that cluster's composite, and whether it
+#' connects more strongly to some other cluster.
+#'
+#' Reading the table is \code{item_loadings(fit)} - never a reach into
+#' the fit's internals. The name says \emph{item}: these are network
+#' loadings of items on their own cluster, not factor loadings.
+#'
+#' @param x An \code{mcml_pc} object from \code{\link{build_mcml_pc}}.
+#' @param misfit Logical or NULL. \code{NULL} (default) returns every
+#'   item; \code{TRUE} returns only the items whose strongest
+#'   cross-cluster connection exceeds their own-cluster loading;
+#'   \code{FALSE} returns only the items that fit where they were
+#'   assigned.
+#' @param ... Ignored.
+#'
+#' @return A data frame with one row per node (one row per misfitting or
+#'   fitting node when \code{misfit} is set) and columns \code{node},
+#'   \code{cluster}, \code{loading} (signed mean connection to its own
+#'   cluster), \code{weight} (its composite weight), \code{sign} (+1, or
+#'   -1 for a reverse-keyed item), \code{max_cross} (strongest connection
+#'   to any other cluster), \code{cross_cluster} (which cluster that is),
+#'   and \code{misfit} (logical).
+#'
+#' @seealso \code{\link{build_mcml_pc}} to create the fit,
+#'   \code{\link{loading_stability}} for the weights' sampling
+#'   uncertainty, \code{\link{composites}} for the scores these weights
+#'   produce.
+#'
+#' @examples
+#' set.seed(1)
+#' f <- stats::rnorm(200)
+#' g <- stats::rnorm(200)
+#' df <- data.frame(a1 = f + stats::rnorm(200), a2 = f + stats::rnorm(200),
+#'                  a3 = f + stats::rnorm(200), b1 = g + stats::rnorm(200),
+#'                  b2 = g + stats::rnorm(200), b3 = g + stats::rnorm(200))
+#' clusters <- list(A = c("a1", "a2", "a3"), B = c("b1", "b2", "b3"))
+#' fit <- build_mcml_pc(df, clusters, aggregation = "loadings",
+#'                      method = "cor")
+#' item_loadings(fit)
+#' item_loadings(fit, misfit = TRUE)
+#'
+#' @export
+item_loadings <- function(x, ...) {
+  UseMethod("item_loadings")
+}
+
+#' @rdname item_loadings
+#' @export
+item_loadings.mcml_pc <- function(x, misfit = NULL, ...) {
+  stopifnot(
+    "`misfit` must be TRUE, FALSE or NULL" =
+      is.null(misfit) ||
+      (is.logical(misfit) && length(misfit) == 1L && !is.na(misfit))
+  )
+  table <- x$loadings
+  if (is.null(table)) {
+    stop(errorCondition(
+      paste0("This fit carries no item diagnostics: it was built without a ",
+             "node-level network."),
+      class = "nestimate_no_loadings", call = NULL))
+  }
+  if (is.null(misfit)) {
+    return(table)
+  }
+  out <- table[table$misfit == misfit, , drop = FALSE]
+  row.names(out) <- NULL
+  out
+}
+
+
+#' Cluster Scores From a Psychometric MCML Fit
+#'
+#' @description
+#' The per-observation cluster scores that a re-estimated
+#' \code{\link{build_mcml_pc}} macro network was fitted on: each
+#' respondent's weighted, sign-corrected score on every cluster. These
+#' are the scores to carry into a profile analysis, a regression, or any
+#' downstream model that needs one number per cluster per respondent.
+#'
+#' @param x An object carrying cluster scores.
+#' @param ... Ignored.
+#'
+#' @return A data frame with one row per row of the input data, in input
+#'   order and with the input's row names, and one numeric column per
+#'   cluster, named by the cluster. A row whose members of a cluster are all
+#'   missing is \code{NA} in that column (items missing only in part are
+#'   averaged over the observed ones). The macro network is estimated on the
+#'   complete rows, so \code{build_network(composites(fit), method = ...)}
+#'   reproduces it.
+#'
+#' @seealso \code{\link{build_mcml_pc}} to create the fit,
+#'   \code{\link{item_loadings}} for the item weights behind these scores.
+#'
+#' @examples
+#' set.seed(1)
+#' f <- stats::rnorm(200)
+#' g <- stats::rnorm(200)
+#' df <- data.frame(a1 = f + stats::rnorm(200), a2 = f + stats::rnorm(200),
+#'                  a3 = f + stats::rnorm(200), b1 = g + stats::rnorm(200),
+#'                  b2 = g + stats::rnorm(200), b3 = g + stats::rnorm(200))
+#' clusters <- list(A = c("a1", "a2", "a3"), B = c("b1", "b2", "b3"))
+#' fit <- build_mcml_pc(df, clusters, aggregation = "loadings",
+#'                      method = "cor")
+#' head(composites(fit))
+#'
+#' @export
+composites <- function(x, ...) {
+  UseMethod("composites")
+}
+
+#' @rdname composites
+#' @return The \code{mcml_pc} method errors with class
+#'   \code{"nestimate_no_composites"} for the descriptive aggregations
+#'   (\code{"average"}, \code{"escoufier"}, \code{"cancor"}), which relate
+#'   clusters without ever forming a score.
+#' @export
+composites.mcml_pc <- function(x, ...) {
+  scores <- x$composites
+  if (is.null(scores)) {
+    stop(errorCondition(
+      sprintf(paste0("aggregation = \"%s\" relates the item blocks directly ",
+                     "and forms no cluster scores. Use a re-estimated ",
+                     "aggregation (\"scaled\", \"composite\", \"mean\", ",
+                     "\"median\" or \"loadings\") to get composites."),
+              x$meta$aggregation),
+      class = "nestimate_no_composites", call = NULL))
+  }
+  as.data.frame(scores, stringsAsFactors = FALSE)
 }
 
 
@@ -1074,13 +1204,16 @@ plot.mcml_pc <- function(x, digits = 2, ...) {
 #'
 #' @examples
 #' set.seed(1)
-#' df <- as.data.frame(matrix(stats::rnorm(200 * 6), 200, 6))
-#' names(df) <- c("a1", "a2", "a3", "b1", "b2", "b3")
+#' f <- stats::rnorm(200)
+#' g <- stats::rnorm(200)
+#' df <- data.frame(a1 = f + stats::rnorm(200), a2 = f + stats::rnorm(200),
+#'                  a3 = f + stats::rnorm(200), b1 = g + stats::rnorm(200),
+#'                  b2 = g + stats::rnorm(200), b3 = g + stats::rnorm(200))
 #' clusters <- list(A = c("a1", "a2", "a3"), B = c("b1", "b2", "b3"))
 #' fit <- build_mcml_pc(df, clusters, aggregation = "composite", method = "cor")
 #' nets <- as_networks(fit)
 #' nets
-#' nets$macro$weights
+#' summary(nets)
 #' @export
 as_networks <- function(x) {
   UseMethod("as_networks")

@@ -2,6 +2,9 @@
 % Please edit documentation in R/association_rules.R
 \name{association_rules}
 \alias{association_rules}
+\alias{print.net_association_rules}
+\alias{summary.net_association_rules}
+\alias{plot.net_association_rules}
 \title{Discover Association Rules from Sequential or Transaction Data}
 \usage{
 association_rules(
@@ -11,6 +14,12 @@ association_rules(
   min_lift = 1,
   max_length = 5L
 )
+
+\method{print}{net_association_rules}(x, ...)
+
+\method{summary}{net_association_rules}(object, ...)
+
+\method{plot}{net_association_rules}(x, ...)
 }
 \arguments{
 \item{x}{Input data. Accepts:
@@ -22,7 +31,7 @@ a transaction of its unique states.}
 columns are item occurrences. Or a binary matrix (0/1).}
 \item{matrix}{Binary transaction matrix (rows = transactions,
 columns = items).}
-}}
+} For the \code{print()} and \code{plot()} methods: an object of class \code{net_association_rules}.}
 
 \item{min_support}{Numeric. Minimum support threshold. Default: 0.1.}
 
@@ -31,18 +40,35 @@ columns = items).}
 \item{min_lift}{Numeric. Minimum lift threshold. Default: 1.0.}
 
 \item{max_length}{Integer. Maximum itemset size. Default: 5.}
+
+\item{...}{In \code{plot.net_association_rules()}: Additional arguments passed to \code{ggplot2} functions. In \code{print.net_association_rules()} and \code{summary.net_association_rules()}: Additional arguments (ignored).}
+
+\item{object}{For the \code{summary()} method: an object of class \code{net_association_rules}.}
 }
 \value{
 An object of class \code{"net_association_rules"} containing:
 \describe{
-\item{rules}{Data frame with columns: antecedent (list), consequent (list),
-support, confidence, lift, conviction, count, n_transactions.}
-\item{frequent_itemsets}{List of frequent itemsets per level k.}
-\item{items}{Character vector of all items.}
+\item{rules}{Tidy data frame, one row per rule, ordered by descending
+lift then confidence, with columns \code{antecedent} and
+\code{consequent} (the itemsets as comma-separated character strings),
+\code{support}, \code{confidence}, \code{lift}, \code{conviction},
+\code{count} and \code{n_transactions}.}
+\item{frequent}{Tidy data frame, one row per frequent itemset, with
+columns \code{itemset}, \code{size}, \code{support} and \code{count}.}
+\item{frequent_itemsets}{List of frequent itemsets per level k, each
+entry a list of \code{items} / \code{count} / \code{support}.}
+\item{items}{Character vector of the frequent 1-itemsets the mining ran
+on (all items when no item clears \code{min_support}).}
 \item{n_transactions}{Integer.}
 \item{n_rules}{Integer.}
 \item{params}{List of min_support, min_confidence, min_lift, max_length.}
 }
+
+In \code{print.net_association_rules()}: The input object, invisibly.
+
+In \code{summary.net_association_rules()}: The tidy rules data frame: one row per rule, with columns \code{antecedent}, \code{consequent}, \code{support}, \code{confidence}, \code{lift}, \code{conviction}, \code{count} and \code{n_transactions}.
+
+In \code{plot.net_association_rules()}: The drawn \code{ggplot} object, invisibly (the plot is also printed). \code{NULL}, invisibly, when no rule was found.
 }
 \description{
 Discovers association rules using the Apriori algorithm with proper
@@ -75,6 +101,13 @@ from independence. Higher = stronger implication.}
 }
 }
 }
+\section{Methods}{
+
+\itemize{
+\item \code{plot.net_association_rules()}: Scatter plot of association rules: support vs confidence, with point size proportional to lift.
+}
+}
+
 \examples{
 # From a list of transactions
 trans <- list(
@@ -100,6 +133,10 @@ rules <- association_rules(net, min_support = 0.1)
 \references{
 Agrawal, R. & Srikant, R. (1994). Fast algorithms for mining association
 rules. In \emph{Proc. 20th VLDB Conference}, 487--499.
+
+Brin, S., Motwani, R., Ullman, J. D. & Tsur, S. (1997). Dynamic itemset
+counting and implication rules for market basket data. In \emph{Proc. ACM
+SIGMOD}, 255--264. (lift and conviction)
 }
 \seealso{
 \code{\link{build_network}}, \code{\link{predict_links}}

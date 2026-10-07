@@ -2,6 +2,10 @@
 % Please edit documentation in R/markov_order.R
 \name{markov_order_test}
 \alias{markov_order_test}
+\alias{print.net_markov_order}
+\alias{print.net_markov_order_group}
+\alias{summary.net_markov_order}
+\alias{plot.net_markov_order}
 \title{Test the Markov order of a sequential process}
 \usage{
 markov_order_test(
@@ -13,11 +17,21 @@ markov_order_test(
   n_cores = 2L,
   seed = NULL
 )
+
+\method{print}{net_markov_order}(x, ...)
+
+\method{print}{net_markov_order_group}(x, ...)
+
+\method{summary}{net_markov_order}(object, ...)
+
+\method{plot}{net_markov_order}(x, panel = c("both", "ic", "permutation"), combined = TRUE, ...)
 }
 \arguments{
-\item{data}{A data.frame (wide format, one sequence per row) or list
-of character vectors (one per trajectory). NAs are treated as end
-of sequence.}
+\item{data}{A data.frame (wide format, one sequence per row), a list
+of character vectors (one per trajectory), a \code{netobject} or
+\code{netobject_group} carrying its \code{$data}, or a
+\code{\link{prepare}} result (its \code{sequence_data} is used).
+NAs are treated as end of sequence.}
 
 \item{max_order}{Integer. Highest Markov order to test. Default 3.}
 
@@ -32,6 +46,16 @@ Default \code{FALSE} (set \code{TRUE} only on Unix-like systems).}
 \item{n_cores}{Integer. Cores for parallel execution. Default 2.}
 
 \item{seed}{Optional integer seed for reproducibility.}
+
+\item{x}{For the \code{print()} and \code{plot()} methods: an object of class \code{net_markov_order} or \code{net_markov_order_group}.}
+
+\item{...}{In \code{plot.net_markov_order()}, \code{print.net_markov_order()} and \code{summary.net_markov_order()}: Ignored. In \code{print.net_markov_order_group()}: Forwarded to \code{print.net_markov_order} for each element.}
+
+\item{object}{For the \code{summary()} method: an object of class \code{net_markov_order}.}
+
+\item{panel}{Which panel(s) to render: \code{"both"}, \code{"ic"}, or \code{"permutation"}. Default \code{"both"}.}
+
+\item{combined}{When \code{panel = "both"} and \code{combined = TRUE} (default), the two panels are drawn side-by-side. If \pkg{gridExtra} is installed they are arranged into a single drawable/saveable gtable (returned); otherwise base \code{grid} viewports draw both panels and a named list of the two ggplots is returned invisibly. When \code{FALSE}, returns that named list (\code{ic}, \code{permutation}) without drawing. Ignored when \code{panel != "both"}.}
 }
 \value{
 An object of class \code{net_markov_order} with elements:
@@ -59,8 +83,21 @@ AIC / BIC columns.}
 \item{transition_matrices}{List of fitted transition matrices.}
 \item{states}{Character vector of observed state labels.}
 \item{n_sequences, n_observations}{Data summary.}
-\item{n_perm, alpha, max_order}{Call settings.}
+\item{n_perm, alpha, max_order}{Call settings. \code{max_order} is the
+order actually tested, which is capped at
+\code{length(longest sequence) - 1} with a message.}
 }
+For a \code{netobject_group} the result is a
+\code{"net_markov_order_group"}: a named list holding one
+\code{net_markov_order} per group.
+
+In \code{print.net_markov_order()}: The input object, invisibly.
+
+In \code{print.net_markov_order_group()}: \code{x} invisibly.
+
+In \code{summary.net_markov_order()}: The tidy \code{test_table} data.frame - one row per order tested - carrying the selection context as attributes: \code{optimal_order}, \code{bic_order}, \code{aic_order}, \code{alpha} and \code{n_perm}.
+
+In \code{plot.net_markov_order()}: A ggplot (single panel); for \code{panel = "both"}, either a \code{gridExtra} gtable (when \pkg{gridExtra} is installed) or a named list of two ggplots (\code{ic}, \code{permutation}) drawn side-by-side and returned invisibly.
 }
 \description{
 Principled test of whether a categorical sequence is best described
@@ -80,26 +117,32 @@ exchangeable under \eqn{H_0}, so shuffling \eqn{s} within each
 No plug-in MLE bias and no refitting per replicate. An asymptotic
 \eqn{\chi^2} p-value is reported alongside for reference.
 
-The optimal order is the smallest \eqn{k} that is \strong{not}
-significantly better than \eqn{k - 1} at level \code{alpha}: we
-keep raising the order while the test rejects, and stop at the first
-non-rejection.
+Order selection is sequential: the order is raised while the test
+rejects, and stops at the first non-rejection. The reported
+\code{optimal_order} is therefore the highest \eqn{k} whose test - and
+every test below it - rejected at level \code{alpha}, i.e. one below the
+first non-rejection; it is \code{0} when order 1 is already not
+rejected, and \code{max_order} when no test accepts.
 }
+\section{Plot panels}{
+
+Two-panel professional visualization:
+\itemize{
+\item Panel A: log-likelihood, AIC, BIC across tested orders with
+the selected order highlighted (both the permutation-selected
+order and the BIC-minimizing order are marked).
+\item Panel B: permutation null density per order with the observed
+\eqn{G^2} as a vertical marker; colored by rejection at
+\code{alpha}.
+}
+Uses the Okabe-Ito colorblind-safe palette.
+}
+
 \examples{
-\donttest{
-# First-order Markov data: test should select order 1
-set.seed(1)
-states <- letters[1:4]
-tm <- matrix(runif(16), 4, 4, dimnames = list(states, states))
-tm <- tm / rowSums(tm)
-seqs <- lapply(1:30, function(.) {
-  s <- character(50); s[1] <- sample(states, 1)
-  for (i in 2:50) s[i] <- sample(states, 1, prob = tm[s[i - 1], ])
-  s
-})
-res <- markov_order_test(seqs, max_order = 3, n_perm = 300, seed = 1)
-res$optimal_order
+# Is one previous state enough to predict the next one?
+res <- markov_order_test(as.data.frame(trajectories),
+                         max_order = 2, n_perm = 99, seed = 1)
+res
 summary(res)
 plot(res)
-}
 }

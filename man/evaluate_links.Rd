@@ -24,18 +24,15 @@ Computes AUC-ROC, precision\eqn{@}k, and average precision for link
 predictions against a set of known true edges.
 }
 \examples{
-set.seed(42)
 seqs <- data.frame(
-  V1 = sample(LETTERS[1:5], 50, TRUE),
-  V2 = sample(LETTERS[1:5], 50, TRUE),
-  V3 = sample(LETTERS[1:5], 50, TRUE)
+  V1 = c("A", "B", "C", "D", "A", "C", "E", "B"),
+  V2 = c("B", "C", "D", "E", "C", "E", "A", "D"),
+  V3 = c("C", "D", "E", "A", "D", "A", "B", "E")
 )
 net <- build_network(seqs, method = "relative")
 pred <- predict_links(net, exclude_existing = FALSE)
 
-# Evaluate: predict the network's own edges
-true <- data.frame(from = pred$predictions$from[1:5],
-                   to = pred$predictions$to[1:5])
-evaluate_links(pred, true)
+# Evaluate against the network's own edges as the known truth
+evaluate_links(pred, extract_edges(net, threshold = 0.001))
 
 }

@@ -2,6 +2,7 @@
 % Please edit documentation in R/prepare_data.R
 \name{prepare}
 \alias{prepare}
+\alias{print.nestimate_data}
 \title{Prepare Event Log Data for Network Estimation}
 \usage{
 prepare(
@@ -14,8 +15,11 @@ prepare(
   time_threshold = 900,
   custom_format = NULL,
   is_unix_time = FALSE,
-  unix_time_unit = c("seconds", "milliseconds", "microseconds")
+  unix_time_unit = c("seconds", "milliseconds", "microseconds"),
+  timezone = "UTC"
 )
+
+\method{print}{nestimate_data}(x, ...)
 }
 \arguments{
 \item{data}{Data frame with event log columns.}
@@ -55,6 +59,18 @@ timestamps. Default: FALSE (auto-detected for numeric columns).}
 \item{unix_time_unit}{Character. Unit for Unix timestamps:
 \code{"seconds"}, \code{"milliseconds"}, or \code{"microseconds"}.
 Default: \code{"seconds"}.}
+
+\item{timezone}{Character. An Olson time zone (see
+\code{\link[base]{OlsonNames}}) used to interpret timestamps that carry
+no zone information, and in which Unix timestamps are expressed.
+Timestamps that end in \code{Z}, \code{UTC}, \code{GMT} or a numeric
+offset such as \code{+02:00} are converted from that offset. Parsing is
+therefore independent of the machine's local time zone.
+Default: \code{"UTC"}.}
+
+\item{x}{For the \code{print()} method: an object of class \code{nestimate_data}.}
+
+\item{...}{In \code{print.nestimate_data()}: Additional arguments (ignored).}
 }
 \value{
 A list with class \code{"nestimate_data"} containing:
@@ -62,11 +78,19 @@ A list with class \code{"nestimate_data"} containing:
 \item{sequence_data}{Data frame in wide format (one row per session,
 columns T1, T2, ...).}
 \item{long_data}{The processed long-format data with session IDs.}
-\item{meta_data}{Session-level metadata (session ID, actor).}
+\item{meta_data}{Session-level metadata, one row per session in the row
+order of \code{sequence_data}: \code{.session_id}, \code{.session_label},
+the \code{actor} column, the \code{session} column(s) under their own
+names, and every other column aggregated per session.}
 \item{time_data}{Parsed time values in wide format (if time provided).}
-\item{statistics}{List with total_sessions, total_actions,
-max_sequence_length, unique_actors, etc.}
+\item{statistics}{List with \code{total_sessions},
+\code{total_actions} and \code{max_sequence_length}, plus
+\code{unique_actors} only when \code{actor} was supplied (with no
+\code{actor} every row belongs to one synthetic actor, so the count
+would be meaningless).}
 }
+
+In \code{print.nestimate_data()}: The input object, invisibly.
 }
 \description{
 Converts event log data (actor, action, time) into wide sequence format
@@ -80,6 +104,7 @@ distinct and high-cardinality identifiers cannot overflow. Missing values in
 any grouping column raise an error: drop or relabel those events first.
 }
 \examples{
+set.seed(1)
 df <- data.frame(
   student = rep(1:3, each = 5),
   code = sample(c("read", "write", "test"), 15, replace = TRUE),

@@ -2,6 +2,10 @@
 % Please edit documentation in R/transition_entropy.R
 \name{entropy_bayes}
 \alias{entropy_bayes}
+\alias{print.net_entropy_bayes}
+\alias{print.net_entropy_bayes_group}
+\alias{summary.net_entropy_bayes}
+\alias{plot.net_entropy_bayes}
 \title{Bayesian Transition Entropy}
 \usage{
 entropy_bayes(
@@ -13,13 +17,21 @@ entropy_bayes(
   base = 2,
   seed = NULL
 )
+
+\method{print}{net_entropy_bayes}(x, digits = 3, ...)
+
+\method{print}{net_entropy_bayes_group}(x, ...)
+
+\method{summary}{net_entropy_bayes}(object, ...)
+
+\method{plot}{net_entropy_bayes}(x, top = 25, title = "Bayesian edge entropy contributions", ...)
 }
 \arguments{
 \item{x}{A frequency \code{netobject}
 (\code{build_network(method = "frequency")}), any \code{netobject} that
 carries its \code{$data} (counts are rebuilt automatically), a
 count matrix, or a wide sequence data.frame. Group dispatch on
-\code{netobject_group}.}
+\code{netobject_group}. For the \code{print()} and \code{plot()} methods: an object of class \code{net_entropy_bayes} or \code{net_entropy_bayes_group}.}
 
 \item{prior}{Numeric. Dirichlet prior concentration added to every cell
 of the count matrix (default \code{0.5}, Jeffreys).}
@@ -37,6 +49,16 @@ at least 1\% of process entropy).}
 \item{base}{Numeric. Logarithm base (default \code{2}, bits).}
 
 \item{seed}{Integer or NULL. RNG seed for reproducibility.}
+
+\item{digits}{Integer. Digits to round numeric output. Default \code{3}.}
+
+\item{...}{In \code{plot.net_entropy_bayes()}, \code{print.net_entropy_bayes()}, \code{print.net_entropy_bayes_group()} and \code{summary.net_entropy_bayes()}: Ignored.}
+
+\item{object}{For the \code{summary()} method: an object of class \code{net_entropy_bayes}.}
+
+\item{top}{Integer. Show at most this many edges, by posterior mean contribution (default \code{25}).}
+
+\item{title}{Character. Plot title.}
 }
 \value{
 An object of class \code{"net_entropy_bayes"} with:
@@ -58,6 +80,15 @@ means where \code{credible}, \code{0} elsewhere.}
 draws (for further analysis or plotting).}
 \item{prior, draws, ci, min_share, base, states_names}{Call metadata.}
 }
+For a \code{netobject_group} the result is a
+\code{"net_entropy_bayes_group"}: a named list holding one such object
+per group.
+
+In \code{print.net_entropy_bayes()} and \code{print.net_entropy_bayes_group()}: \code{x} invisibly.
+
+In \code{summary.net_entropy_bayes()}: The tidy edge table (data.frame), one row per observed transition, sorted by posterior mean contribution, returned invisibly. The chain-level and per-edge tables are printed as a side effect.
+
+In \code{plot.net_entropy_bayes()}: A ggplot object.
 }
 \description{
 Bayesian estimation of the transition entropy quantities of
@@ -88,15 +119,20 @@ The posterior mean entropy rate is typically slightly below the plug-in
 estimate on sparse data (Dirichlet smoothing pulls rows toward uniform
 but averages over uncertainty); the difference vanishes as counts grow.
 }
+\section{Methods}{
+
+\itemize{
+\item \code{plot.net_entropy_bayes()}: Forest plot of the per-edge entropy contributions: posterior mean and credible interval, credible edges in Okabe-Ito blue, unstable (non-credible) edges in grey. The dashed line marks \code{min_share} of the posterior-mean entropy rate - the stability criterion.
+}
+}
+
 \examples{
-\donttest{
 net <- build_network(group_regulation_long, method = "relative",
                      actor = "Actor", action = "Action", time = "Time")
-eb <- entropy_bayes(net, seed = 1)
+eb <- entropy_bayes(net, draws = 1000, seed = 1)
 eb
 summary(eb)
 plot(eb)
-}
 
 }
 \references{

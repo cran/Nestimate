@@ -1,3 +1,575 @@
+# Nestimate 0.9.24
+
+## Documentation
+
+* Fixes to the 0.9.23 help-page merge, found in review:
+  * Pages are named after their function again: `build_mcml` and
+    `plot_state_frequencies` had been named after a `print()` method, and
+    their usage now lists the function before its methods.
+  * The descriptions of 51 methods (what a plot draws, what a print shows)
+    are restored, as a "Methods" section on each function's page.
+  * Each page's `...` entry states what each method does with extra
+    arguments: methods that reject them say so, `plot.net_bayes()` names
+    `cograph::splot()`, and the rest say they are ignored.
+  * `compare_networks`: the `...` and `labels` entries no longer repeat;
+    `net_edge_betweenness` and `net_pruning_details` no longer list a
+    non-existent class.
+  * Every S3 method has a documented return value.
+
+## Behaviour notes
+
+* The `mgm` estimator rejects `scale = FALSE` with a classed error
+  (`nestimate_mgm_unscaled`); this started in 0.9.23 and was not listed
+  there. Missing values are handled pairwise, now passed explicitly.
+
+## Tests
+
+* Two more reference-implementation tests (a hand-written linear solve for
+  `passage_time()`, a manual `multinom` re-computation) and unused reference
+  helpers moved to the local suite; section headers that claimed
+  equivalence tests are renamed. New tests: mgm on data with missing values,
+  and the `scale = FALSE` error.
+
+# Nestimate 0.9.23
+
+## Internal changes
+
+* The `mgm` and `ising` estimators delegate to `psychnets::mgm_fit()` and
+  `psychnets::ising_fit()` (glmnet engine), joining `cor`, `pcor` and `glasso`.
+  Results are unchanged: identical to the former in-package code (max absolute
+  difference 0 for Ising over 180 configurations, 5.6e-17 for MGM over 48).
+  Nestimate keeps type detection, input validation and the result fields. The
+  Ising result no longer carries the unused `asymm_weights` and
+  `lambda_selected` fields. The unused internal moderated-MGM code is removed.
+
+## Documentation
+
+* Each function has one help page. The 181 `print()`, `summary()`, `plot()`,
+  `format()` and `as.data.frame()` methods are documented on the page of the
+  function that creates their object (`?nct` covers `print.net_nct()` and
+  `summary.net_nct()`), as is `compare_model()`'s `netobject_group` method.
+  286 help pages become 139; `?print.net_nct` still opens the right page.
+* `compare_model()` and `as_netdifference()` have examples.
+
+## Bug fixes
+
+* `build_network(method = "mgm")` no longer fails on data with missing values
+  ("number of observations in y not equal to the number of rows of x").
+
+## Tests
+
+* Equivalence tests against other packages (tna, igraph, mgm, stringdist,
+  `glm()`) and naive-loop reference implementations are no longer shipped.
+* CRAN runs a core of 15 test files (data preparation, estimation registry,
+  extraction, Markov, link prediction, Bayesian verbs, pruning, and the htna
+  contract); every other file is skipped on CRAN and runs locally and in CI.
+  The CRAN test run drops from about 300 s to 22 s.
+* Slow examples run with fewer iterations (`boot_glasso()`, `nct()`,
+  `permutation_diagnostics()`, `build_gimme()`) and `?sequence_plot` draws
+  fewer figures.
+
+# Nestimate 0.9.21
+
+## Bug fixes
+
+* `summary()` of a `predict_links()` result reports `NA` scores for a method
+  with no predictions (every possible link already exists). It returned
+  `NaN` / `-Inf` / `Inf` with one warning per column.
+
+## Documentation
+
+* Every help page now has example code that runs under `R CMD check`. 31 pages
+  had all of it inside `\donttest{}` or `\dontrun{}`; fast examples are
+  unwrapped, and slow ones (`nct()`, `permutation_diagnostics()`,
+  `entropy_bayes()`) run live with fewer iterations.
+* The `predict_links()` family of examples uses fixed data that leaves links
+  to predict, and the `loading_stability()` / `as_networks()` examples use items
+  with real two-factor structure, so neither emits warnings.
+* pkgdown: the `cograph-tutorial-nestimate` article was a 47.8 MB page (300 dpi
+  figures inlined as base64); it is now about 70 KB with figures as separate
+  files. The README no longer lists outdated imports.
+
+# Nestimate 0.9.20
+
+## Documentation
+
+* The documentation site is now `https://pak.dynasite.org/Nestimate/`
+  (`DESCRIPTION` URL, `_pkgdown.yml`, README links). `saqr.me/Nestimate` was a
+  stale copy. The README lists the `permutation-nested-data` and
+  `compare-networks` articles.
+
+# Nestimate 0.9.18
+
+## Documentation
+
+* The pkgdown site builds again. Four exported topics (`state_colors()`,
+  `set_state_colors()`, `composites()`, `item_loadings()`) were missing from the
+  reference index, which had failed every site build since 0.9.10. The
+  `compare-networks` and `permutation-nested-data` articles now publish.
+
+# Nestimate 0.9.17
+
+## New features
+
+* `compare_networks()` gains `actor =`, passed to the permutation backend:
+  whole actors are reassigned between the networks, the printed header names
+  the actor column, and `global_differences()` gains the rows `ICC`,
+  `Design effect (edges)` and `Design effect (M)` (category `"Nesting"`).
+  Requires `test = "permutation"` (error class
+  `nestimate_compare_actor_needs_permutation`).
+
+# Nestimate 0.9.16
+
+## Breaking changes (development versions only)
+
+* The nesting argument added in 0.9.13 (`permutation()`,
+  `permutation_diagnostics()`) and 0.9.15 (`bootstrap_network()`) is renamed
+  from `block` to `actor`, the column identifying whose sequences they are:
+  the same vocabulary as `build_network(actor = )`. Results carry `actor`
+  and `n_actors`; diagnostic columns use `_sequence` (sequences reassigned)
+  and `_actor` (actors reassigned), e.g. `p_global_sequence` /
+  `p_global_actor`; conditions are `nestimate_bad_actor`,
+  `nestimate_actor_missing`, `nestimate_actor_misaligned`,
+  `nestimate_actor_unsupported` and `nestimate_few_actors`. The printout
+  reads `Actor: Group (200 actors)` and `Nesting in Group: ICC = ...`.
+  Neither name was ever on CRAN.
+
+## Bug fixes
+
+* `build_network()`: columns named in `metadata_cols` (or left out of
+  `state_cols`) are no longer read as sequence positions in wide data. They
+  were moved to `$metadata` only after estimation, so their values became
+  states and created spurious transitions, in single and grouped networks.
+  For `cor`, `pcor`, `glasso`, `ising` and `mgm`, declared metadata columns
+  are no longer entered as variables.
+
+* An ICC that cannot be estimated (one block, or no variation) is reported
+  as not estimable instead of `NaN [NA, NA]` by `permutation()`,
+  `bootstrap_network()` and `permutation_diagnostics()`.
+
+# Nestimate 0.9.15
+
+## New features
+
+* `bootstrap_network()` gains `block =`, the column identifying the unit
+  that sequences are nested in. Whole units are resampled with replacement,
+  keeping their sequences together (cluster bootstrap, top level only;
+  Davison & Hinkley, 1997; Field & Welsh, 2007). The result reports the ICC
+  (Shrout & Fleiss, 1979) and the design effect (Kish, 1965) for the edges,
+  printed under the bootstrap summary and returned as `clustering` and
+  `clustering_edges`. With one sequence per unit it reproduces the ordinary
+  bootstrap exactly. Transition networks only.
+
+# Nestimate 0.9.14
+
+## Documentation
+
+* New pkgdown article "Comparing two networks with compare_networks()":
+  high vs low achievers in `group_regulation_long`, every summary table and
+  all eight plot views with a short reading of each.
+
+# Nestimate 0.9.13
+
+## New features
+
+* `permutation()` gains `block =`, the column identifying the unit that
+  sequences are nested in (sessions in students, students in teams). Whole
+  units are reassigned between the groups; units with sequences in both
+  groups, as in repeated-measures designs, have their sequences reassigned
+  within the unit; mixed designs combine the two (Good, 2005; Anderson &
+  ter Braak, 2003). Supported for transition networks (`relative`,
+  `frequency`, `co_occurrence`); association networks raise
+  `nestimate_block_unsupported`. A warning of class `nestimate_few_blocks`
+  is raised when no p-value could fall below `alpha`.
+
+* With `block`, `permutation()` reports the nesting effect: the intraclass
+  correlation (Shrout & Fleiss, 1979) with a jackknife 95% interval, and the
+  design effect (Kish, 1965), the blocked over the unblocked null variance,
+  for the edges and the global statistic M.
+
+* `permutation_diagnostics(x, block =)` runs the ordinary and the blocked
+  test on the same data and returns them side by side as a tidy data frame,
+  one row per pair or, with `level = "edges"`, per edge.
+
+## Improvements
+
+* `print()` of a `net_permutation` shows the global test (M and S, with
+  p-values) and, with `block`, the ICC and design effects. A grouped result
+  prints every pair in full.
+
+* The `permutation()` help page is reorganised into sections: what is
+  tested, nested data and `block`, ICC and design effect, reading the
+  printed output.
+
+* Building a transition network from a single long sequence now raises a
+  message instead of a warning; running `bootstrap_network()` or
+  `permutation()` on such a network still warns. Both carry the class
+  `nestimate_single_sequence`.
+
+## Bug fixes
+
+* `\%` in markdown roxygen silently cut the rest of a line from the help
+  pages of `certainty()`, `build_gimme()`, `build_mcml()` and
+  `sequence_plot()`; the text is restored.
+
+* Missing space in the `permutation()` print header.
+
+# Nestimate 0.9.12
+
+## New verbs
+
+* `set_state_colors(x, colors)` attaches a palette to a `netobject`,
+  `netobject_group`, `mcml` or `htna`, and every figure drawn from that object
+  then uses it -- `sequence_plot()`, `distribution_plot()`,
+  `plot_state_frequencies()` **and** `cograph::splot()`. The cograph half goes
+  through the documented `meta$splot` producer contract (`defaults$node_fill`,
+  stamped in node order), so `splot(net)` needs no arguments and renders
+  byte-identically to `splot(net, node_fill = ...)`. A `state_colors(x) <- `
+  replacement form is also available.
+
+* `state_colors(x)` reads the resolved palette back as a tidy data.frame: one
+  row per key, with `state`, `color` and `source` (`"set"` or `"default"`). It
+  is what the figures actually draw, not just what was passed in.
+
+## Improvements
+
+* States a named palette does not mention are now dealt the Okabe-Ito colours
+  the palette has **not** used, one each, instead of taking their positional
+  slot. Pinning `plan = "#0072B2"` no longer leaves another state defaulting to
+  that same blue. Affects the named form only; an unnamed `state_colors` and
+  the all-default palette are unchanged.
+
+* An attached palette resolves **once**, in the object's own key order, so
+  every figure drawn from it colours a state identically. Previously only the
+  colours you set were carried and each figure dealt the remaining defaults in
+  its own sort order -- `plot_state_frequencies()` sorts states by frequency
+  and `sequence_plot()` alphabetically, so one state could come out amber in
+  one figure and black in the other.
+
+* In-tile labels in `plot_state_frequencies()` take whichever ink (dark or
+  white) has the higher WCAG contrast ratio against the tile, instead of one
+  fixed grey. A percentage on a dark tile -- black, navy, dark wine -- is now
+  readable, whether the colour came from the default palette or from a palette
+  you set.
+
+# Nestimate 0.9.11
+
+## Fixes
+
+* A named `state_colors` no longer has to match the figure exactly. Names the
+  plot does not draw are dropped with a `message()` naming them, so one
+  project-wide palette -- states from a wider coding scheme, clusters a given
+  call merged away -- can be handed to every plot and each takes the keys that
+  apply to it. 0.9.10 raised an error instead, which made a shared palette
+  unusable.
+
+# Nestimate 0.9.10
+
+## Improvements
+
+* `state_colors` accepts a **named** vector everywhere `sequence_plot()`,
+  `distribution_plot()` and `plot_state_frequencies()` draw, and the names are
+  a lookup rather than a positional list: only the keys you name are
+  overridden, every other key keeps its default, and the vector may be shorter
+  than the number of states. An unnamed vector is still positional, unchanged.
+
+* For an `mcml`, that lookup covers the whole multichannel figure, not only
+  the states. A cluster name colours its `Summary` band, its channel strip and
+  its faded band in the other panels; a group merged by `combine =` is named
+  by its label (the list name, or `"A + B"`); `rest_label` is a key too. So
+  `sequence_plot(fit, combine = list(Task = c("Cognitive", "Regulation")),
+  state_colors = c(Task = "#0072B2"))` recolours the combined cluster and
+  leaves the rest of the palette alone. Previously the cluster and combined
+  keys were drawn from a fixed internal palette with no way to set them.
+
+* A `state_colors` name that matches no key in the figure is now an error
+  naming the available keys, instead of being silently ignored.
+
+# Nestimate 0.9.9
+
+## New verbs
+
+* `build_mcml()` gains `combine =` and `expand =`. On new input they change
+  the partition before estimation, in any `clusters` form and for every input
+  type: `build_mcml(data, clusters = cl, combine = c("A", "B"))` equals a build
+  with `A` and `B` merged in `cl` (the merged cluster lists its states in
+  cluster-name order). On an existing `mcml` they re-partition it:
+  `build_mcml(mc, combine =)` merges clusters, `build_mcml(mc, expand =)`
+  splits clusters into one cluster per state, and `build_mcml(mc, clusters =)`
+  applies a new partition. The
+  model (macro network, within-cluster networks, sequences) is re-estimated
+  from the sequences the `mcml` carries, with its original `type`, `method`
+  and `directed`. With the partition unchanged the result equals the input;
+  `expand = "all"` reproduces the node-level transition network of the same
+  `type`. Raises `nestimate_mcml_no_sequences` for an `mcml` built from a
+  matrix or an edge list (which keeps only within-cluster edges), and errors
+  when sequence-shaping arguments (`trim`, `exclude`, `end`, `labels`,
+  `actor`, ...) are passed with a re-partition, since the carried sequences
+  already reflect them.
+* `session_ids()` names the session behind every sequence of a network built
+  from long data, and of a `build_mmm()` or `build_clusters()` fit on such a
+  network. It returns one row per sequence in model order: `sequence`, the
+  `actor` and `session` columns under their own names, `session_label`, and,
+  for a fit, `cluster` (plus `posterior` for a mixture). The fit's assignments
+  can then be joined to the input by those columns instead of parsing the
+  `"actor | session"` label, which breaks when an id contains `" | "`. Raises
+  `nestimate_no_session_ids` for wide-data input or for fits made before this
+  version, and `nestimate_session_ids_misaligned` when the metadata and the
+  sequences differ in number.
+* `item_loadings()` returns the tidy item-diagnostic table of a
+  `build_mcml_pc()` fit (node, cluster, loading, weight, sign, max_cross,
+  cross_cluster, misfit); `misfit = TRUE`/`FALSE` filters it.
+* `composites()` returns the per-respondent cluster scores of a
+  `build_mcml_pc()` fit: one row per input row (input order and row names,
+  `NA` where all of a cluster's items are missing) and one column per
+  cluster. Raises `nestimate_no_composites` for the descriptive aggregations
+  (`"average"`, `"escoufier"`, `"cancor"`), which form no score.
+
+## Changes
+
+* `sequence_plot()` on an `mcml` gains `combine =`: named clusters are merged
+  into one channel (a character vector for one group, a list for several;
+  list names label the merged channels, default `"A + B"`). The merged group
+  acts as one cluster across the figure (one panel, one Summary key, one
+  faded band) and can itself be opened with `expand =`.
+* `sequence_plot()` on an `mcml` gains `rest = c("clusters", "pooled",
+  "none")`: how a cluster's panel shows the time spent in other clusters (one
+  faded band per cluster, one pooled grey band, or blank, leaving
+  only the panel's own states). Applies to the carpet and distribution views.
+  `rest_label =` (default `"Other states"`) sets the legend text: the pooled
+  band takes it as is, per-cluster bands read `"Social (Other states)"`. This
+  replaces the former `"(elsewhere)"` wording.
+* `sequence_plot()` on an `mcml` now honours `na =` in the distribution view:
+  `na = FALSE` drops the `NA` (ended) band and shows each time point as shares
+  of the sequences still running, as `distribution_plot()` already did.
+* `macro_network()` accepts an `mcml_pc` fit and returns its cluster-level
+  network; `expand =` on an `mcml_pc` raises `nestimate_no_expand`, and
+  `method =` or `...` error (the estimator is set in `build_mcml_pc()`).
+* `sequence_plot()` errors when `combine`, `expand`, `rest` or `rest_label`
+  is passed for input that is not an `mcml`, instead of ignoring them.
+* `print.mcml_pc()` and its build-time warnings name `item_loadings()`
+  instead of pointing at `$loadings`.
+
+* `prepare()` (and so `build_network()` on long data) keeps the `session`
+  column(s) in the per-sequence metadata under their own names, and returns
+  the metadata explicitly in sequence row order (it was assembled with
+  `merge(sort = FALSE)`, whose order is unspecified).
+* `build_mmm()` and `build_clusters()` keep the input network's `$metadata`
+  (restricted to the fitted rows when `build_mmm()` drops sequences with
+  missing covariates).
+
+## Fixes
+
+* `sequence_plot()` on an `mcml` with `type = "heatmap"`/`"index"` and
+  `expand =` drew the other-cluster wash as blank cells: the wash was keyed by
+  the Summary keys, which are states once a cluster is expanded. It is now
+  keyed by cluster.
+* `sequence_plot()` on an `mcml` with `type = "distribution"` and `expand =`
+  no longer fails with "subscript out of bounds" in the default
+  (`normalize = FALSE`) view. The Summary band now opens the expanded
+  cluster into its states, and the other panels draw it as one faded
+  `"<cluster> (<rest_label>)"` band.
+* `sequence_plot()` on an `mcml` with a single channel (one cluster, or every
+  cluster merged by `combine`) no longer fails in the carpet view with
+  "replacement has 1 row, data has 0".
+* `sequence_plot()` on an `mcml`: with `expand =`, each cluster's faded band
+  in the other panels now has its own colour (expanded clusters all shared
+  one).
+
+# Nestimate 0.9.5
+
+## New verbs
+
+* `macro_network()` returns the macro (cluster-level) network of an `mcml`
+  with one or more named clusters expanded back into their member states and
+  every other cluster left collapsed — a network at mixed resolution. It
+  re-counts from the recoded sequence data rather than splitting the k x k
+  aggregate, which cannot be disaggregated; a matrix-derived `mcml` raises
+  `nestimate_no_expand_source`. `$node_groups` maps each expanded state back
+  to its parent cluster, so the result plots grouped.
+* `extract_pathways()` cuts a long event log into pathways and returns one
+  row per pathway. Three cuts via `type =`: `"unit"` (one pathway per group),
+  `"segments"` (one per contiguous run), `"anchored"` (spans around an anchor
+  event). `resolve =` appends a resolution label as the closing state.
+* `outcome_model()` regresses a unit-level outcome on sequence or network
+  predictors — pattern indicators, `simplicial_features()` output, or any
+  numeric covariate — with family auto-detection, an optional `lme4` random
+  intercept, `select = "split"` hold-out selection, BH-corrected p-values,
+  confidence intervals and odds ratios. `effects_table()` is the tidy
+  accessor; `summary()` returns the same table.
+* `simplicial_features()` returns topological summaries of one or many
+  networks as a tidy data.frame, one row per network per threshold, ready to
+  use as regression predictors. Accepts a `netobject`, `netobject_group`,
+  `mcml`, a square weight matrix, or a named list of any of these.
+
+## Extended
+
+* `build_mcml()` gains the `exclude`, `trim`, `end` and `end_by` sequence
+  arguments, applied in that fixed order.
+* `as_tna()` is now a generic. `as_tna.mcml(expand =)` delegates to
+  `macro_network()` for the macro layer only; per-cluster layers are
+  untouched. An `as_tna.default()` covers everything else.
+* `sequence_plot()` and its `mcml` method gain
+  `panel = c("both", "summary", "channels")`.
+
+## Fixes
+
+* `frequencies(format = "frequency")` returned zero rows for any long-format
+  data whose id column was not integer-valued. The sequence key was coerced
+  with `as.integer()` before the merge, turning every character id into `NA`;
+  the merge then matched nothing and failed silently. Sequence keys are now
+  aligned in their character form.
+* `sequence_plot()` on an `mcml` errored whenever a singleton cluster was
+  named after its own state: the shared fill scale built its levels with
+  `factor(levels = c(states, clusters))`, and duplicate levels are an error.
+  Levels and values are now de-duplicated.
+* `as.data.frame()` methods for `net_hypergraph_transduction` and
+  `net_hypergraph_cluster` placed `what` in the generic's `row.names` slot,
+  so `as.data.frame(x, "scores")` bound `"scores"` to `row.names`. The
+  generic's arguments now come first and `row.names` is honoured
+  (`R CMD check` "S3 generic/method consistency").
+
+# Nestimate 0.9.4
+
+* pkgdown reference index repaired: the five topics added in 0.9.3 were
+  unindexed and `build_reference_index()` failed. The S3 Methods section now
+  wildcards `as.data.frame.` alongside `print.`, `summary.` and `plot.`, so a
+  future result class with the house-standard accessor cannot repeat it.
+
+# Nestimate 0.9.3
+
+## New verb: `compare_networks()`
+
+* Compares two or more networks (`netobject`, `netobject_group`, `tna`,
+  `group_tna`, `mcml`, `cograph_network`, matrices, or a list of them) in one
+  object. `summary()` returns the tidy one-row-per-pair overview, as every
+  other Nestimate `summary()` does; the full tables are their own verbs:
+  `edge_differences()`, `node_differences()`, `global_differences()`,
+  `network_metrics()`, each with a `pair` column. All pairs by default, or
+  every network against one `reference =`.
+* Ratios are guarded (`NA`, never `Inf`/`NaN`); every cell is kept, absent
+  edges appear at weight 0; `higher` (colour) and `status` (shape) columns
+  drive the plots.
+* `plot(x)` draws one view per call, selected with `type =` (the package-wide
+  argument name; `what =` is accepted as an alias): `"networks"` (default;
+  each network drawn once via `cograph::splot()`), `"difference"` (the signed
+  difference network of each pair), `"edges"` (ranked dumbbell), `"nodes"`,
+  `"global"`, `"heatmap"`, `"scatter"`, and `"inference"` (a forest of the
+  edge differences on the difference scale, with credible intervals when the
+  Bayesian backend ran, a filled marker for a significant edge and the
+  p-value in a right-hand column; it raises
+  `nestimate_compare_no_test` when `test = "none"`). One sign-to-colour
+  contract (`#4A6FE3` = first/reference higher, `#D33F6A` = second higher)
+  backed by line type and marker shape; the heatmap scale follows the data.
+* `plot(x, combined = FALSE)` splits a multi-pair view into a named list of
+  single-pair plots (one per pair) instead of facetting them into one figure,
+  matching the `combined` argument of `plot.net_reliability()`,
+  `plot.simplicial_complex()` and friends. The base-graphics views draw one
+  panel per page.
+* Optional inference on the same tables: `test = "permutation"`, `"bayes"`
+  (with an optional `rope`), `"bootstrap"`, combinable. Non-significant
+  results are faded, never deleted.
+* `permutation()` gains a `$global` data frame with NCT-style `M` (sum of
+  absolute differences) and `S` (largest absolute difference) statistics and
+  their permutation p-values, computed from the same null.
+* `compare_model()` is unchanged and will be soft-deprecated once
+  `compare_networks()` has been through one release.
+
+## Hypergraph suite
+
+* `build_hypergraph()` promotes a network's k-cliques (k >= 3) to hyperedges,
+  following Burgio, Matamalas, Gomez and Arenas (2020); underlying pairwise
+  edges are retained. `clique_expansion()` projects a hypergraph back to a
+  pairwise network in one `tcrossprod()` call, closing the
+  event data -> `bipartite_groups()` -> hypergraph -> network cycle.
+* `hypergraph_measures()` returns the structural-statistics suite (Lee, Choe
+  and Shin 2024); an empty hypergraph returns trivial zeros rather than
+  erroring. `hypergraph_centrality()` computes Benson's (2019) three
+  eigenvector centralities.
+* `hypergraph_laplacian()` computes the normalized Laplacian, either the
+  Zhou, Huang and Scholkopf (2006) form on the binary incidence pattern or
+  the Hayashi, Aksoy, Park and Park (2020) weighted form. Built on it:
+  `hypergraph_cluster()` (spectral clustering) and
+  `hypergraph_transduction()` (semi-supervised label propagation), each with
+  print, summary, plot and `as.data.frame()` methods.
+
+# Nestimate 0.9.1
+
+tna-parity release: sequence-side gaps against `tna::build_model()` and
+`tna::prepare_data()` closed.
+
+## New estimators
+
+* `build_network(method = "ngram")` (params `n_gram`, default 2),
+  `"gap"` (params `max_gap`, default 1) and `"reverse"` (params `weighted`)
+  mirror the tna types `"n-gram"`, `"gap"` and `"reverse"`. Weights are
+  numerically identical to tna on shared inputs (tested). All three accept
+  wide or long input, `start`/`end` boundary markers, `group =` dispatch and
+  `scaling = "normalize"` for row probabilities.
+* New aliases: `"n-gram"` / `"n_gram"` -> `"ngram"`, `"co-occurrence"` ->
+  `"co_occurrence"`.
+
+## Timezone-safe timestamp parsing
+
+* `prepare()` and `build_network()` gain `timezone = "UTC"` (Olson name).
+  Naive timestamps are interpreted in that zone; ISO-8601 `Z`/`UTC`/`GMT`
+  markers and numeric offsets (`+0200`, `+02:00`) are converted from their
+  offset. Parsing no longer depends on the machine's local time zone.
+* Fixes: `...Z` timestamps parsed to `NA` (the marker was stripped before
+  matching), offsets were silently ignored, and wall-clock readings inside a
+  DST gap could turn into spurious session boundaries. Unparsable values now
+  raise an error instead of becoming session breaks.
+
+# Nestimate 0.9.0
+
+Delegation release: Nestimate stops owning psychometric-network math and
+delegates it to its two clean-room home packages, `psychnets` (cross-sectional)
+and `idiographic` (temporal). No public API changes: every signature, default,
+return shape, and — verified against frozen pre-delegation baselines — every
+number is preserved.
+
+## Delegated to psychnets (new hard dependency, >= 0.5.2)
+
+* The `cor`, `pcor`, and `glasso` estimators keep Nestimate's input layer,
+  validation, and return contract; the math now runs in
+  `psychnets::cor_network()` / `pcor_network()` / `ebic_glasso()`. Verified
+  field-complete against the frozen baseline: `cor` exact, `pcor` within
+  5.6e-17, `glasso` exact on weights, precision, selected lambda, and the
+  EBIC path (including `penalize.diagonal` and `refit` branches).
+* `nct()` delegates its inner EBIC-glasso solve; the NCT-specific `nearPD`
+  symmetrization stays local. Seeded runs: networks and p-values exact.
+* `boot_glasso()` and `permutation()` (glasso branch) delegate the
+  per-resample solve via `psychnets::ebic_glasso(lambda_path = )`, keeping
+  the fixed-path-across-resamples semantics. Seeded `permutation()` is
+  byte-identical; `boot_glasso()` is identical except wall-clock timing.
+* The internal pure-R glasso kernel (`glasso_pure.R`) and its EBIC helpers
+  are deleted; psychnets owns that math now.
+* The `ising` and `mgm` estimators remain local for now (their delegation
+  needs psychnets to expose per-node lambda selection and a scale
+  passthrough) and are unchanged.
+
+## Delegated to idiographic (new hard dependency, >= 0.3.4)
+
+* `build_mlvar()` keeps its signature, S3 methods, and return object; the
+  lmer estimation pipeline now runs in `idiographic::fit_mlvar()`. Verified
+  identical at tolerance 0 (object, class, print, summary) across
+  lag/standardize/day/beep configurations, and against `mlVAR::mlVAR()` at
+  8.8e-16 over 954 checks.
+* When the between-subjects network is not estimable (a random-intercept SD
+  of zero), `build_mlvar()` now warns before returning the zero matrix; it
+  previously returned it silently. Numbers are unchanged.
+* `build_gimme()` delegates its whole search to `idiographic::fit_gimme()`.
+  **This is the one delegation that changes results**: idiographic's search
+  reproduces the upstream `gimme` package (>= 10.0) exactly, which
+  Nestimate's own search did not — the individual-level path search in
+  particular under-detected person-specific paths relative to upstream.
+  Group-level results are typically unchanged; individual-level path sets
+  can grow. The signature and the `net_gimme` field contract are unchanged
+  (the object gains idiographic's netobject fields and now renders directly
+  with cograph); `print`/`summary`/`plot` dispatch to idiographic's
+  methods. Treat pre-0.9.0 `build_gimme()` individual-level results as
+  superseded.
+
 # Nestimate 0.8.5
 
 Bug-fix release. 0.8.4 was published on r-universe but never reached CRAN.

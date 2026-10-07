@@ -2,6 +2,8 @@
 % Please edit documentation in R/simplicial.R
 \name{persistent_homology}
 \alias{persistent_homology}
+\alias{print.persistent_homology}
+\alias{plot.persistent_homology}
 \title{Persistent Homology}
 \usage{
 persistent_homology(
@@ -11,10 +13,18 @@ persistent_homology(
   type = "clique",
   max_scale = NULL
 )
+
+\method{print}{persistent_homology}(x, ...)
+
+\method{plot}{persistent_homology}(x, combined = TRUE, ...)
 }
 \arguments{
 \item{x}{A square matrix, \code{tna}, or \code{netobject}. For
-\code{type = "vr"}, must be a non-negative distance matrix.}
+\code{type = "vr"}, must be a non-negative distance matrix.
+A \code{simplicial_complex} carrying a \code{$filtration} vector (as
+returned by \code{build_simplicial(type = "vr")}) is also accepted and
+is used directly: its stored filtration values are reduced as they are,
+so \code{type} is taken from the complex rather than this argument. For the \code{print()} and \code{plot()} methods: an object of class \code{persistent_homology}.}
 
 \item{n_steps}{Number of grid points for the reported Betti curve
 (default 20). The persistence diagram itself is exact - it does not
@@ -28,18 +38,30 @@ or \code{"vr"} (Vietoris-Rips on distances).}
 \item{max_scale}{For \code{type = "vr"} only: cap on edge length. Edges
 with \code{d(i,j) > max_scale} are excluded. \code{NULL} (default)
 uses \code{max(d)}.}
+
+\item{...}{In \code{plot.persistent_homology()}: Ignored. In \code{print.persistent_homology()}: Additional arguments (unused).}
+
+\item{combined}{When \code{TRUE} (default), the two panels are stitched side-by-side via \code{gridExtra::arrangeGrob}. When \code{FALSE}, returns a named list (\code{betti_curve}, \code{persistence}) of ggplots.}
 }
 \value{
 A \code{persistent_homology} object with:
 \describe{
 \item{betti_curve}{Data frame: \code{threshold}, \code{dimension},
 \code{betti}.}
-\item{persistence}{Data frame of birth-death pairs:
-\code{dimension}, \code{birth}, \code{death}, \code{persistence}.
-Sorted by descending persistence.}
+\item{persistence}{Data frame of birth-death pairs, one row per
+homology class: \code{dimension}, \code{birth}, \code{death},
+\code{persistence}. Sorted by descending persistence. Essential
+classes are included, with \code{death = 0} and
+\code{persistence = birth} in clique mode, and \code{death = Inf},
+\code{persistence = Inf} in VR mode (the plot method caps those for
+display only).}
 \item{thresholds}{Numeric vector of grid thresholds.}
 \item{mode}{Either \code{"clique"} or \code{"vr"}.}
 }
+
+In \code{print.persistent_homology()}: The input object, invisibly.
+
+In \code{plot.persistent_homology()}: A grid grob (invisibly) when \code{combined = TRUE}; a named list of two ggplots when \code{combined = FALSE}.
 }
 \description{
 Computes persistent homology via full boundary-matrix reduction over
@@ -62,6 +84,13 @@ value is \eqn{\max_{(i,j) \in \sigma}\,d(i,j)}. Thresholds run low
 to high. Use \code{max_scale} to cap the filtration diameter.}
 }
 }
+\section{Methods}{
+
+\itemize{
+\item \code{plot.persistent_homology()}: Two panels: Betti curve (threshold vs Betti number) and persistence diagram (birth vs death). Persistence pairs come from full boundary- matrix reduction; essential classes are shown at the filtration boundary (\code{death = 0} in clique mode; in VR mode their stored \code{death = Inf} is capped for display at the largest finite value in the diagram or on the threshold grid, so they still render).
+}
+}
+
 \examples{
 mat <- matrix(c(0,.6,.5,.6,0,.4,.5,.4,0), 3, 3)
 colnames(mat) <- rownames(mat) <- c("A","B","C")
@@ -71,6 +100,7 @@ print(ph)
 }
 \references{
 Edelsbrunner, H., Letscher, D., & Zomorodian, A. (2000). Topological
-persistence and simplification. \emph{Discrete & Computational Geometry}
-\strong{28}, 511-533.
+persistence and simplification. In \emph{Proceedings of the 41st Annual
+Symposium on Foundations of Computer Science}, 454-463. Journal version:
+\emph{Discrete & Computational Geometry} (2002) \strong{28}, 511-533.
 }

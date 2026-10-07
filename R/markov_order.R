@@ -169,14 +169,18 @@
 #' No plug-in MLE bias and no refitting per replicate. An asymptotic
 #' \eqn{\chi^2} p-value is reported alongside for reference.
 #'
-#' The optimal order is the smallest \eqn{k} that is \strong{not}
-#' significantly better than \eqn{k - 1} at level \code{alpha}: we
-#' keep raising the order while the test rejects, and stop at the first
-#' non-rejection.
+#' Order selection is sequential: the order is raised while the test
+#' rejects, and stops at the first non-rejection. The reported
+#' \code{optimal_order} is therefore the highest \eqn{k} whose test - and
+#' every test below it - rejected at level \code{alpha}, i.e. one below the
+#' first non-rejection; it is \code{0} when order 1 is already not
+#' rejected, and \code{max_order} when no test accepts.
 #'
-#' @param data A data.frame (wide format, one sequence per row) or list
-#'   of character vectors (one per trajectory). NAs are treated as end
-#'   of sequence.
+#' @param data A data.frame (wide format, one sequence per row), a list
+#'   of character vectors (one per trajectory), a \code{netobject} or
+#'   \code{netobject_group} carrying its \code{$data}, or a
+#'   \code{\link{prepare}} result (its \code{sequence_data} is used).
+#'   NAs are treated as end of sequence.
 #' @param max_order Integer. Highest Markov order to test. Default 3.
 #' @param n_perm Integer. Number of within-\eqn{w} permutations per order.
 #'   Default 500.
@@ -210,26 +214,21 @@
 #'   \item{transition_matrices}{List of fitted transition matrices.}
 #'   \item{states}{Character vector of observed state labels.}
 #'   \item{n_sequences, n_observations}{Data summary.}
-#'   \item{n_perm, alpha, max_order}{Call settings.}
+#'   \item{n_perm, alpha, max_order}{Call settings. \code{max_order} is the
+#'     order actually tested, which is capped at
+#'     \code{length(longest sequence) - 1} with a message.}
 #' }
+#'   For a \code{netobject_group} the result is a
+#'   \code{"net_markov_order_group"}: a named list holding one
+#'   \code{net_markov_order} per group.
 #'
 #' @examples
-#' \donttest{
-#' # First-order Markov data: test should select order 1
-#' set.seed(1)
-#' states <- letters[1:4]
-#' tm <- matrix(runif(16), 4, 4, dimnames = list(states, states))
-#' tm <- tm / rowSums(tm)
-#' seqs <- lapply(1:30, function(.) {
-#'   s <- character(50); s[1] <- sample(states, 1)
-#'   for (i in 2:50) s[i] <- sample(states, 1, prob = tm[s[i - 1], ])
-#'   s
-#' })
-#' res <- markov_order_test(seqs, max_order = 3, n_perm = 300, seed = 1)
-#' res$optimal_order
+#' # Is one previous state enough to predict the next one?
+#' res <- markov_order_test(as.data.frame(trajectories),
+#'                          max_order = 2, n_perm = 99, seed = 1)
+#' res
 #' summary(res)
 #' plot(res)
-#' }
 #' @export
 markov_order_test <- function(data, max_order = 3L, n_perm = 500L, alpha = 0.05,
                                parallel = FALSE, n_cores = 2L, seed = NULL) {
@@ -367,12 +366,16 @@ markov_order_test <- function(data, max_order = 3L, n_perm = 500L, alpha = 0.05,
 # S3 methods
 # ---------------------------------------------------------------------------
 
-#' Print Method for net_markov_order
-#'
-#' @param x A \code{net_markov_order} object.
-#' @param ... Ignored.
-#' @return The input object, invisibly.
-#' @inherit markov_order_test examples
+#' @rdname markov_order_test
+#' @param x For the \code{print()} and \code{plot()} methods: an object of class \code{net_markov_order} or \code{net_markov_order_group}.
+#' @param ... In \code{plot.net_markov_order()}, \code{print.net_markov_order()} and \code{summary.net_markov_order()}: Ignored. In \code{print.net_markov_order_group()}: Forwarded to `print.net_markov_order` for each element.
+#' @param object For the \code{summary()} method: an object of class \code{net_markov_order}.
+#' @param panel Which panel(s) to render: \code{"both"}, \code{"ic"}, or \code{"permutation"}. Default \code{"both"}.
+#' @param combined When \code{panel = "both"} and \code{combined = TRUE} (default), the two panels are drawn side-by-side. If \pkg{gridExtra} is installed they are arranged into a single drawable/saveable gtable (returned); otherwise base \code{grid} viewports draw both panels and a named list of the two ggplots is returned invisibly. When \code{FALSE}, returns that named list (\code{ic}, \code{permutation}) without drawing. Ignored when \code{panel != "both"}.
+#' @return In \code{print.net_markov_order()}: The input object, invisibly.
+#' @return In \code{print.net_markov_order_group()}: `x` invisibly.
+#' @return In \code{summary.net_markov_order()}: The tidy \code{test_table} data.frame - one row per order tested - carrying the selection context as attributes: \code{optimal_order}, \code{bic_order}, \code{aic_order}, \code{alpha} and \code{n_perm}.
+#' @return In \code{plot.net_markov_order()}: A ggplot (single panel); for \code{panel = "both"}, either a \code{gridExtra} gtable (when \pkg{gridExtra} is installed) or a named list of two ggplots (\code{ic}, \code{permutation}) drawn side-by-side and returned invisibly.
 #' @export
 print.net_markov_order <- function(x, ...) {
   cat(sprintf("Markov Order Test  [within-w permutation, n_perm = %d, alpha = %.3f]\n",
@@ -390,12 +393,7 @@ print.net_markov_order <- function(x, ...) {
   invisible(x)
 }
 
-#' Print method for `net_markov_order_group`
-#'
-#' @param x A `net_markov_order_group` (named list of `net_markov_order`
-#'   results, one per group).
-#' @param ... Forwarded to `print.net_markov_order` for each element.
-#' @return `x` invisibly.
+#' @rdname markov_order_test
 #' @export
 print.net_markov_order_group <- function(x, ...) {
   cat(sprintf("Markov Order Test -- %d groups: %s\n\n",
@@ -409,13 +407,7 @@ print.net_markov_order_group <- function(x, ...) {
 }
 
 
-#' Summary Method for net_markov_order
-#'
-#' @param object A \code{net_markov_order} object.
-#' @param ... Ignored.
-#' @return The tidy \code{test_table} data.frame, with the selected
-#'   \code{optimal_order} attached as an attribute.
-#' @inherit markov_order_test examples
+#' @rdname markov_order_test
 #' @export
 summary.net_markov_order <- function(object, ...) {
   out <- object$test_table
@@ -428,9 +420,8 @@ summary.net_markov_order <- function(object, ...) {
 }
 
 
-#' Plot Method for net_markov_order
-#'
-#' @description
+#' @rdname markov_order_test
+#' @section Plot panels:
 #' Two-panel professional visualization:
 #' \itemize{
 #'   \item Panel A: log-likelihood, AIC, BIC across tested orders with
@@ -441,24 +432,6 @@ summary.net_markov_order <- function(object, ...) {
 #'     \code{alpha}.
 #' }
 #' Uses the Okabe-Ito colorblind-safe palette.
-#'
-#' @param x A \code{net_markov_order} object.
-#' @param panel Which panel(s) to render: \code{"both"}, \code{"ic"},
-#'   or \code{"permutation"}. Default \code{"both"}.
-#' @param combined When \code{panel = "both"} and \code{combined = TRUE}
-#'   (default), the two panels are drawn side-by-side. If \pkg{gridExtra}
-#'   is installed they are arranged into a single drawable/saveable
-#'   gtable (returned); otherwise base \code{grid} viewports draw both
-#'   panels and a named list of the two ggplots is returned invisibly.
-#'   When \code{FALSE}, returns that named list (\code{ic},
-#'   \code{permutation}) without drawing. Ignored when
-#'   \code{panel != "both"}.
-#' @param ... Ignored.
-#' @return A ggplot (single panel); for \code{panel = "both"}, either a
-#'   \code{gridExtra} gtable (when \pkg{gridExtra} is installed) or a
-#'   named list of two ggplots (\code{ic}, \code{permutation}) drawn
-#'   side-by-side and returned invisibly.
-#' @inherit markov_order_test examples
 #' @export
 plot.net_markov_order <- function(x,
                                    panel = c("both", "ic", "permutation"),

@@ -2,15 +2,33 @@
 % Please edit documentation in R/extraction.R
 \name{extract_initial_probs}
 \alias{extract_initial_probs}
+\alias{summary.nest_initial_probs}
 \title{Extract Initial Probabilities from Model}
 \usage{
 extract_initial_probs(model)
+
+\method{summary}{nest_initial_probs}(object, ...)
 }
 \arguments{
-\item{model}{A TNA model object or a list containing an 'initial' element.}
+\item{model}{A \code{netobject}, TNA model object, \code{mcml} object, or
+a list containing an \code{initial} element.}
+
+\item{object}{For the \code{summary()} method: an object of class \code{nest_initial_probs}.}
+
+\item{...}{In \code{summary.nest_initial_probs()}: Additional arguments (ignored).}
 }
 \value{
-A named numeric vector of initial state probabilities.
+For a single network: a named numeric vector of initial state
+probabilities summing to 1, of class
+\code{c("nest_initial_probs", "numeric")}. The class stamp only adds a
+\code{summary()} method returning a tidy \code{state}/\code{prob} data
+frame.
+
+For an \code{mcml} object: a named list of such vectors, with
+\code{macro} first and then one element per cluster (taken from each
+layer's \code{$inits}, unstamped).
+
+In \code{summary.nest_initial_probs()}: A tidy data frame with columns \code{state} and \code{prob}, sorted by decreasing probability.
 }
 \description{
 Extract the initial state probability vector from a TNA model object.
@@ -18,8 +36,8 @@ Extract the initial state probability vector from a TNA model object.
 \details{
 Initial probabilities represent the probability of starting a sequence in
 each state. If the model doesn't have explicit initial probabilities,
-this function attempts to estimate them from the data or use uniform
-probabilities.
+this function falls back to a uniform distribution over the states of the
+transition matrix and warns.
 }
 \examples{
 seqs <- data.frame(V1 = c("A","B","A"), V2 = c("B","A","C"), V3 = c("A","C","B"))

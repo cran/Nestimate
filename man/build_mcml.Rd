@@ -2,6 +2,9 @@
 % Please edit documentation in R/mcml.R
 \name{build_mcml}
 \alias{build_mcml}
+\alias{print.mcml_layer}
+\alias{print.mcml}
+\alias{summary.mcml}
 \title{Build MCML from Raw Transition Data}
 \usage{
 build_mcml(
@@ -17,8 +20,20 @@ build_mcml(
   order = NULL,
   session = NULL,
   time_threshold = 900,
-  labels = NULL
+  exclude = NULL,
+  trim = NULL,
+  end = FALSE,
+  end_by = NULL,
+  labels = NULL,
+  combine = NULL,
+  expand = NULL
 )
+
+\method{print}{mcml_layer}(x, ...)
+
+\method{print}{mcml}(x, ...)
+
+\method{summary}{mcml}(object, ...)
 }
 \arguments{
 \item{x}{Input data. Accepts multiple formats:
@@ -33,10 +48,14 @@ transitions.}
 the raw data. Otherwise falls back to \code{\link{cluster_summary}}.}
 \item{netobject}{If \code{x$data} is non-NULL, detects edge list
 vs sequence data. Otherwise falls back to \code{\link{cluster_summary}}.}
-\item{cluster_summary}{Returns as-is.}
+\item{mcml}{An \code{mcml} object is returned unchanged, unless
+\code{clusters}, \code{combine} or \code{expand} changes its
+partition: it is then re-estimated from the sequences it carries
+(see \code{combine}).}
 \item{square numeric matrix}{Falls back to \code{\link{cluster_summary}}.}
 \item{non-square or character matrix}{Treated as sequence data.}
-}}
+}
+For the \code{print()} method: an object of class \code{mcml_layer} or \code{mcml}.}
 
 \item{clusters}{Cluster/group assignments. Accepts:
 \describe{
@@ -59,8 +78,11 @@ edge lists where a single node may be source in some rows and target
 in others, or where source and target belong to different groups,
 pass an explicit named list (\code{list(G1 = c("N1","N2"), ...)})
 or a two-column data frame \code{data.frame(node, group)} instead.}
-\item{NULL}{Auto-detect from \code{netobject$nodes} or
-\code{$node_groups} (same logic as \code{\link{cluster_summary}}).}
+\item{NULL}{Auto-detect from a \code{netobject}'s node table (a
+\code{clusters}/\code{cluster}/\code{groups}/\code{group} column) or
+from its \code{node_groups}. Only \code{netobject} input can
+auto-detect; data frames and matrices require an explicit
+assignment.}
 }}
 
 \item{method}{Aggregation method for combining edge weights: "sum", "mean",
@@ -99,16 +121,92 @@ is passed through \code{prepare()} to derive a wide sequence, which is
 then routed to the existing sequence path. Behaves identically to
 \code{prepare(...) |> build_network() |> build_mcml()}.}
 
+\item{exclude}{Optional character vector of state labels to drop before
+the network is built (e.g. a technical-void marker). On long-format
+input the matching events are removed before sequences are formed, so a
+dropped state never occupies a sequence position; on wide sequence input
+the matching cells are set to \code{NA}.}
+
+\item{trim}{Optional truncation of each sequence. \code{NULL} (default)
+keeps every time point. A fraction in \code{(0, 1)} keeps the columns
+covering that quantile of sequence lengths (\code{trim = 0.95} keeps the
+shortest 95\%); a value \code{>= 1} is an absolute cut
+(\code{trim = 10} keeps the first 10 time points). Same semantics as
+\code{\link{sequence_plot}}'s \code{trim}.}
+
+\item{end}{Terminal state appended after each sequence's last observed
+state. \code{FALSE} (default) adds none, \code{TRUE} adds one labelled
+\code{"End"}, and a string supplies the label. Applied \emph{after}
+\code{trim}, so trimming can never remove the marker.}
+
+\item{end_by}{Optional column name(s) grouping the terminal marker at a
+coarser unit than the sequence. \code{NULL} (default) marks every
+sequence. When supplied, only the \emph{last} sequence of each group is
+marked -- e.g. \code{session = "AttemptID", end = "Conclude",
+  end_by = "SkillID"} closes each skill once, not each attempt. Requires
+long-format input, since the grouping column lives there.}
+
 \item{labels}{Optional name -> label remap applied to within-cluster nodes
 (the macro layer is left untouched because its labels are cluster
 names). Accepts a 2-column data.frame \code{(name, label)}, a named
 character vector \code{c(name = "label")}, or a named list. Unmapped
 names pass through unchanged.}
+
+\item{combine, expand}{Change the partition. On new input they apply to
+\code{clusters} (in any of its accepted forms, including
+auto-detection) before estimation, so
+\code{build_mcml(data, clusters = cl, combine = c("A", "B"))} equals a
+build with \code{A} and \code{B} merged in \code{cl} (the merged
+cluster lists its states in cluster-name order); this works for every
+input type, matrices included. On an existing \code{mcml} they
+re-partition it (see below).
+\code{combine} merges clusters into one: a character vector merges one
+group, a list merges several and its names label them (default label
+\code{"A + B"}). \code{expand} then splits the named clusters (or
+\code{"all"}/\code{TRUE}) into one cluster per member state, named by
+the state. For an existing \code{mcml} the model is re-estimated --
+macro network, within-cluster
+networks and stored sequences -- from the sequences the \code{mcml}
+carries, with its original \code{type}, \code{method} and
+\code{directed} unless passed explicitly. Any session split,
+\code{exclude}, \code{trim} or \code{end} applied when it was built is
+already in those sequences, so passing any of these (or \code{actor},
+\code{action}, \code{time}, \code{session}, \code{labels}) together
+with a re-partition is an error. Passing a new \code{clusters} list
+instead re-estimates under that partition; with the partition unchanged
+the result equals the input. Errors with class
+\code{nestimate_mcml_no_sequences} when the \code{mcml} was built from a
+matrix, from an edge list (only within-cluster edges are kept), or with
+\code{compute_within = FALSE}.
+\code{\link{sequence_plot}} accepts the same two arguments as display
+options: its \code{combine} draws exactly what it draws for
+\code{build_mcml(x, combine = )}, while its \code{expand} opens clusters
+in the Summary panel only and keeps one panel per cluster.}
+
+\item{...}{In \code{print.mcml()}, \code{print.mcml_layer()} and \code{summary.mcml()}: Unsupported. Supplying unused arguments raises an error.}
+
+\item{object}{For the \code{summary()} method: an object of class \code{mcml}.}
 }
 \value{
-A \code{cluster_summary} object with \code{meta$source = "transitions"},
-fully compatible with \code{plot()}, \code{as_tna()}, and
-\code{plot()}.
+An \code{mcml} object with the same layout as the return value of
+\code{\link{cluster_summary}} (\code{macro}, \code{clusters},
+\code{cluster_members}, \code{edges}, \code{meta}). On the sequence and
+edge-list paths \code{meta$source} is \code{"transitions"},
+\code{meta$type} records the \code{type} post-processing, and
+\code{edges} is a tidy data frame with one row per observed node-level
+transition and columns \code{from}, \code{to}, \code{weight},
+\code{cluster_from}, \code{cluster_to}, \code{type}
+(\code{"within"}/\code{"between"}). Matrix input falls through to
+\code{\link{cluster_summary}}, so \code{meta$source} is \code{"matrix"}
+and \code{edges} is \code{NULL}. Works with \code{print()},
+\code{summary()}, \code{\link{as_tna}}, \code{\link{as_htna}} and
+\code{\link{macro_network}}.
+
+In \code{print.mcml_layer()}: The input \code{mcml_layer}, invisibly.
+
+In \code{print.mcml()}: The input object, invisibly.
+
+In \code{summary.mcml()}: A tidy data frame with one row per cluster and columns \code{cluster}, \code{size}, \code{within_total}, \code{between_out}, \code{between_in}. For undirected macro networks the in/out split is not meaningful, so \code{between_out} reports total incident weight and \code{between_in} is \code{NA}. The data frame is returned silently \emph{without} printing the full object -- call \code{print(object)} explicitly if you want the verbose dump.
 }
 \description{
 Builds a Multi-Cluster Multi-Level (MCML) model from raw transition data
@@ -117,6 +215,13 @@ counting actual transitions. Unlike \code{\link{cluster_summary}} which
 aggregates a pre-computed weight matrix, this function works from the
 original transition data to produce the TRUE Markov chain over cluster states.
 }
+\section{Methods}{
+
+\itemize{
+\item \code{print.mcml_layer()}: Compact view of one mcml layer (the macro layer or a single within-cluster network): a header line with the node and non-zero edge counts and the weight range, the rounded weight matrix, the initial probabilities as a bar chart, and the dimensions of any attached data -- rather than the raw list contents.
+}
+}
+
 \examples{
 # Edge list with clusters
 edges <- data.frame(
@@ -125,8 +230,7 @@ edges <- data.frame(
   weight = c(1, 2, 1, 3, 1, 2)
 )
 clusters <- list(G1 = c("A", "B"), G2 = c("C", "D"))
-cs <- build_mcml(edges, clusters)
-cs$macro$weights
+build_mcml(edges, clusters)
 
 # Sequence data with clusters
 seqs <- data.frame(
@@ -136,10 +240,22 @@ seqs <- data.frame(
   T4 = c("D", "A", "C")
 )
 cs <- build_mcml(seqs, clusters, type = "raw")
-cs$macro$weights
+cs
+summary(cs)
+
+# Change the partition while building ...
+three <- build_mcml(seqs, list(G1 = "A", G2 = "B", G3 = c("C", "D")))
+build_mcml(seqs, list(G1 = "A", G2 = "B", G3 = c("C", "D")),
+           combine = c("G1", "G2"))
+
+# ... or re-partition an existing mcml: the model is re-estimated
+build_mcml(three, combine = c("G1", "G2"))           # G1 + G2 as one cluster
+build_mcml(three, combine = list(AB = c("G1", "G2"))) # named merge
+build_mcml(three, expand = "G3")                      # C and D as clusters
 }
 \seealso{
 \code{\link{cluster_summary}} for matrix-based aggregation,
-\code{net_as_tna()} to convert to tna objects,
-\code{plot()} for visualization
+\code{\link{as_tna}} to promote the layers to netobjects,
+\code{\link{macro_network}} for the cluster-level network with one
+cluster expanded
 }

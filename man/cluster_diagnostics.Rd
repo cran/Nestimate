@@ -2,25 +2,45 @@
 % Please edit documentation in R/cluster_diagnostics.R
 \name{cluster_diagnostics}
 \alias{cluster_diagnostics}
+\alias{print.net_cluster_diagnostics}
+\alias{plot.net_cluster_diagnostics}
 \alias{as.data.frame.net_cluster_diagnostics}
 \title{Cluster Diagnostics}
 \usage{
 cluster_diagnostics(x, ...)
+
+\method{print}{net_cluster_diagnostics}(x, digits = 3L, ...)
+
+\method{plot}{net_cluster_diagnostics}(x, type = NULL, ...)
 
 \method{as.data.frame}{net_cluster_diagnostics}(x, row.names = NULL, optional = FALSE, ...)
 }
 \arguments{
 \item{x}{A \code{net_clustering}, \code{net_mmm}, \code{netobject_group}
 (with \code{attr(, "clustering")} attached by \code{cluster_network()}
-or \code{build_network(net_mmm)}), or \code{net_mmm_clustering}.}
+or \code{build_network(net_mmm)}), or \code{net_mmm_clustering}. For the \code{print()}, \code{plot()} and \code{as.data.frame()} methods: an object of class \code{net_cluster_diagnostics}.}
 
-\item{...}{Unsupported. Supplying unused arguments raises an error.}
+\item{...}{Unsupported. Supplying unused arguments raises an error. In \code{as.data.frame.net_cluster_diagnostics()} and \code{print.net_cluster_diagnostics()}: Unsupported. Supplying unused arguments raises an error. In \code{plot.net_cluster_diagnostics()}: Forwarded to the underlying plot method.}
 
-\item{row.names, optional}{Standard \code{as.data.frame} arguments
-(ignored).}
+\item{digits}{Integer. Decimal places for floating-point statistics. Default \code{3L}.}
+
+\item{type}{Character. Forwarded to the underlying plot method. Valid values for distance: \code{"silhouette"} (default), \code{"mds"}, \code{"heatmap"}, \code{"predictors"}. Valid values for mmm: \code{"posterior"} (default), \code{"covariates"} / \code{"predictors"}.}
+
+\item{row.names, optional}{Standard \code{as.data.frame} arguments (ignored).}
 }
 \value{
-A \code{net_cluster_diagnostics} object.
+\code{cluster_diagnostics()} returns a
+\code{net_cluster_diagnostics} object: a list carrying
+\code{family}, \code{k}, \code{n}, \code{sizes}, the
+\code{per_cluster} data frame (one row per cluster), \code{overall},
+\code{ics}, \code{metadata} and \code{source}, as detailed above.
+\code{as.data.frame()} on that object returns the
+\code{per_cluster} data frame itself -- one row per cluster, with
+family-specific columns.
+
+In \code{print.net_cluster_diagnostics()}: The input object, invisibly.
+
+In \code{plot.net_cluster_diagnostics()}: Whatever the underlying plot method returns: a \code{ggplot} object, invisibly; or, for the covariate forest views called with \code{combined = FALSE}, a list of \code{ggplot} objects named by cluster (invisibly).
 }
 \description{
 Unified entry point for clustering quality information. Returns a
@@ -51,6 +71,14 @@ differ by family. Distance: \code{cluster}, \code{size},
 \code{plot()} can delegate without recomputing anything.}
 }
 }
+\section{Methods}{
+
+\itemize{
+\item \code{plot.net_cluster_diagnostics()}: Delegates to the original clustering object's plot method (\code{\link{plot.net_clustering}} for distance-based diagnostics, \code{\link{plot.net_mmm_clustering}} or \code{\link{plot.net_mmm}} for model-based). The diagnostics object itself stores no plot geometry -- it just keeps a reference to the source so the existing visual layer is reused.
+\item \code{print.net_cluster_diagnostics()}: Prints a uniform header, family-specific quality / IC line, and a per-cluster table. Layout matches \code{\link{print.net_clustering}} and \code{\link{print.net_mmm}}.
+}
+}
+
 \examples{
 seqs <- data.frame(V1 = sample(c("A","B","C"), 30, TRUE),
                    V2 = sample(c("A","B","C"), 30, TRUE))

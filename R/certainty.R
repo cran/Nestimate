@@ -43,11 +43,11 @@
 #'
 #' @param x A \code{netobject} from \code{\link{build_network}} using a
 #'   transition-probability method (\code{"relative"} / \code{"tna"}), or a
-#'   \code{netobject_group}.
+#'   \code{netobject_group}. For the \code{print()} method: an object of class \code{net_certainty}.
 #' @param prior Numeric. Dirichlet prior concentration added to every cell
 #'   (default \code{0.5}, the Jeffreys prior).
 #' @param ci_level Numeric in (0,1). Tail level for credible intervals and the
-#'   stability decision (default \code{0.05}, i.e. a 95\% interval). Named to
+#'   stability decision (default \code{0.05}, i.e. a 95% interval). Named to
 #'   match \code{bootstrap_network()}.
 #' @param inference Character. \code{"stability"} (default) tests whether the
 #'   posterior keeps the edge within a multiplicative \code{consistency_range}
@@ -59,13 +59,19 @@
 #'   \code{inference = "threshold"}. If NULL, defaults to the 10th percentile of
 #'   non-zero edge weights.
 #'
-#' @return An object of class \code{c("net_certainty", "net_bootstrap")} with the
-#'   same fields as \code{\link{bootstrap_network}}: \code{original}, \code{mean},
+#' @return For a \code{netobject}: an object of class
+#'   \code{c("net_certainty", "net_bootstrap")} with the same fields as
+#'   \code{\link{bootstrap_network}}: \code{original}, \code{mean},
 #'   \code{sd}, \code{p_values}, \code{significant}, \code{ci_lower},
 #'   \code{ci_upper}, \code{cr_lower}, \code{cr_upper}, \code{summary},
 #'   \code{model}, \code{method}, \code{params}, \code{ci_level},
 #'   \code{inference}, \code{consistency_range}, \code{edge_threshold}, plus
-#'   \code{prior} and \code{iter = NA} (no iterations).
+#'   \code{prior}, \code{ci_method = "analytic"} and \code{iter = NA} (no
+#'   iterations).
+#'
+#'   For a \code{netobject_group}: a named list of those objects, one per
+#'   constituent network, of class
+#'   \code{c("net_certainty_group", "net_bootstrap_group", "list")}.
 #'
 #' @examples
 #' seqs <- data.frame(V1 = c("A","B","A","C","B"), V2 = c("B","C","B","A","C"),
@@ -214,14 +220,9 @@ certainty <- function(x,
 }
 
 
-#' Print Method for net_certainty
-#'
-#' @param x A \code{net_certainty} object.
-#' @param ... Additional arguments (ignored).
-#' @return The input object, invisibly.
-#' @examples
-#' seqs <- data.frame(V1 = c("A","B","C"), V2 = c("B","C","A"))
-#' print(certainty(build_network(seqs, method = "relative")))
+#' @rdname certainty
+#' @param ... In \code{print.net_certainty()}: Additional arguments (ignored).
+#' @return In \code{print.net_certainty()}: The input object, invisibly.
 #' @export
 print.net_certainty <- function(x, ...) {
   method_labels <- c(

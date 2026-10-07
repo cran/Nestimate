@@ -156,10 +156,105 @@
 
 # Build the state palette from an optional user-supplied vector, falling
 # back to recycled Okabe-Ito. Returns a character vector length = n_states.
-.state_palette <- function(user_colors, n_states) {
+#
+# Two ways to supply colours, and the names decide which:
+#   unnamed - positional, one colour per state in level order (the historical
+#             behaviour; still needs length >= n_states).
+#   named   - a lookup. Only the keys the caller names are overridden; every
+#             other state keeps its Okabe-Ito default, so a partial vector is
+#             legitimate and the vector may be shorter than n_states. Names
+#             that match nothing here are NOT an error at this level: the mcml
+#             path passes the same vector to several palettes (states,
+#             clusters, combined groups), so only the caller knows the full key
+#             space. Callers report the leftovers once with
+#             .report_unused_colors().
+.state_palette <- function(user_colors, n_states, states = NULL) {
   if (is.null(user_colors)) return(rep_len(.okabe_ito, n_states))
-  stopifnot(is.character(user_colors), length(user_colors) >= n_states)
-  user_colors[seq_len(n_states)]
+  stopifnot("`state_colors` must be a character vector of colours" =
+              is.character(user_colors))
+  # Half-named is ambiguous - the unnamed entries would be dropped without a
+  # word - so it is rejected rather than half-honoured.
+  nm <- names(user_colors)
+  if (!is.null(nm) && any(nzchar(nm)) && !all(nzchar(nm))) {
+    stop("`state_colors` mixes named and unnamed colours. Name every colour ",
+         "(a lookup) or none of them (positional).", call. = FALSE)
+  }
+  if (!.is_named_colors(user_colors)) {
+    stopifnot("`state_colors` must supply at least one colour per state" =
+                length(user_colors) >= n_states)
+    return(unname(user_colors[seq_len(n_states)]))
+  }
+  if (is.null(states)) {
+    stop("Named `state_colors` needs the state names; this plot supplies ",
+         "only a count. Pass an unnamed vector of colours instead.",
+         call. = FALSE)
+  }
+  .fill_state_colors(states, user_colors)
+}
+
+
+# Resolve a set of keys against a named palette: a key the palette names takes
+# that colour, and the rest are dealt the Okabe-Ito colours the palette has NOT
+# already used, one each. Dealing only to the keys that need one - rather than
+# recycling across all of them and overwriting - is what keeps the defaults
+# distinct: nine states with three pinned leaves six unnamed and six spare
+# colours, so nothing repeats. Returns an unnamed vector parallel to `keys`.
+.fill_state_colors <- function(keys, user_colors) {
+  named <- keys %in% names(user_colors)
+  out   <- character(length(keys))
+  out[named]  <- unname(user_colors[keys[named]])
+  spare       <- setdiff(.okabe_ito, unname(user_colors))
+  if (!length(spare)) spare <- .okabe_ito
+  out[!named] <- rep_len(spare, sum(!named))
+  out
+}
+
+
+# TRUE when the user supplied a lookup (at least one non-empty name) rather
+# than a positional vector.
+.is_named_colors <- function(user_colors) {
+  nm <- names(user_colors)
+  !is.null(nm) && any(nzchar(nm))
+}
+
+
+# Override the entries of a default palette with the same-named entries of the
+# user's vector. Keys the user did not name keep their default colour, so a
+# named vector is always a partial override, never a replacement.
+.apply_named_colors <- function(pal, user_colors) {
+  if (!.is_named_colors(user_colors)) return(pal)
+  hit <- intersect(names(pal), names(user_colors)[nzchar(names(user_colors))])
+  pal[hit] <- unname(user_colors[hit])
+  pal
+}
+
+
+# Names the figure does not draw are dropped, not rejected: one project-wide
+# palette legitimately carries states from a wider coding scheme, and clusters
+# a given call merged away. Erroring would make a shared palette unusable. They
+# are announced with message() rather than dropped in silence, so a typo or a
+# renamed state still surfaces; message() is suppressible and does not stop the
+# plot. A palette where nothing matches says so explicitly - the figure is
+# entirely default-coloured, which is worth reading as a sentence.
+.report_unused_colors <- function(user_colors, keys, arg = "state_colors") {
+  if (is.null(user_colors) || !.is_named_colors(user_colors)) {
+    return(invisible(NULL))
+  }
+  nm     <- names(user_colors)[nzchar(names(user_colors))]
+  unused <- setdiff(nm, keys)
+  if (length(unused) == 0L) {
+    return(invisible(NULL))
+  }
+  shown <- paste0(paste(utils::head(unused, 6L), collapse = ", "),
+                  if (length(unused) > 6L) ", ..." else "")
+  if (length(unused) == length(nm)) {
+    message("`", arg, "`: no name matches a key this plot draws, so every key ",
+            "keeps its default colour. Dropped: ", shown, ".")
+  } else {
+    message("`", arg, "`: ", length(unused), " of ", length(nm),
+            " names are not drawn by this plot and were dropped: ", shown, ".")
+  }
+  invisible(NULL)
 }
 
 
@@ -204,7 +299,43 @@
 # ggfittext is not installed, falls back to ggplot2::geom_text() at midpoint.
 # Caller is expected to have already nulled out labels for tiles too small for
 # legible rendering.
-.geom_fit_label <- function(rects, label_size, color = "grey15") {
+# WCAG relative luminance of a colour: linearise sRGB, weight by
+# (0.2126, 0.7152, 0.0722). Vectorised over `col`.
+.rel_luminance <- function(col) {
+  rgb <- grDevices::col2rgb(col) / 255
+  lin <- ifelse(rgb <= 0.03928, rgb / 12.92, ((rgb + 0.055) / 1.055)^2.4)
+  0.2126 * lin[1L, ] + 0.7152 * lin[2L, ] + 0.0722 * lin[3L, ]
+}
+
+
+# Label colour that stays readable on the tile it sits on. A palette is the
+# user's to choose - theirs may be navy, dark wine or black - so the label
+# follows the fill instead of assuming a light one. Whichever of the two ink
+# colours has the higher WCAG contrast ratio against the fill wins; a fixed
+# luminance threshold gets mid-greys wrong (on #999999 the dark ink has 5.4:1
+# and white only 2.9:1, yet a 0.4 cutoff picks white). Returns one colour per
+# input fill.
+.contrast_label_color <- function(fill, inks = c("grey15", "white")) {
+  lum_fill <- .rel_luminance(fill)
+  lum_ink  <- .rel_luminance(inks)
+  ratio <- vapply(lum_ink, function(li) {
+    hi <- pmax(li, lum_fill); lo <- pmin(li, lum_fill)
+    (hi + 0.05) / (lo + 0.05)
+  }, numeric(length(lum_fill)))
+  ratio <- matrix(ratio, nrow = length(lum_fill))
+  inks[max.col(ratio, ties.method = "first")]
+}
+
+
+.geom_fit_label <- function(rects, label_size, color = "grey15",
+                            fill_colors = NULL) {
+  # When the caller can say what each tile is filled with, the label takes the
+  # contrasting colour per tile rather than one fixed grey for the whole plot.
+  if (!is.null(fill_colors)) {
+    fill_colors <- as.character(fill_colors)
+    fill_colors[is.na(fill_colors)] <- "#FFFFFF"
+    color <- .contrast_label_color(fill_colors)
+  }
   if (is.null(rects$angle)) {
     rects$angle <- ifelse((rects$ymax - rects$ymin) >
                             (rects$xmax - rects$xmin), 90, 0)

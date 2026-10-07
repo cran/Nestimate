@@ -103,12 +103,16 @@
 #'
 #' @param hon A \code{net_hon} object from \code{\link{build_hon}}, or a
 #'   square weighted adjacency matrix.
-#' @param dim Integer. Embedding dimension (default 32).
+#' @param dim Integer. Embedding dimension (default 32). Silently capped at
+#'   \code{n_nodes - 1}; the dimension actually used is reported in the
+#'   returned \code{dim} component.
 #' @param max_power Integer. Maximum walk length for neighborhood computation
 #'   (default 10). Higher values capture longer-range structure.
 #' @return An object of class \code{net_honem} with components:
 #'   \describe{
-#'     \item{embeddings}{Numeric matrix (n_nodes x dim) of node embeddings.}
+#'     \item{embeddings}{Numeric matrix (n_nodes x dim) of node embeddings,
+#'       row names = node names, column names \code{dim_1}, \code{dim_2},
+#'       ...}
 #'     \item{nodes}{Character vector of node names.}
 #'     \item{singular_values}{Numeric vector of top singular values.}
 #'     \item{explained_variance}{Proportion of variance explained.}
@@ -118,7 +122,7 @@
 #'   }
 #'
 #' @references
-#' Saebi, M., Ciampaglia, G. L., Kazemzadeh, S., & Meyur, R. (2020).
+#' Saebi, M., Ciampaglia, G. L., Kaplan, L. M., & Chawla, N. V. (2020).
 #' HONEM: Learning Embedding for Higher Order Networks. \emph{Big Data},
 #' 8(4), 255-269.
 #'
@@ -187,29 +191,13 @@ build_honem <- function(hon, dim = 32L, max_power = 10L) {
 # S3 methods
 # ---------------------------------------------------------------------------
 
-#' Print Method for net_honem
-#'
-#' @param x A \code{net_honem} object.
-#' @param ... Additional arguments (ignored).
-#'
-#' @return The input object, invisibly.
-#'
-#' @examples
-#' seqs <- list(c("A","B","C","D"), c("A","B","C","A"), c("B","C","D","A"))
-#' hem <- build_honem(build_hon(seqs, max_order = 2), dim = 2)
-#' print(hem)
-#'
-#' \donttest{
-#' seqs <- data.frame(
-#'   V1 = c("A","B","C","A","B"),
-#'   V2 = c("B","C","A","B","C"),
-#'   V3 = c("C","A","B","C","A")
-#' )
-#' hon   <- build_hon(seqs, max_order = 2L)
-#' honem <- build_honem(hon, dim = 2L)
-#' print(honem)
-#' }
-#'
+#' @rdname build_honem
+#' @param x For the \code{print()} and \code{plot()} methods: an object of class \code{net_honem}.
+#' @param ... In \code{plot.net_honem()}: Additional arguments passed to \code{\link[graphics]{plot}}. In \code{print.net_honem()} and \code{summary.net_honem()}: Additional arguments (ignored).
+#' @param object For the \code{summary()} method: an object of class \code{net_honem}.
+#' @param dims Integer vector of length 2. Dimensions to plot (default: \code{c(1, 2)}).
+#' @return In \code{print.net_honem()} and \code{plot.net_honem()}: The input object, invisibly.
+#' @return In \code{summary.net_honem()}: A data.frame with one row per node: column \code{node} (node label) followed by \code{dim1}, \code{dim2}, ..., \code{dim}\emph{d} embedding coordinates, returned visibly; the summary text is printed as a side effect.
 #' @export
 print.net_honem <- function(x, ...) {
   cat("HONEM: Higher-Order Network Embedding\n")
@@ -220,28 +208,7 @@ print.net_honem <- function(x, ...) {
   invisible(x)
 }
 
-#' Summary Method for net_honem
-#'
-#' @param object A \code{net_honem} object.
-#' @param ... Additional arguments (ignored).
-#'
-#' @return A data.frame with one row per node: column \code{node} (node
-#'   label) followed by \code{dim1}, \code{dim2}, ..., \code{dim}\emph{d}
-#'   embedding coordinates, returned visibly; the summary text is printed as
-#'   a side effect.
-#'
-#' @examples
-#' seqs <- list(c("A","B","C","D"), c("A","B","C","A"), c("B","C","D","A"))
-#' hem <- build_honem(build_hon(seqs, max_order = 2), dim = 2)
-#' summary(hem)
-#'
-#' \donttest{
-#' seqs <- list(c("A","B","C","D"), c("A","B","C","A"), c("B","C","D","A"))
-#' hon <- build_hon(seqs, max_order = 3)
-#' he <- build_honem(hon, dim = 2)
-#' summary(he)
-#' }
-#'
+#' @rdname build_honem
 #' @export
 summary.net_honem <- function(object, ...) {
   cat("HONEM Summary\n\n")
@@ -263,26 +230,7 @@ summary.net_honem <- function(object, ...) {
              stringsAsFactors = FALSE, row.names = NULL)
 }
 
-#' Plot Method for net_honem
-#'
-#' @param x A \code{net_honem} object.
-#' @param dims Integer vector of length 2. Dimensions to plot (default: \code{c(1, 2)}).
-#' @param ... Additional arguments passed to \code{\link[graphics]{plot}}.
-#'
-#' @return The input object, invisibly.
-#'
-#' @examples
-#' seqs <- list(c("A","B","C","D"), c("A","B","C","A"), c("B","C","D","A"))
-#' hem <- build_honem(build_hon(seqs, max_order = 2), dim = 2)
-#' plot(hem)
-#'
-#' \donttest{
-#' seqs <- list(c("A","B","C","D"), c("A","B","C","A"), c("B","C","D","A"))
-#' hon <- build_hon(seqs, max_order = 3)
-#' he <- build_honem(hon, dim = 2)
-#' plot(he)
-#' }
-#'
+#' @rdname build_honem
 #' @export
 plot.net_honem <- function(x, dims = c(1L, 2L), ...) {
   if (x$dim < 2L) {

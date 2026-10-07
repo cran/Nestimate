@@ -2,12 +2,16 @@
 % Please edit documentation in R/extraction.R
 \name{extract_transition_matrix}
 \alias{extract_transition_matrix}
+\alias{summary.nest_transition_matrix}
 \title{Extract Transition Matrix from Model}
 \usage{
 extract_transition_matrix(model, type = c("raw", "scaled"))
+
+\method{summary}{nest_transition_matrix}(object, ...)
 }
 \arguments{
-\item{model}{A TNA model object or a list containing a 'weights' element.}
+\item{model}{A \code{netobject}, TNA model object, \code{mcml} object, a
+list containing a \code{weights} element, or a bare weight matrix.}
 
 \item{type}{Character. Type of matrix to return:
 \describe{
@@ -15,9 +19,22 @@ extract_transition_matrix(model, type = c("raw", "scaled"))
 \item{"scaled"}{Row-normalized to ensure rows sum to 1.}
 }
 Default: "raw".}
+
+\item{object}{For the \code{summary()} method: an object of class \code{nest_transition_matrix}.}
+
+\item{...}{In \code{summary.nest_transition_matrix()}: Additional arguments (ignored).}
 }
 \value{
-A square numeric matrix with row and column names as state names.
+For a single network: a square numeric matrix with row and column
+names as state names, of class
+\code{c("nest_transition_matrix", "matrix", "array")}. It behaves as an
+ordinary matrix; the class stamp only adds a \code{summary()} method
+returning a tidy \code{from}/\code{to}/\code{weight} data frame.
+
+For an \code{mcml} object: a named list of such matrices, with
+\code{macro} first and then one element per cluster.
+
+In \code{summary.nest_transition_matrix()}: A tidy data frame with columns \code{from}, \code{to}, \code{weight}, with one row per non-zero entry.
 }
 \description{
 Extract the transition probability matrix from a TNA model object.

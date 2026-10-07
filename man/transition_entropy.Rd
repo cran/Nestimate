@@ -2,21 +2,46 @@
 % Please edit documentation in R/transition_entropy.R
 \name{transition_entropy}
 \alias{transition_entropy}
+\alias{print.net_transition_entropy}
+\alias{print.net_transition_entropy_group}
+\alias{summary.net_transition_entropy}
+\alias{print.summary.net_transition_entropy}
+\alias{plot.net_transition_entropy}
 \title{Transition Entropy of a Markov Chain}
 \usage{
 transition_entropy(x, base = 2, normalize = TRUE)
+
+\method{print}{net_transition_entropy}(x, digits = 3, ...)
+
+\method{print}{net_transition_entropy_group}(x, ...)
+
+\method{summary}{net_transition_entropy}(object, ...)
+
+\method{print}{summary.net_transition_entropy}(x, digits = 3, ...)
+
+\method{plot}{net_transition_entropy}(x, title = "Transition Entropy", fill = "#0072B2", ...)
 }
 \arguments{
 \item{x}{A \code{netobject}, \code{cograph_network}, \code{tna} object,
 row-stochastic numeric transition matrix, or a wide sequence data.frame
 (rows = actors, columns = time-steps; a relative transition network is
-built automatically). Group dispatch on \code{netobject_group}.}
+built automatically). Group dispatch on \code{netobject_group}. For the \code{print()} and \code{plot()} methods: an object of class \code{net_transition_entropy} or \code{net_transition_entropy_group} (or its \code{summary()}).}
 
 \item{base}{Numeric. Logarithm base. \code{2} (default) for bits,
 \code{exp(1)} for nats, \code{10} for hartleys.}
 
 \item{normalize}{Logical. If \code{TRUE} (default), rows that do not sum
 to 1 are normalised automatically (with a warning).}
+
+\item{digits}{Integer. Digits to round numeric output. Default \code{3}.}
+
+\item{...}{In \code{plot.net_transition_entropy()}, \code{print.net_transition_entropy()}, \code{print.summary.net_transition_entropy()} and \code{summary.net_transition_entropy()}: Ignored. In \code{print.net_transition_entropy_group()}: Forwarded to \code{print.net_transition_entropy}.}
+
+\item{object}{For the \code{summary()} method: an object of class \code{net_transition_entropy}.}
+
+\item{title}{Character. Plot title.}
+
+\item{fill}{Character. Bar fill colour. Default Okabe-Ito blue.}
 }
 \value{
 An object of class \code{"net_transition_entropy"} with:
@@ -49,6 +74,15 @@ entropy removed by order-1 memory), \strong{not}
 \item{base}{Logarithm base used.}
 \item{states}{Character vector of state names.}
 }
+For a \code{netobject_group} the result is a
+\code{"net_transition_entropy_group"}: a named list holding one such
+object per group.
+
+In \code{print.net_transition_entropy()}, \code{print.net_transition_entropy_group()} and \code{print.summary.net_transition_entropy()}: \code{x} invisibly.
+
+In \code{summary.net_transition_entropy()}: A \code{summary.net_transition_entropy} containing \describe{ \item{table}{tidy per-state data.frame, sorted by \code{contribution_pct} descending} \item{chain}{tidy chain-level data.frame with raw and normalised \eqn{h(P)}, \eqn{H(\pi)}, redundancy, and ceiling} \item{base}{logarithm base used} }
+
+In \code{plot.net_transition_entropy()}: A ggplot object.
 }
 \description{
 Computes per-state branching entropy, stationary entropy, and the
@@ -75,14 +109,20 @@ The relation \eqn{h(P) \leq H(\pi)} holds with equality iff successive
 states are independent. The deficit \eqn{H(\pi) - h(P)} is reported as
 \code{redundancy} - a measure of how much memory the chain has at order 1.
 }
+\section{Methods}{
+
+\itemize{
+\item \code{plot.net_transition_entropy()}: Bar chart of per-state row entropy with overlaid horizontal lines at the entropy rate \eqn{h(P)} (chain-level summary) and the maximum row entropy \eqn{\log_b n} (uniform branching). Bar widths are proportional to the stationary probability so the visual area sums to the entropy rate.
+\item \code{summary.net_transition_entropy()}: Returns a tidy per-state contribution table sorted by share of the chain-level entropy rate (largest first), so the dominant contributors to \eqn{h(P)} are visible at a glance. Each row contains the stationary mass, the raw and normalised row entropy, the additive contribution \eqn{\pi_i H(P_{i\cdot})}, and that contribution as a percentage of \eqn{h(P)}.
+}
+}
+
 \examples{
-\donttest{
 net <- build_network(as.data.frame(trajectories), method = "relative")
 te  <- transition_entropy(net)
 print(te)
 summary(te)
 plot(te)
-}
 
 }
 \references{

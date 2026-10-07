@@ -2,6 +2,9 @@
 % Please edit documentation in R/mcml_pc.R
 \name{build_mcml_pc}
 \alias{build_mcml_pc}
+\alias{print.mcml_pc}
+\alias{summary.mcml_pc}
+\alias{plot.mcml_pc}
 \title{Multi-Cluster Multi-Level Aggregation for Psychometric Networks}
 \usage{
 build_mcml_pc(
@@ -19,13 +22,19 @@ build_mcml_pc(
   fa_method = c("ml", "paf", "minres", "cfa"),
   ...
 )
+
+\method{print}{mcml_pc}(x, digits = 3, ...)
+
+\method{summary}{mcml_pc}(object, ...)
+
+\method{plot}{mcml_pc}(x, digits = 2, ...)
 }
 \arguments{
 \item{x}{A \code{netobject} estimated with an undirected association
 method (\code{cor}, \code{pcor}, \code{glasso}; aliases accepted) -
 its \code{$data} and \code{$method} are reused - or a numeric
 data.frame of raw observations (then \code{method} decides the
-estimator).}
+estimator). For the \code{print()} and \code{plot()} methods: an object of class \code{mcml_pc}.}
 
 \item{clusters}{Cluster membership in any of three forms: a named list of
 node-label vectors (names = cluster labels); a two-column
@@ -165,7 +174,11 @@ divergence indicates Heywood-prone or non-unidimensional clusters.}
 internally (\code{model}, \code{data}, \code{covmat},
 \code{n.obs}, \code{factors}) are ignored with a warning - the
 model is always the one-factor model per cluster, because the
-composite needs exactly one weight per item.}
+composite needs exactly one weight per item. In \code{plot.mcml_pc()}, \code{print.mcml_pc()} and \code{summary.mcml_pc()}: Additional arguments (ignored).}
+
+\item{digits}{In \code{print.mcml_pc()}: Number of digits to display (default 3). In \code{plot.mcml_pc()}: Number of digits for tile labels (default 2).}
+
+\item{object}{For the \code{summary()} method: an object of class \code{mcml_pc}.}
 }
 \value{
 An object of class \code{"mcml_pc"} containing:
@@ -183,12 +196,23 @@ node-level network is available.}
 based on (kept for diagnostics and \code{loading_stability}).}
 \item{data}{The raw data (data.frame) when available, else
 \code{NULL}.}
-\item{meta}{List: \code{aggregation}, \code{method},
-\code{within}, \code{scale}, \code{cor_method}, \code{signed},
-\code{n_nodes}, \code{n_clusters}, \code{cluster_sizes},
-\code{n_misfit}, \code{n_flipped}, \code{directed = FALSE},
-\code{source = "pc"}, \code{experimental = TRUE}.}
+\item{meta}{List: \code{aggregation} (the name as the caller spelled
+it), \code{method}, \code{within}, \code{weighting},
+\code{fa_method}, \code{fa_args}, \code{scale}, \code{cor_method},
+\code{signed}, \code{n_nodes}, \code{n_clusters},
+\code{cluster_sizes}, \code{n_misfit}, \code{n_flipped},
+\code{directed = FALSE}, \code{source = "pc"},
+\code{experimental = TRUE}. \code{method} and \code{weighting} are
+\code{NA} on the descriptive paths that re-estimate nothing, and
+\code{fa_method}/\code{fa_args} are set only for
+\code{weighting = "factor"}.}
 }
+
+In \code{print.mcml_pc()}: \code{x}, invisibly.
+
+In \code{summary.mcml_pc()}: Tidy data frame with one row per macro edge (upper triangle), columns \code{from}, \code{to}, \code{weight}.
+
+In \code{plot.mcml_pc()}: A ggplot object.
 }
 \description{
 \strong{Experimental.} Aggregates a node-level psychometric network
@@ -201,9 +225,10 @@ exact aggregation formulas may change between releases.
 Unlike transition counts, partial correlations do not aggregate by
 arithmetic: the submatrix of a pcor matrix is \emph{not} the pcor
 network of the subsystem (the conditioning set changes), and averaging
-pcor entries across blocks is descriptive only. The five
+pcor entries across blocks is descriptive only. The
 \code{aggregation} methods therefore have explicitly different
-statuses:
+statuses (the full list of accepted values is under
+\code{aggregation} below):
 
 \describe{
 \item{\code{"average"} (descriptive)}{Macro edge A--B = mean of the
@@ -226,13 +251,13 @@ cluster contribute more to its composite. This is Nestimate's own
 weighting - related in spirit to network loadings
 (Christensen & Golino 2021) but not a reimplementation of any
 EGA-family estimator. Requires raw data.}
-\item{\code{"rv"} (descriptive, multivariate)}{Macro edge A--B =
+\item{\code{"escoufier"} (descriptive, multivariate)}{Macro edge A--B =
 Escoufier's RV coefficient between the member blocks - a matrix
 correlation in \verb{[0, 1]} computed from the block covariance
 structure. No composites are formed and no estimator is re-fit,
 so nothing is lost to averaging; signs are not represented.
 Requires raw data.}
-\item{\code{"canonical"} (descriptive, multivariate)}{Macro edge
+\item{\code{"cancor"} (descriptive, multivariate)}{Macro edge
 A--B = the first canonical correlation between the member blocks:
 the strongest linear relationship any weighting of A's items can
 have with any weighting of B's items - an upper bound on what
@@ -242,7 +267,7 @@ composite methods can recover. Requires raw data.}
 \details{
 \strong{Item diagnostics.} Whenever raw data or a node-level network
 is available, every item's connection strength to \emph{every} cluster
-is computed. The \code{$loadings} table reports, per item: its signed
+is computed. The \code{\link{item_loadings}()} table reports, per item: its signed
 own-cluster loading, its composite weight, its strongest cross-cluster
 loading, and a \code{misfit} flag set when the cross-cluster loading
 exceeds the own-cluster loading - evidence the item is assigned to the
@@ -280,9 +305,9 @@ out-of-cluster nodes). Modes without raw data force
 
 \strong{Uncertainty.} The composite/loadings macro network is a full
 netobject carrying its composite data, so
-\code{\link{bootstrap_network}(fit$macro)} (edge-weight CIs) and
-\code{\link{vertex_bootstrap}(fit$macro)} (network-level CIs) work
-directly; \code{\link{vertex_compare}(fit1$macro, fit2$macro)}
+\code{\link{bootstrap_network}(macro_network(fit))} (edge-weight CIs) and
+\code{\link{vertex_bootstrap}(macro_network(fit))} (network-level CIs) work
+directly; \code{\link{vertex_compare}(macro_network(fit1), macro_network(fit2))}
 compares two groups. \code{\link{loading_stability}} quantifies how
 stable the composite weights themselves are under case resampling.
 
@@ -291,6 +316,13 @@ All constituent networks are undirected
 directedness (e.g. \code{cograph::plot_mcml()}) draw the result
 without arrowheads.
 }
+\section{Methods}{
+
+\itemize{
+\item \code{plot.mcml_pc()}: Heatmap of the macro (cluster-level) weights with the package's diverging palette. For the two-layer network rendering use \code{cograph::plot_mcml()}, which accepts \code{mcml_pc} objects and draws them undirected.
+}
+}
+
 \examples{
 set.seed(1)
 n <- 200
@@ -305,8 +337,9 @@ clusters <- list(A = c("a1", "a2", "a3"), B = c("b1", "b2", "b3"))
 
 fit <- build_mcml_pc(df, clusters, aggregation = "composite",
                      method = "cor")
-fit$macro$weights
-fit$loadings
+fit            # macro (cluster-level) weights
+summary(fit)   # one row per macro edge
+plot(fit)      # heatmap of the same weights
 
 }
 \references{

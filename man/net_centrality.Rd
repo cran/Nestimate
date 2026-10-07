@@ -2,6 +2,8 @@
 % Please edit documentation in R/centrality_measures.R
 \name{net_centrality}
 \alias{net_centrality}
+\alias{plot.net_centrality}
+\alias{plot.net_centrality_group}
 \title{Compute Centrality Measures for a Network}
 \usage{
 net_centrality(
@@ -14,10 +16,35 @@ net_centrality(
   centrality_fn = NULL,
   ...
 )
+
+\method{plot}{net_centrality}(
+  x,
+  reorder = TRUE,
+  ncol = 3L,
+  type = c("bar", "line", "heatmap"),
+  scales = c("free_x", "fixed"),
+  profile_scale = c("measure", "none"),
+  labels = TRUE,
+  drop_zero = FALSE,
+  ...
+)
+
+\method{plot}{net_centrality_group}(
+  x,
+  reorder = TRUE,
+  ncol = 3L,
+  type = c("bar", "line", "delta"),
+  scales = c("free_x", "fixed"),
+  palette = "Set2",
+  profile_scale = c("measure", "none"),
+  labels = FALSE,
+  drop_zero = FALSE,
+  ...
+)
 }
 \arguments{
-\item{x}{A \code{netobject}, \code{netobject_group}, or
-\code{cograph_network}.}
+\item{x}{A \code{netobject}, \code{netobject_group}, \code{mcml}, or
+\code{cograph_network}. For the \code{plot()} method: an object of class \code{net_centrality} or \code{net_centrality_group}.}
 
 \item{measures}{Character vector. Centrality measures to compute.
 Defaults to \code{c("InStrength", "Betweenness", "Diffusion")}. Pass
@@ -43,20 +70,43 @@ when \code{normalize = FALSE}. Default: \code{TRUE}.}
 \item{centrality_fn}{Optional function. Custom centrality function that
 takes a weight matrix and returns a named list of centrality vectors.}
 
-\item{...}{Additional arguments (ignored).}
+\item{...}{Additional arguments (ignored).
+In \code{plot.net_centrality()} and \code{plot.net_centrality_group()}: Additional arguments ignored.}
+
+\item{reorder}{In \code{plot.net_centrality()}: Logical. Reorder states within each centrality panel by centrality value. Default: \code{TRUE}. In \code{plot.net_centrality_group()}: Logical. Reorder states by their mean value within each centrality panel. Default: \code{TRUE}.}
+
+\item{ncol}{Integer. Number of facet columns. Default: \code{3}.}
+
+\item{type}{In \code{plot.net_centrality()}: Plot type. \code{"bar"} shows one faceted horizontal bar chart per measure; \code{"line"} shows state profiles as lines across measures (the value \code{"profile"} is still accepted as an alias); \code{"heatmap"} shows a states-by-measures tile grid, each measure scaled to 0--1 for cross-measure comparability with the raw value printed in the tile. Default: \code{"bar"}. In \code{plot.net_centrality_group()}: Plot type. \code{"bar"} shows grouped bars within each measure; \code{"line"} facets by state and draws one line per group across centrality measures (\code{"profile"} is accepted as an alias); \code{"delta"} draws a diverging bar of group differences. With two groups it is the per-state difference (second group minus first); with three or more groups it is each group's deviation from the per-state group mean, so the largest gaps stand out either way. Default: \code{"bar"}.}
+
+\item{scales}{Facet scale mode. \code{"free_x"} (default) uses free centrality axes; \code{"fixed"} keeps a common centrality axis.}
+
+\item{profile_scale}{Scaling used by \code{type = "line"}. \code{"measure"} (default) rescales each centrality measure to 0--1 before drawing cross-measure profiles; \code{"none"} uses raw values.}
+
+\item{labels}{In \code{plot.net_centrality()}: Logical. Add compact value labels. Default: \code{TRUE}. In \code{plot.net_centrality_group()}: Logical. Add compact value labels. Default: \code{FALSE}.}
+
+\item{drop_zero}{In \code{plot.net_centrality()}: Logical. Drop measures whose values are all (near) zero so empty panels do not waste space. Default: \code{FALSE} (every requested measure is shown). In \code{plot.net_centrality_group()}: Logical. Drop measures whose values are all (near) zero so empty panels do not waste space. Default: \code{FALSE}.}
+
+\item{palette}{Brewer palette for groups. Default: \code{"Set2"}.}
 }
 \value{
-For a \code{netobject}: a \code{net_centrality} data frame with
-node names as rows, a \code{state} column, and one column per centrality
-measure. For a \code{netobject_group}: a \code{net_centrality_group}
-list of such data frames.
+For a \code{netobject} or \code{cograph_network}: a
+\code{net_centrality} data frame, one row per node, with a \code{state}
+column and one further column per requested measure (node names are also
+the row names). For a \code{netobject_group} or an \code{mcml}: a
+\code{net_centrality_group} list of such data frames, one per group.
+
+In \code{plot.net_centrality()} and \code{plot.net_centrality_group()}: A \code{ggplot} object.
 }
 \description{
 Computes centrality measures from a \code{netobject},
 \code{netobject_group}, \code{mcml}, or \code{cograph_network}. The built-in
 measures match \code{tna::centralities()} without importing \code{tna} or
-\code{igraph}. The only intentional default difference is that
-\code{Diffusion} is range-normalized by default.
+\code{igraph}: strength is taken from the weight matrix directly, and the
+path-based measures (betweenness, closeness) come from all-pairs shortest
+paths computed in-package by Floyd-Warshall. The only intentional default
+difference from \code{tna} is that \code{Diffusion} is range-normalized by
+default.
 }
 \examples{
 seqs <- data.frame(
@@ -65,4 +115,25 @@ seqs <- data.frame(
 net <- build_network(seqs, method = "relative")
 net_centrality(net)
 
+}
+\references{
+Freeman, L. C. (1978). Centrality in social networks: conceptual
+clarification. \emph{Social Networks}, 1(3), 215--239. (betweenness,
+closeness)
+
+Opsahl, T., Agneessens, F. & Skvoretz, J. (2010). Node centrality in
+weighted networks: generalizing degree and shortest paths.
+\emph{Social Networks}, 32(3), 245--251. (weighted strength and geodesics)
+
+Kivimaki, I., Lebichot, B., Saramaki, J. & Saerens, M. (2016). Two
+betweenness centrality measures based on randomized shortest paths.
+\emph{Scientific Reports}, 6, 19668. (\code{BetweennessRSP})
+
+Banerjee, A., Chandrasekhar, A. G., Duflo, E. & Jackson, M. O. (2013). The
+diffusion of microfinance. \emph{Science}, 341(6144), 1236498.
+(\code{Diffusion})
+
+Onnela, J.-P., Saramaki, J., Kertesz, J. & Kaski, K. (2005). Intensity and
+coherence of motifs in weighted complex networks. \emph{Physical Review E},
+71, 065103. (\code{Clustering})
 }

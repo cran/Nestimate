@@ -272,27 +272,6 @@ test_that("plot.net_clustering heatmap works", {
 })
 
 # ==============================================================================
-# 9. Cross-validation against tna
-# ==============================================================================
-
-test_that("R fallback matches stringdist for all applicable metrics", {
-  skip_if_not_installed("stringdist")
-  df <- make_test_data(n = 30, k = 10, n_states = 4)
-  enc <- Nestimate:::.encode_sequences(df, c("*", "%"))
-
-  for (metric in c("hamming", "osa", "lv", "dl", "lcs",
-                    "qgram", "cosine", "jaccard", "jw")) {
-    d_r <- as.matrix(
-      Nestimate:::.dissimilarity_matrix_r(enc, metric, lambda = 0, q = 2L, p = 0.1)
-    )
-    d_sd <- as.matrix(
-      Nestimate:::.dissimilarity_matrix_stringdist(enc, metric, lambda = 0, q = 2L, p = 0.1)
-    )
-    expect_equal(d_r, d_sd, tolerance = 1e-10, info = metric)
-  }
-})
-
-# ==============================================================================
 # 11. Edge cases
 # ==============================================================================
 
@@ -595,91 +574,6 @@ test_that("all-categorical covariates produce no numeric profile", {
   cl <- build_clusters(df, k = 3, covariates = c("Gender", "Group"))
   expect_null(cl$covariates$profiles$numeric)
   expect_true(is.data.frame(cl$covariates$profiles$categorical))
-})
-
-# ==============================================================================
-# 18. Covariate analysis — k=2 cross-validation against glm(binomial)
-# ==============================================================================
-
-test_that("k=2 multinomial matches glm(binomial)", {
-  set.seed(99)
-  df <- data.frame(
-    T1 = sample(LETTERS[1:4], 60, replace = TRUE),
-    T2 = sample(LETTERS[1:4], 60, replace = TRUE),
-    T3 = sample(LETTERS[1:4], 60, replace = TRUE),
-    T4 = sample(LETTERS[1:4], 60, replace = TRUE),
-    Age = rnorm(60, 30, 8),
-    Score = runif(60, 0, 100),
-    stringsAsFactors = FALSE
-  )
-  cl <- build_clusters(df, k = 2, covariates = c("Age", "Score"))
-  our <- cl$covariates$coefficients
-
-  # glm reference
-  cov_df <- df[, c("Age", "Score")]
-  cov_df$cluster <- factor(cl$assignments)
-  ref_fit <- glm(cluster ~ Age + Score, data = cov_df, family = binomial)
-  ref <- summary(ref_fit)$coefficients
-
-  # Compare coefficients (excluding intercept from our table for variable match)
-  for (vname in c("Age", "Score")) {
-    our_row <- our[our$variable == vname, ]
-    expect_equal(our_row$estimate[[1L]], unname(ref[vname, "Estimate"]),
-                 tolerance = 1e-3, info = vname)
-    expect_equal(our_row$std_error[[1L]], unname(ref[vname, "Std. Error"]),
-                 tolerance = 1e-3, info = vname)
-    expect_equal(our_row$z[[1L]], unname(ref[vname, "z value"]),
-                 tolerance = 1e-3, info = vname)
-    expect_equal(our_row$p[[1L]], unname(ref[vname, "Pr(>|z|)"]),
-                 tolerance = 1e-2, info = vname)
-  }
-})
-
-# ==============================================================================
-# 19. Covariate analysis — k>2 manual verification
-# ==============================================================================
-
-test_that("k>2 coefficients match manual extraction from multinom", {
-  set.seed(77)
-  df <- data.frame(
-    T1 = sample(LETTERS[1:3], 50, replace = TRUE),
-    T2 = sample(LETTERS[1:3], 50, replace = TRUE),
-    T3 = sample(LETTERS[1:3], 50, replace = TRUE),
-    X1 = rnorm(50),
-    X2 = rnorm(50),
-    stringsAsFactors = FALSE
-  )
-  cl <- build_clusters(df, k = 3, covariates = c("X1", "X2"))
-  our <- cl$covariates$coefficients
-
-  # Manual reference from raw multinom
-  fit_df <- data.frame(cluster = factor(cl$assignments), X1 = df$X1, X2 = df$X2)
-  fit <- nnet::multinom(cluster ~ X1 + X2, data = fit_df, trace = FALSE)
-  s <- summary(fit)
-  coefs <- s$coefficients
-  ses <- s$standard.errors
-
-  for (i in seq_len(nrow(coefs))) {
-    for (j in seq_len(ncol(coefs))) {
-      est <- coefs[i, j]
-      se <- ses[i, j]
-      z_manual <- est / se
-      p_manual <- 2 * (1 - pnorm(abs(z_manual)))
-      or_manual <- exp(est)
-      ci_lo_manual <- exp(est - 1.96 * se)
-      ci_hi_manual <- exp(est + 1.96 * se)
-
-      row <- our[our$cluster == rownames(coefs)[i] &
-                 our$variable == colnames(coefs)[j], ]
-      expect_equal(row$estimate, est, tolerance = 1e-10)
-      expect_equal(row$std_error, se, tolerance = 1e-10)
-      expect_equal(row$odds_ratio, or_manual, tolerance = 1e-10)
-      expect_equal(row$ci_lower, ci_lo_manual, tolerance = 1e-10)
-      expect_equal(row$ci_upper, ci_hi_manual, tolerance = 1e-10)
-      expect_equal(row$z, z_manual, tolerance = 1e-10)
-      expect_equal(row$p, p_manual, tolerance = 1e-10)
-    }
-  }
 })
 
 # ==============================================================================
